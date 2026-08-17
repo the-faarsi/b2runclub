@@ -1,0 +1,178 @@
+// file: runclub-backend/prisma/schema.prisma
+generator client {
+  provider = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+// User role representation: "ADMIN", "MEMBER", "VOLUNTEER", "VISITOR"
+// Event status representation: "DRAFT", "PUBLISHED", "ARCHIVED"
+// Payment status representation: "PENDING", "PAID", "FAILED", "FREE"
+
+// USER SERVICE Data
+model User {
+  id            String   @id @default(uuid())
+  email         String   @unique
+  password_hash String
+  name          String
+  role          String   @default("MEMBER")
+  created_at    DateTime @default(now())
+  emergency_contact String?
+  strava_id     String?
+
+  events_created  Event[] // Admin connection
+  registrations  EventRegistration[]
+  posts          Post[]
+  votes          PollVote[]
+  notifications  Notification[]
+  comments       Comment[]
+  photos         Photo[]
+}
+
+// GALLERY SERVICE Data
+// Uploaded by admins and volunteers; read-only for everyone else.
+model Photo {
+  id          String   @id @default(uuid())
+  // Path served by the static /uploads route, or an external URL.
+  url         String
+  caption     String?
+  // Optional tie to an event, so the gallery can be grouped by session.
+  event_id    String?
+  created_at  DateTime @default(now())
+
+  uploader_id String
+  uploader    User     @relation(fields: [uploader_id], references: [id])
+}
+
+// CLUB CONTENT Data
+// A single row holding the About page copy, edited by admins.
+model ClubInfo {
+  id            String   @id @default("singleton")
+  headline      String   @default("")
+  about         String   @default("")
+  mission       String   @default("")
+  founded       String?
+  home_base     String?
+  contact_email String?
+  instagram     String?
+  strava_club   String?
+  updated_at    DateTime @updatedAt
+}
+
+// Partners and sponsors shown in the home page scroller.
+model Collaborator {
+  id         String   @id @default(uuid())
+  name       String
+  // The shout-out revealed on hover.
+  blurb      String   @default("")
+  logo_url   String?
+  website    String?
+  tier       String   @default("PARTNER") // PARTNER, SPONSOR, COMMUNITY
+  sort_order Int      @default(0)
+  created_at DateTime @default(now())
+}
+
+// EVENT SERVICE Data
+model Event {
+  id          String   @id @default(uuid())
+  title       String
+  type        String   // Run, Cycle, Party etc.
+  date_time   DateTime
+  location    String
+  price       Float
+  status      String @default("DRAFT")
+
+  admin_id    String
+  created_by  User     @relation(fields: [admin_id], references: [id])
+
+  registrations EventRegistration[]
+}
+
+// PAYMENT & REGISTRATION SERVICE Data
+model EventRegistration {
+  id                  String        @id @default(uuid())
+  event_id            String
+  user_id             String
+  razorpay_order_id   String?       @unique // Referenced in payment flow
+  razorpay_payment_id String?
+  status              String        @default("PENDING") // Updated by webhook
+  role_at_event       String        @default("MEMBER") // Track participant role
+  waiver_signed       Boolean       @default(false)
+  // Set when an admin bars this person from the event. Kept separate from
+  // `status` so a block never destroys the payment state — unblocking restores
+  // the registration exactly as it was.
+  blocked_at          DateTime?
+
+  event               Event         @relation(fields: [event_id], references: [id])
+  user                User          @relation(fields: [user_id], references: [id])
+}
+
+// FORUM & COMMUNITY SERVICE Data
+model Post {
+  id              String   @id @default(uuid())
+  title           String
+  content         String
+  is_announcement Boolean  @default(false) // For Admin announcements
+  created_at      DateTime @default(now())
+
+  author_id       String
+  author          User     @relation(fields: [author_id], references: [id])
+  comments        Comment[]
+}
+
+// POLLS SERVICE Data
+model Poll {
+  id         String   @id @default(uuid())
+  title      String
+  active     Boolean  @default(true)
+  options    PollOption[]
+  votes      PollVote[]
+}
+
+model PollOption {
+  id         String @id @default(uuid())
+  poll_id    String
+  option_text String
+
+  poll       Poll   @relation(fields: [poll_id], references: [id])
+  votes      PollVote[]
+}
+
+model PollVote {
+  id          String @id @default(uuid())
+  poll_id     String
+  option_id   String
+  user_id     String
+
+  // Unique composite constraint prevents multiple votes
+  @@unique([user_id, poll_id]) 
+
+  poll        Poll   @relation(fields: [poll_id], references: [id])
+  option      PollOption @relation(fields: [option_id], references: [id])
+  user        User   @relation(fields: [user_id], references: [id])
+}
+
+model Notification {
+  id         String   @id @default(uuid())
+  user_id    String
+  message    String
+  is_read    Boolean  @default(false)
+  link       String?
+  created_at DateTime @default(now())
+
+  user       User     @relation(fields: [user_id], references: [id])
+}
+
+model Comment {
+  id         String   @id @default(uuid())
+  post_id    String
+  user_id    String
+  content    String
+  created_at DateTime @default(now())
+
+  post       Post     @relation(fields: [post_id], references: [id])
+  user       User     @relation(fields: [user_id], references: [id])
+}
