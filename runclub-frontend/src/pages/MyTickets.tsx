@@ -45,6 +45,9 @@ export function MyTickets() {
   const [active, setActive] = useState<Registration | null>(null);
   const [payingId, setPayingId] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState<Registration | null>(null);
+  /** Tells us whether to open Checkout or offer the dev simulation. */
+  const loadCfg = useCallback(() => api.paymentConfig(), []);
+  const { data: payCfg } = useFetch(loadCfg);
 
   const regs = data ?? [];
 
@@ -57,11 +60,30 @@ export function MyTickets() {
     const orderId = reg.razorpay_order_id;
     const keyId = publishableKey();
 
+    // No real credentials? Settle the mock order through the dev-only route so
+    // the flow still completes, rather than dead-ending on a toast.
     if (!orderId || isMockPayment(keyId, orderId)) {
-      toast(
-        "Card payments aren't configured on this backend — see the README to add Razorpay keys.",
-        "info",
-      );
+      if (!payCfg?.simulation_available) {
+        toast(
+          "Card payments aren't configured on this backend — see the README to add Razorpay keys.",
+          "info",
+        );
+        return;
+      }
+      setPayingId(reg.id);
+      try {
+        const res = await api.simulatePayment(reg.id);
+        setData((prev) =>
+          (prev ?? []).map((r) =>
+            r.id === reg.id ? { ...res.registration, event: r.event } : r,
+          ),
+        );
+        toast(`${res.message} (development mode — no card was charged)`, "ok");
+      } catch (err) {
+        toast(err instanceof Error ? err.message : "Could not settle the payment", "err");
+      } finally {
+        setPayingId(null);
+      }
       return;
     }
 

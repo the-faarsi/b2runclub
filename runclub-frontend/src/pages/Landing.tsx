@@ -4,10 +4,17 @@ import { Link } from "react-router-dom";
 import { EventCard } from "../components/events";
 import { CollaboratorScroller } from "../components/collaborators";
 import { Hero3D } from "../components/scene3d";
-import { CalendarIcon, DisciplineIcon, SparkIcon, TicketIcon } from "../components/icons";
-import { Spotlight } from "../components/motion";
+import {
+  CalendarIcon,
+  ClockIcon,
+  DisciplineIcon,
+  PinIcon,
+  SparkIcon,
+  TicketIcon,
+} from "../components/icons";
+import { AnimatedNumber, Reveal, Spotlight } from "../components/motion";
 import { Tilt, TiltLayer } from "../components/tilt";
-import { buttonClass, Card, Skeleton } from "../components/ui";
+import { Avatar, buttonClass, Card, Skeleton } from "../components/ui";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { countdown, eventTime, fullDate, inr, isPast } from "../lib/format";
@@ -37,12 +44,25 @@ export function Landing() {
   const load = useCallback(() => api.events(), []);
   const { data: events, loading } = useFetch(load);
 
+  // Extra reads for the long-form sections. All public endpoints, so these work
+  // for signed-out visitors too; each degrades to an omitted section if empty.
+  const loadGallery = useCallback(() => api.gallery(), []);
+  const { data: gallery } = useFetch(loadGallery);
+  const loadBoard = useCallback(() => api.leaderboard(), []);
+  const { data: leaderboard } = useFetch(loadBoard);
+
   const upcoming = (events ?? [])
     .filter((e) => e.status === "PUBLISHED" && !isPast(e.date_time))
     .sort((a, b) => +new Date(a.date_time) - +new Date(b.date_time));
 
   const next = upcoming[0];
   const rest = upcoming.slice(1, 4);
+
+  const allEvents = events ?? [];
+  const disciplines = new Set(allEvents.map((e) => e.type)).size;
+  const photos = gallery ?? [];
+  const board = leaderboard?.leaderboard ?? [];
+  const clubKm = board.reduce((sum, r) => sum + r.weekly_distance_km, 0);
 
   return (
     <>
@@ -238,6 +258,254 @@ export function Landing() {
       )}
 
       {/* ── Collaborators ────────────────────────────────── */}
+
+      {/* ── By the numbers ───────────────────────────────── */}
+      <Reveal>
+        <section className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
+          <div className="datastrip mb-10" />
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {[
+              { label: "Sessions on the board", value: allEvents.length, suffix: "" },
+              { label: "Published & open", value: upcoming.length, suffix: "" },
+              { label: "Disciplines", value: disciplines, suffix: "" },
+              { label: "Club distance", value: Math.round(clubKm), suffix: " km" },
+            ].map((s) => (
+              <Tilt key={s.label} max={8} lift={9}>
+                <Card hover className="hud edge-gold h-full p-6">
+                  <TiltLayer depth={26}>
+                    <p className="display foil text-[40px] leading-none">
+                      <AnimatedNumber value={s.value} format={(v) => `${Math.round(v)}${s.suffix}`} />
+                    </p>
+                  </TiltLayer>
+                  <p className="eyebrow mt-3">{s.label}</p>
+                </Card>
+              </Tilt>
+            ))}
+          </div>
+        </section>
+      </Reveal>
+
+      {/* ── How it works ─────────────────────────────────── */}
+      <section className="relative mx-auto max-w-7xl px-4 py-14 sm:px-6 lg:px-8">
+        <Reveal>
+          <p className="eyebrow mb-2 text-gold">How it works</p>
+          <h2 className="display text-[clamp(26px,3.6vw,38px)]">
+            Four steps from curious to running.
+          </h2>
+        </Reveal>
+
+        <div className="mt-10 grid gap-4 lg:grid-cols-4">
+          {[
+            { n: "01", t: "Pick a session", b: "Browse the calendar or the list. Every session shows route, start time and entry." },
+            { n: "02", t: "Sign the waiver", b: "Once, with your emergency contact. We keep it for the organisers on the day." },
+            { n: "03", t: "Pay in-app", b: "Card payment through Razorpay. Volunteers marshal and pay nothing." },
+            { n: "04", t: "Show your ticket", b: "A QR code we scan at the start line. Screenshots are fine." },
+          ].map((step, i) => (
+            <Reveal key={step.n} delay={i * 0.07}>
+              <Tilt max={7} lift={9}>
+                <Card hover className="hud edge-gold group h-full p-6">
+                  <TiltLayer depth={30}>
+                    <span className="display text-[34px] leading-none text-gold/35 transition-colors duration-300 group-hover:text-gold/70">
+                      {step.n}
+                    </span>
+                  </TiltLayer>
+                  <TiltLayer depth={14}>
+                    <h3 className="mt-3 text-[15px] font-semibold text-ink">{step.t}</h3>
+                    <p className="mt-2 text-[13.5px] leading-relaxed text-ink-3">{step.b}</p>
+                  </TiltLayer>
+                </Card>
+              </Tilt>
+            </Reveal>
+          ))}
+        </div>
+      </section>
+
+      {/* ── Who it's for ─────────────────────────────────── */}
+      <section className="mx-auto max-w-7xl px-4 py-14 sm:px-6 lg:px-8">
+        <Reveal>
+          <div className="datastrip mb-10" />
+          <p className="eyebrow mb-2 text-gold">Where you fit</p>
+          <h2 className="display text-[clamp(26px,3.6vw,38px)]">Three ways to be here.</h2>
+        </Reveal>
+
+        <div className="mt-10 grid gap-4 lg:grid-cols-3">
+          {[
+            {
+              role: "Member",
+              tint: "var(--color-paid)",
+              line: "You want to run.",
+              perks: ["Register for any published session", "Pay once, carry a QR ticket", "Post, comment and vote on routes"],
+            },
+            {
+              role: "Volunteer",
+              tint: "var(--color-free)",
+              line: "You want to marshal.",
+              perks: ["Entry comped on every event", "Gold bib and the junction calls", "Post photos to the club gallery"],
+            },
+            {
+              role: "Visitor",
+              tint: "var(--color-ink-3)",
+              line: "You're just looking.",
+              perks: ["Browse the calendar and gallery", "See polls and the leaderboard", "No account needed to look around"],
+            },
+          ].map((r, i) => (
+            <Reveal key={r.role} delay={i * 0.07}>
+              <Tilt max={7} lift={9}>
+                <Card hover className="hud edge-gold h-full p-6">
+                  <span
+                    className="inline-flex items-center gap-2 rounded-full px-2.5 py-1"
+                    style={{ background: `${r.tint}1f`, color: r.tint }}
+                  >
+                    <span className="size-1.5 rounded-full" style={{ background: r.tint }} />
+                    <span className="text-[10px] font-bold uppercase tracking-[0.14em]">
+                      {r.role}
+                    </span>
+                  </span>
+                  <p className="display mt-4 text-[20px]">{r.line}</p>
+                  <ul className="mt-4 space-y-2.5">
+                    {r.perks.map((perk) => (
+                      <li key={perk} className="flex gap-2.5 text-[13px] leading-relaxed text-ink-2">
+                        <span className="mt-1.5 size-1 shrink-0 rounded-full bg-gold" aria-hidden />
+                        {perk}
+                      </li>
+                    ))}
+                  </ul>
+                </Card>
+              </Tilt>
+            </Reveal>
+          ))}
+        </div>
+      </section>
+
+      {/* ── Gallery preview ──────────────────────────────── */}
+      {photos.length > 0 && (
+        <section className="mx-auto max-w-7xl px-4 py-14 sm:px-6 lg:px-8">
+          <Reveal>
+            <div className="datastrip mb-10" />
+            <div className="flex flex-wrap items-end justify-between gap-4">
+              <div>
+                <p className="eyebrow mb-2 text-gold">From the club</p>
+                <h2 className="display text-[clamp(26px,3.6vw,38px)]">Lately, in pictures</h2>
+              </div>
+              <Link to="/gallery" className="text-[13px] font-medium text-ink-3 hover:text-gold">
+                Full gallery →
+              </Link>
+            </div>
+          </Reveal>
+
+          <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {photos.slice(0, 4).map((ph, i) => (
+              <Reveal key={ph.id} delay={i * 0.06}>
+                <Tilt max={9} lift={10}>
+                  <Link
+                    to="/gallery"
+                    className="group block overflow-hidden rounded-[var(--radius-card)] border border-white/8"
+                  >
+                    <img
+                      src={ph.url}
+                      alt={ph.caption ?? "Club photo"}
+                      loading="lazy"
+                      className="aspect-[4/3] w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                    />
+                  </Link>
+                </Tilt>
+              </Reveal>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* ── This week's board ────────────────────────────── */}
+      {board.length > 0 && (
+        <section className="mx-auto max-w-7xl px-4 py-14 sm:px-6 lg:px-8">
+          <Reveal>
+            <div className="datastrip mb-10" />
+            <div className="flex flex-wrap items-end justify-between gap-4">
+              <div>
+                <p className="eyebrow mb-2 text-gold">This week</p>
+                <h2 className="display text-[clamp(26px,3.6vw,38px)]">Who's putting the miles in</h2>
+              </div>
+              <Link to="/leaderboard" className="text-[13px] font-medium text-ink-3 hover:text-gold">
+                Full board →
+              </Link>
+            </div>
+          </Reveal>
+
+          <Reveal delay={0.05}>
+            <Card className="hud mt-8 overflow-hidden p-0">
+              <ol>
+                {board.slice(0, 5).map((r, i) => (
+                  <li
+                    key={r.user_id}
+                    className="flex items-center gap-4 border-b border-white/5 px-5 py-3.5 last:border-0"
+                  >
+                    <span className="display tnum w-7 text-center text-[15px] text-gold">
+                      {i + 1}
+                    </span>
+                    <Avatar name={r.name} size={32} />
+                    <span className="min-w-0 flex-1 truncate text-[13.5px] font-medium text-ink">
+                      {r.name}
+                    </span>
+                    <span className="tnum text-[13px] font-semibold text-ink">
+                      {r.weekly_distance_km.toFixed(1)}
+                      <span className="ml-0.5 text-[11px] font-normal text-ink-3">km</span>
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            </Card>
+          </Reveal>
+        </section>
+      )}
+
+      {/* ── On the day ───────────────────────────────────── */}
+      <section className="mx-auto max-w-7xl px-4 py-14 sm:px-6 lg:px-8">
+        <Reveal>
+          <div className="datastrip mb-10" />
+          <div className="grid gap-8 lg:grid-cols-[1fr_1.1fr] lg:items-center">
+            <div>
+              <p className="eyebrow mb-2 text-gold">On the day</p>
+              <h2 className="display text-[clamp(26px,3.6vw,38px)]">
+                Turn up fifteen minutes early.
+              </h2>
+              <p className="mt-5 text-[15px] leading-relaxed text-ink-2">
+                There's a briefing before every session — the route, the junctions, where the
+                marshals will be. Bring water and your own nutrition for anything over 10&nbsp;km.
+              </p>
+              <div className="mt-7 flex flex-wrap gap-3">
+                <Link to="/calendar" className={buttonClass("gold", "md")}>
+                  Pick a session
+                </Link>
+                <Link to="/about" className={buttonClass("outline", "md")}>
+                  About the club
+                </Link>
+              </div>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              {[
+                { Icon: ClockIcon, t: "Briefing at −15", b: "Route, junctions, bag drop." },
+                { Icon: PinIcon, t: "Marshalled corners", b: "Gold bibs. Follow their calls." },
+                { Icon: TicketIcon, t: "Scan and go", b: "QR at the start line." },
+                { Icon: SparkIcon, t: "Coffee after", b: "Always. Non-negotiable." },
+              ].map((x, i) => (
+                <Reveal key={x.t} delay={i * 0.05}>
+                  <Tilt max={7} lift={8}>
+                    <Card hover className="hud edge-gold h-full p-5">
+                      <span className="grid size-9 place-items-center rounded-xl border border-gold/25 bg-gold/8 text-gold">
+                        <x.Icon className="size-4" />
+                      </span>
+                      <p className="mt-3 text-[14px] font-semibold text-ink">{x.t}</p>
+                      <p className="mt-1 text-[12.5px] text-ink-3">{x.b}</p>
+                    </Card>
+                  </Tilt>
+                </Reveal>
+              ))}
+            </div>
+          </div>
+        </Reveal>
+      </section>
+
       <CollaboratorScroller />
 
       {/* ── Closing CTA ──────────────────────────────────── */}

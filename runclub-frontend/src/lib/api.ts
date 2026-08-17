@@ -221,6 +221,22 @@ export const api = {
       { method: "DELETE" },
     ),
 
+  /** Whether real Checkout is available, or only the dev simulation. */
+  paymentConfig: () =>
+    request<{ mock_mode: boolean; key_id: string | null; simulation_available: boolean }>(
+      "/api/payments/config",
+    ),
+
+  /**
+   * Development-only settlement for a mock order. The backend refuses this
+   * outright once real Razorpay keys are configured, and in production.
+   */
+  simulatePayment: (registrationId: string) =>
+    request<{ message: string; registration: Registration; simulated?: boolean }>(
+      "/api/payments/simulate",
+      { method: "POST", body: { registration_id: registrationId } },
+    ),
+
   /** Hands a Checkout callback to the backend, which verifies the signature. */
   verifyPayment: (input: {
     razorpay_order_id: string;

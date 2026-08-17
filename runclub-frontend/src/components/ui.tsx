@@ -52,7 +52,7 @@ export function Button({
       {...rest}
       disabled={disabled || loading}
       className={cn(
-        "press-3d inline-flex shrink-0 items-center justify-center whitespace-nowrap transition-all duration-200",
+        "btn-3d inline-flex shrink-0 items-center justify-center whitespace-nowrap",
         "disabled:pointer-events-none disabled:opacity-45",
         BUTTON_SIZES[size],
         BUTTON_VARIANTS[variant],
@@ -81,7 +81,7 @@ export function LinkButton({
     <a
       {...rest}
       className={cn(
-        "press-3d inline-flex shrink-0 items-center justify-center whitespace-nowrap transition-all duration-200",
+        "btn-3d inline-flex shrink-0 items-center justify-center whitespace-nowrap",
         BUTTON_SIZES[size ?? "md"],
         BUTTON_VARIANTS[variant ?? "gold"],
         className,
@@ -99,7 +99,7 @@ export function buttonClass(
   extra?: string,
 ) {
   return cn(
-    "press-3d inline-flex shrink-0 items-center justify-center whitespace-nowrap transition-all duration-200",
+    "btn-3d inline-flex shrink-0 items-center justify-center whitespace-nowrap",
     BUTTON_SIZES[size],
     BUTTON_VARIANTS[variant],
     extra,

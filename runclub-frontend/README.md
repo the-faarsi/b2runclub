@@ -312,6 +312,38 @@ and `FlipCard` for the QR ticket. Plus a 3D podium on the leaderboard and a
 inside a `requestAnimationFrame`, so a pointer move never triggers a React render
 and the transform stays on the compositor. Text inputs are left untilted.
 
+### Futuristic chrome
+
+Applied through the shared classes so it is consistent rather than per-component:
+
+- **`btn-3d`** — every button gets a bevelled top edge, inner shadow, a light
+  sweep on hover, and presses *into* the page on click. Applied inside
+  `BUTTON_VARIANTS`/`buttonClass`, so nothing has to opt in.
+- **`hud`** — corner brackets that widen on hover, like a targeting reticle.
+- **`datastrip`** — a gold rule with a travelling pulse, used as a section break.
+- **`scanlines`**, **`grain`**, **`foil`** — film and gold-foil treatments.
+
+All of it is `::before`/`::after` with transform/opacity only, so none of it
+costs layout. The looping ones are switched off under reduced motion.
+
+> Buttons deliberately use **CSS 3D, not WebGL**. Browsers cap concurrent WebGL
+> contexts at roughly 16 — a canvas per button would exhaust that on any page.
+
+### Collaborator ring
+
+The home page strip is a **rotating 3D cylinder**: each card is pushed out along
+Z and rotated to face outward, and the radius is computed from the card count so
+faces never overlap. Hovering pulls a card toward the viewer, dims the rest and
+raises its shout-out; the ring pauses while the pointer is over the stage.
+
+Two things that make it work, both non-obvious:
+
+- **CSS animation, not framer-motion** — `animation-play-state: paused` is what
+  allows hover-to-pause, and a JS-driven transform cannot be paused that way.
+- **`backface-visibility: hidden`** — cards on the far side of the cylinder face
+  away from the viewer and render their text *mirrored*. Hiding backfaces drops
+  them, which is what makes it read as a coverflow rather than a jumble.
+
 ### Motion
 
 Animation is a system, not per-component guesswork. `lib/motion.ts` owns one

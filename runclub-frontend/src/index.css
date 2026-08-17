@@ -288,6 +288,152 @@
     transform: perspective(800px) rotateX(14deg);
   }
 
+  /* ── Futuristic chrome ──────────────────────────────────
+     HUD-style decoration. All of it is ::before/::after and
+     transform/opacity only, so nothing costs layout. */
+
+  /* Corner brackets, like a targeting reticle. */
+  .hud {
+    position: relative;
+  }
+  .hud::before,
+  .hud::after {
+    content: "";
+    position: absolute;
+    width: 14px;
+    height: 14px;
+    pointer-events: none;
+    border-color: rgb(233 185 73 / 0.55);
+    transition: all 0.4s var(--ease-out-expo);
+  }
+  .hud::before {
+    top: 8px;
+    left: 8px;
+    border-top: 1.5px solid;
+    border-left: 1.5px solid;
+    border-top-left-radius: 4px;
+  }
+  .hud::after {
+    right: 8px;
+    bottom: 8px;
+    border-bottom: 1.5px solid;
+    border-right: 1.5px solid;
+    border-bottom-right-radius: 4px;
+  }
+  .hud:hover::before,
+  .hud:hover::after {
+    width: 22px;
+    height: 22px;
+    border-color: rgb(233 185 73 / 0.9);
+  }
+
+  /* Buttons: bevelled top edge, inner glow, and a light sweep on hover.
+     Applied through the shared button classes so every button inherits it. */
+  .btn-3d {
+    position: relative;
+    overflow: hidden;
+    transform-style: preserve-3d;
+    box-shadow:
+      0 1px 0 0 rgb(255 255 255 / 0.22) inset,
+      0 -1px 0 0 rgb(0 0 0 / 0.35) inset,
+      0 6px 16px -8px rgb(0 0 0 / 0.7);
+    transition:
+      transform 0.18s var(--ease-out-expo),
+      box-shadow 0.28s var(--ease-out-expo),
+      filter 0.28s var(--ease-out-expo);
+  }
+  .btn-3d::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: linear-gradient(
+      100deg,
+      transparent 20%,
+      rgb(255 255 255 / 0.22) 48%,
+      transparent 76%
+    );
+    transform: translateX(-130%);
+    transition: transform 0.55s var(--ease-out-expo);
+  }
+  .btn-3d:hover::after {
+    transform: translateX(130%);
+  }
+  .btn-3d:hover {
+    transform: perspective(600px) translateZ(4px) translateY(-1px);
+    filter: brightness(1.04);
+  }
+  .btn-3d:active {
+    transform: perspective(600px) translateZ(-5px) translateY(1px) rotateX(5deg);
+    box-shadow:
+      0 1px 0 0 rgb(0 0 0 / 0.3) inset,
+      0 0 0 0 rgb(0 0 0 / 0);
+  }
+
+  /* Scanline film, for hero surfaces. */
+  .scanlines::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.5;
+    background: repeating-linear-gradient(
+      0deg,
+      rgb(233 185 73 / 0.035) 0 1px,
+      transparent 1px 4px
+    );
+  }
+
+  /* A gold data-strip divider with travelling pulse. */
+  .datastrip {
+    position: relative;
+    height: 2px;
+    overflow: hidden;
+    background: linear-gradient(90deg, transparent, rgb(233 185 73 / 0.28), transparent);
+  }
+  .datastrip::after {
+    content: "";
+    position: absolute;
+    inset-block: 0;
+    width: 22%;
+    background: linear-gradient(90deg, transparent, var(--color-gold), transparent);
+    animation: strip 3.6s linear infinite;
+  }
+  @keyframes strip {
+    from {
+      transform: translateX(-120%);
+    }
+    to {
+      transform: translateX(560%);
+    }
+  }
+
+  /* 3D carousel for the collaborator strip: items sit on a cylinder. */
+  .stage3d {
+    perspective: 1200px;
+    perspective-origin: 50% 45%;
+  }
+  .stage3d-track {
+    transform-style: preserve-3d;
+  }
+  .coin {
+    transform-style: preserve-3d;
+    /* Cards on the far side of the cylinder face away from the viewer, so their
+       text renders mirrored. Hiding backfaces drops them entirely, which is what
+       makes the ring read as a coverflow rather than a jumble. */
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+    transition:
+      transform 0.5s var(--ease-out-expo),
+      filter 0.5s var(--ease-out-expo),
+      opacity 0.4s var(--ease-out-expo);
+  }
+  .coin:hover {
+    transform: translateZ(70px) rotateY(0deg) scale(1.06) !important;
+    filter: brightness(1.15);
+    z-index: 5;
+  }
+
   /* Thin gold rule with a soft falloff, for section breaks. */
   .rule-gold {
     height: 1px;
@@ -381,31 +527,29 @@
     animation: draw 1.8s var(--ease-out-expo) forwards;
   }
 
-  /* Marquee for the collaborator strip. Kept in CSS so hovering can pause it
-     with animation-play-state — a JS-driven transform cannot be paused. */
-  @keyframes marquee {
+  /* Rotating 3D collaborator ring. CSS animation so hovering the stage can
+     pause it — a JS-driven transform cannot be paused. translateZ keeps the
+     ring pushed back so cards orbit toward the viewer. */
+  @keyframes ring-spin {
+    from {
+      transform: translate(-50%, -50%) translateZ(calc(var(--ring-radius, 520px) * -1))
+        rotateY(0deg);
+    }
     to {
-      transform: translateX(-50%);
+      transform: translate(-50%, -50%) translateZ(calc(var(--ring-radius, 520px) * -1))
+        rotateY(-360deg);
     }
   }
-  .marquee-track {
-    animation: marquee var(--marquee-duration, 30s) linear infinite;
-    will-change: transform;
+  .ring-spin {
+    animation: ring-spin var(--ring-duration, 32s) linear infinite;
   }
-  .marquee:hover .marquee-track,
-  .marquee:focus-within .marquee-track {
+  .stage3d:hover .ring-spin,
+  .stage3d:focus-within .ring-spin {
     animation-play-state: paused;
   }
   @media (prefers-reduced-motion: reduce) {
-    .marquee-track {
+    .ring-spin {
       animation: none;
-    }
-    /* Without the scroll the duplicate row is dead weight, so hide it. */
-    .marquee-track > div[aria-hidden="true"] {
-      display: none;
-    }
-    .marquee {
-      overflow-x: auto;
     }
   }
 
@@ -420,6 +564,10 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
+    .datastrip::after {
+      animation: none;
+      display: none;
+    }
     *,
     *::before,
     *::after {

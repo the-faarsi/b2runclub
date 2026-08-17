@@ -176,4 +176,106 @@ router.post(
     }
 );
 
+/**
+ * Development-only: settle a mock order without Razorpay.
+ *
+ * With placeholder credentials the backend mints `order_mock_*` ids that real
+ * Checkout would reject, so a paid registration could never leave PENDING and
+ * the flow was impossible to demonstrate. This completes it locally.
+ *
+ * Three hard guards, all of which must hold:
+ *  - NODE_ENV must not be "production",
+ *  - the backend must actually be in mock mode (placeholder key id),
+ *  - the order id must carry the `order_mock_` prefix.
+ *
+ * With real keys configured, this route refuses every request and the genuine
+ * Checkout → /verify path is the only way to pay.
+ */
+const isMockMode =
+    !process.env.RAZORPAY_KEY_ID || process.env.RAZORPAY_KEY_ID === "rzp_test_YourTestKeyId";
+
+router.post(
+    "/simulate",
+    requireRole(["MEMBER", "VOLUNTEER", "ADMIN"]),
+    async (req: AuthRequest, res: Response): Promise<void> => {
+        try {
+            if (process.env.NODE_ENV === "production") {
+                res.status(404).json({ error: "Not found" });
+                return;
+            }
+            if (!isMockMode) {
+                res.status(400).json({
+                    error: "Razorpay keys are configured — use the real Checkout flow.",
+                });
+                return;
+            }
+
+            const { registration_id } = req.body;
+            if (!registration_id) {
+                res.status(400).json({ error: "registration_id is required" });
+                return;
+            }
+
+            const registration = await prisma.eventRegistration.findUnique({
+                where: { id: registration_id },
+                include: { event: true },
+            });
+
+            if (!registration) {
+                res.status(404).json({ error: "Registration not found" });
+                return;
+            }
+
+            if (registration.user_id !== req.user!.id && req.user!.role !== "ADMIN") {
+                res.status(403).json({ error: "You can only settle your own registration" });
+                return;
+            }
+
+            if (!registration.razorpay_order_id?.startsWith("order_mock_")) {
+                res.status(400).json({
+                    error: "This registration has a real Razorpay order — pay through Checkout.",
+                });
+                return;
+            }
+
+            if (registration.status === "PAID") {
+                res.json({ message: "Already paid", registration, changed: false });
+                return;
+            }
+
+            const updated = await prisma.eventRegistration.update({
+                where: { id: registration.id },
+                data: { status: "PAID", razorpay_payment_id: `pay_simulated_${Date.now()}` },
+            });
+
+            await prisma.notification.create({
+                data: {
+                    user_id: registration.user_id,
+                    message: `Payment simulated for "${registration.event.title}" (development mode). Your ticket is live.`,
+                    link: `/api/events/registration/${registration.id}/ticket`,
+                },
+            });
+
+            res.json({
+                message: "Payment simulated — your ticket is live",
+                registration: updated,
+                changed: true,
+                simulated: true,
+            });
+        } catch (error: any) {
+            res.status(500).json({ error: error.message || "Simulation failed" });
+        }
+    }
+);
+
+/** Lets the client know whether real Checkout is available. */
+router.get("/config", async (_req: AuthRequest, res: Response): Promise<void> => {
+    res.json({
+        mock_mode: isMockMode,
+        // Publishable key only — never the secret.
+        key_id: isMockMode ? null : process.env.RAZORPAY_KEY_ID,
+        simulation_available: isMockMode && process.env.NODE_ENV !== "production",
+    });
+});
+
 export default router;
