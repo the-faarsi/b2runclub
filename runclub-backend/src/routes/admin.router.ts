@@ -1,6 +1,9 @@
 import { Router, Response } from "express";
 import prisma from "../utils/prisma";
 import { AuthRequest, requireRole } from "../middleware/auth";
+import { ALLOWED_OFFSETS, sweepReminders } from "../utils/reminders";
+import { mailerConfigured, verifyMailer } from "../utils/mailer";
+import { getAthleteStatsByUser } from "../utils/strava";
 
 const router = Router();
 
@@ -116,6 +119,12 @@ router.get("/events/:id/registrations", requireRole(["ADMIN"]), async (req: Auth
                 waiver_signed: r.waiver_signed,
                 payment_id: r.razorpay_payment_id,
                 blocked_at: r.blocked_at,
+                // Attendance and refund state, so the roster can drive check-in
+                // and refunds without a second request per row.
+                attended_at: r.attended_at,
+                refund_id: r.refund_id,
+                refunded_at: r.refunded_at,
+                refund_amount: r.refund_amount,
             }))
         );
     } catch (error: any) {
@@ -189,37 +198,122 @@ router.put("/registrations/:id/block", requireRole(["ADMIN"]), async (req: AuthR
     }
 });
 
+/** 2d. Reminder schedule and delivery status for one event (Admin only). */
+router.get("/events/:id/reminders", requireRole(["ADMIN"]), async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const eventId = req.params.id as string;
+        const event = await prisma.event.findUnique({ where: { id: eventId } });
+        if (!event) {
+            res.status(404).json({ error: "Event not found" });
+            return;
+        }
+
+        const reminders = (await prisma.eventReminder.findMany({
+            where: { event_id: eventId },
+            orderBy: { hours_before: "desc" },
+            include: { deliveries: true },
+        })) as any[];
+
+        const start = new Date(event.date_time).getTime();
+
+        res.json({
+            allowed_offsets: ALLOWED_OFFSETS,
+            mailer_configured: mailerConfigured,
+            reminders: reminders.map((r) => {
+                const dueAt = new Date(start - r.hours_before * 3600_000);
+                return {
+                    id: r.id,
+                    hours_before: r.hours_before,
+                    due_at: dueAt,
+                    // Not yet due, due now, or already fired for everyone.
+                    state: r.deliveries.length > 0 ? "sent" : dueAt <= new Date() ? "due" : "scheduled",
+                    sent_count: r.deliveries.filter((d: any) => d.status === "SENT").length,
+                    failed_count: r.deliveries.filter((d: any) => d.status === "FAILED").length,
+                };
+            }),
+        });
+    } catch (error: any) {
+        res.status(500).json({ error: error.message || "Failed to fetch reminders" });
+    }
+});
+
+/** 2e. Run the sweep now for one event (Admin only). Idempotent. */
+router.post("/events/:id/reminders/run", requireRole(["ADMIN"]), async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const summary = await sweepReminders(req.params.id as string);
+        res.json({
+            message: summary.sent
+                ? `${summary.sent} reminder${summary.sent === 1 ? "" : "s"} sent`
+                : "Nothing was due — no reminders sent",
+            ...summary,
+        });
+    } catch (error: any) {
+        res.status(500).json({ error: error.message || "Failed to run reminders" });
+    }
+});
+
+/** 2f. Email diagnostics (Admin only). */
+router.get("/mailer", requireRole(["ADMIN"]), async (_req: AuthRequest, res: Response): Promise<void> => {
+    const result = await verifyMailer();
+    res.json({
+        configured: mailerConfigured,
+        ok: result.ok,
+        simulated: result.simulated,
+        error: result.error ?? null,
+    });
+});
+
 // 3. Member directory (Admin only)
-// The club roster of people, as opposed to a single event's roster. Needed so an
-// organiser can find someone before changing their role.
+// The club roster of people, as opposed to a single event's roster. Carries the
+// contact and Strava detail an organiser actually needs on event day.
 router.get("/members", requireRole(["ADMIN"]), async (req: AuthRequest, res: Response): Promise<void> => {
     try {
-        const members = await prisma.user.findMany({
-            orderBy: [{ role: "asc" }, { name: "asc" }],
-            select: {
-                id: true,
-                name: true,
-                email: true,
-                role: true,
-                created_at: true,
-                emergency_contact: true,
-                strava_id: true,
-                _count: { select: { registrations: true } },
-            },
-        }) as any;
+        const [members, stats] = await Promise.all([
+            prisma.user.findMany({
+                orderBy: [{ role: "asc" }, { name: "asc" }],
+                select: {
+                    id: true,
+                    name: true,
+                    email: true,
+                    role: true,
+                    created_at: true,
+                    emergency_contact: true,
+                    strava_id: true,
+                    _count: { select: { registrations: true } },
+                },
+            }) as any,
+            getAthleteStatsByUser(),
+        ]);
 
-        // Flatten the Prisma _count shape; never expose password_hash.
+        // Never expose password_hash; everything else here is deliberate — an
+        // organiser needs the emergency contact on the day, and this route is
+        // ADMIN-only.
         res.json(
-            (members as any[]).map((m) => ({
-                id: m.id,
-                name: m.name,
-                email: m.email,
-                role: m.role,
-                created_at: m.created_at,
-                has_emergency_contact: Boolean(m.emergency_contact),
-                strava_linked: Boolean(m.strava_id),
-                registration_count: m._count.registrations,
-            }))
+            (members as any[]).map((m) => {
+                const s = stats.get(m.id);
+                return {
+                    id: m.id,
+                    name: m.name,
+                    email: m.email,
+                    role: m.role,
+                    created_at: m.created_at,
+                    emergency_contact: m.emergency_contact,
+                    has_emergency_contact: Boolean(m.emergency_contact),
+                    strava_id: m.strava_id,
+                    strava_linked: Boolean(m.strava_id),
+                    // Present only for linked athletes.
+                    strava: s
+                        ? {
+                              rank: s.rank,
+                              weekly_distance_km: s.weekly_distance_km,
+                              runs_count: s.runs_count,
+                              moving_time_mins: s.moving_time_mins,
+                              avg_pace: s.avg_pace,
+                          }
+                        : null,
+                    registration_count: m._count.registrations,
+                };
+            })
         );
     } catch (error: any) {
         res.status(500).json({ error: error.message || "Failed to fetch members" });

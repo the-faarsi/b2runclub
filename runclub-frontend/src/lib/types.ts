@@ -52,6 +52,11 @@ export interface EventRegistrationRow {
   waiver_signed: boolean;
   payment_id: string | null;
   blocked_at: string | null;
+  /** Set when the ticket was scanned at the start line. */
+  attended_at: string | null;
+  refund_id: string | null;
+  refunded_at: string | null;
+  refund_amount: number | null;
 }
 
 export interface Author {
@@ -118,6 +123,15 @@ export interface Notification {
   created_at: string;
 }
 
+/** Strava figures for a linked athlete, shared with the leaderboard. */
+export interface MemberStrava {
+  rank: number;
+  weekly_distance_km: number;
+  runs_count: number;
+  moving_time_mins: number;
+  avg_pace: string;
+}
+
 /** A row of the admin member directory. Never carries a password hash. */
 export interface Member {
   id: string;
@@ -125,8 +139,13 @@ export interface Member {
   email: string;
   role: Role;
   created_at: string;
+  /** The actual number — organisers need it on event day. Admin-only route. */
+  emergency_contact: string | null;
   has_emergency_contact: boolean;
+  strava_id: string | null;
   strava_linked: boolean;
+  /** Null unless Strava is linked. */
+  strava: MemberStrava | null;
   registration_count: number;
 }
 
@@ -176,6 +195,8 @@ export interface Photo {
   url: string;
   caption: string | null;
   event_id: string | null;
+  /** Title of the tagged event, so the gallery filter can label itself. */
+  event_title: string | null;
   created_at: string;
   uploader: Author;
 }
@@ -205,4 +226,264 @@ export interface Collaborator {
   tier: CollaboratorTier;
   sort_order: number;
   created_at: string;
+}
+
+/* ── Event email reminders ──────────────────────────────────── */
+
+/** Offsets an organiser may pick, in hours before the start. */
+export const REMINDER_OFFSETS = [168, 72, 48, 24, 12, 4, 2, 1] as const;
+
+export interface EventReminder {
+  id: string;
+  hours_before: number;
+  due_at: string;
+  /** "scheduled" = not yet due · "due" = window open · "sent" = already emailed. */
+  state: "scheduled" | "due" | "sent";
+  sent_count: number;
+  failed_count: number;
+}
+
+export interface ReminderSchedule {
+  allowed_offsets: number[];
+  /** False when SMTP is unset — reminders are logged, not emailed. */
+  mailer_configured: boolean;
+  reminders: EventReminder[];
+}
+
+export interface SweepResult {
+  message: string;
+  checked: number;
+  sent: number;
+  failed: number;
+  skipped: number;
+  simulated: boolean;
+}
+
+/* ── Results ────────────────────────────────────────────────── */
+
+export type ResultStatus = "FINISHED" | "DNF" | "DNS";
+
+export const RESULT_STATUSES: ResultStatus[] = ["FINISHED", "DNF", "DNS"];
+
+/** One line of a published results sheet. `position` is null for DNF/DNS. */
+export interface ResultRow {
+  id: string;
+  position: number | null;
+  user_id: string;
+  name: string;
+  finish_secs: number | null;
+  finish_time: string | null;
+  distance_km: number | null;
+  pace: string | null;
+  /** Gap to the winner in seconds; 0 for the winner, null for non-finishers. */
+  behind_secs: number | null;
+  status: ResultStatus;
+  notes: string | null;
+}
+
+export interface EventResults {
+  event: { id: string; title: string; date_time: string };
+  finisher_count: number;
+  results: ResultRow[];
+}
+
+export interface MyResultRow {
+  id: string;
+  event_id: string;
+  event_title: string;
+  event_date: string;
+  finish_secs: number | null;
+  finish_time: string | null;
+  distance_km: number | null;
+  pace: string | null;
+  status: ResultStatus;
+}
+
+export interface MyResults {
+  results: MyResultRow[];
+  totals: { events_finished: number; total_distance_km: number; total_secs: number };
+}
+
+/* ── Post-event feedback ────────────────────────────────────── */
+
+export interface MyFeedback {
+  submitted: boolean;
+  rating: number | null;
+  comment: string | null;
+}
+
+export interface FeedbackSummary {
+  count: number;
+  average: number | null;
+  distribution: { score: number; count: number }[];
+  responses: {
+    id: string;
+    name: string;
+    rating: number;
+    comment: string | null;
+    created_at: string;
+  }[];
+}
+
+/* ── Attendance streaks & badges ────────────────────────────── */
+
+export interface StreakBadge {
+  key: string;
+  label: string;
+  detail: string;
+  earned: boolean;
+}
+
+export interface StreakSummary {
+  attended_count: number;
+  volunteered_count: number;
+  current_streak_weeks: number;
+  best_streak_weeks: number;
+  last_attended: { at: string; title: string } | null;
+  badges: StreakBadge[];
+  earned_count: number;
+}
+
+/* ── Race day: check-in, shifts, checkpoints ────────────────── */
+
+/**
+ * A scan outcome. The backend answers 200 for an already-scanned ticket rather
+ * than an error, so `already_checked_in` is the flag the scanner UI branches on.
+ */
+export interface CheckInResult {
+  message: string;
+  already_checked_in: boolean;
+  name: string;
+  role_at_event?: string;
+  attended_at: string;
+  event_title: string;
+}
+
+export interface Shift {
+  id: string;
+  title: string;
+  location_note: string | null;
+  capacity: number;
+  sort_order: number;
+  assigned: { user_id: string; name: string; role?: Role }[];
+  open_slots: number;
+  /** True when the signed-in crew member is on this shift. */
+  mine: boolean;
+}
+
+export interface Checkpoint {
+  id: string;
+  name: string;
+  distance_km: number | null;
+  sort_order: number;
+  passed: number;
+  splits: { user_id: string; name: string; recorded_at: string }[];
+}
+
+export interface RaceDayDashboard {
+  event: {
+    id: string;
+    title: string;
+    date_time: string;
+    location: string;
+    status: EventStatus;
+  };
+  turnout: {
+    registered: number;
+    expected: number;
+    checked_in: number;
+    awaiting_payment: number;
+    blocked: number;
+    no_show: number;
+  };
+  recent_check_ins: {
+    registration_id: string;
+    /** Checkpoint splits key on the user, so this is what a tap-through sends. */
+    user_id: string;
+    name: string;
+    role_at_event: string;
+    attended_at: string;
+  }[];
+  not_yet_in: { registration_id: string; user_id: string; name: string }[];
+  shifts: {
+    id: string;
+    title: string;
+    location_note: string | null;
+    capacity: number;
+    assigned: { user_id: string; name: string }[];
+    open_slots: number;
+  }[];
+  checkpoints: {
+    id: string;
+    name: string;
+    distance_km: number | null;
+    passed: number;
+    last_at: string | null;
+  }[];
+}
+
+/* ── Route map ──────────────────────────────────────────────── */
+
+/**
+ * Track geometry already normalised to a 0–1 box by the backend, so the client
+ * draws an SVG path with no mapping library and no API key. Aspect ratio is
+ * preserved, which is why x and y do not both span the full 0–1.
+ */
+export interface RouteGeometry {
+  distance_km: number | null;
+  elevation_m: number | null;
+  point_count: number;
+  points: { x: number; y: number }[];
+  elevation_profile: {
+    min: number;
+    max: number;
+    points: (number | null)[];
+  } | null;
+}
+
+export interface RouteSummary {
+  message: string;
+  event: ClubEvent;
+  summary: { distance_km: number; elevation_m: number; point_count: number };
+}
+
+/* ── Health app sync ────────────────────────────────────────── */
+
+export interface HealthWorkout {
+  id: string;
+  /** "apple_health" or "gpx". */
+  source: string;
+  activity_type: string;
+  started_at: string;
+  duration_secs: number;
+  distance_km: number | null;
+  energy_kcal: number | null;
+  device: string | null;
+}
+
+export interface HealthTotals {
+  workouts: number;
+  distance_km: number;
+  moving_secs: number;
+}
+
+export interface HealthSummary {
+  workouts: HealthWorkout[];
+  total_count: number;
+  last_7_days: HealthTotals;
+  last_30_days: HealthTotals;
+  all_time: HealthTotals;
+  by_type: { activity_type: string; count: number; distance_km: number }[];
+  last_synced: string | null;
+}
+
+export interface HealthImportResult {
+  message: string;
+  added: number;
+  updated: number;
+  parsed: number;
+  seen: number;
+  /** True when the export was larger than the parser's cap. */
+  truncated: boolean;
+  source: string;
 }

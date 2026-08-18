@@ -89,6 +89,56 @@ export function countdown(iso: string) {
   return `${mins}m`;
 }
 
+/**
+ * Seconds as a results-sheet clock: 24:50, or 1:23:45 once it passes an hour.
+ * Mirrors the backend's own formatter so a locally-edited row reads identically
+ * to one that has come back from the server.
+ */
+export function secsToClock(secs: number): string {
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  const s = Math.floor(secs % 60);
+  return h > 0
+    ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`
+    : `${m}:${String(s).padStart(2, "0")}`;
+}
+
+/**
+ * Parses a finish time an organiser types in. Accepts "mm:ss", "h:mm:ss" and a
+ * bare number of minutes, since all three are things people write on a clipboard.
+ * Returns null for anything unparseable so the caller can refuse it.
+ */
+export function parseClock(input: string): number | null {
+  const text = input.trim();
+  if (!text) return null;
+
+  const parts = text.split(":");
+  if (parts.length > 3) return null;
+
+  // A bare number means minutes — "45" is a 45-minute run, not 45 seconds.
+  if (parts.length === 1) {
+    const mins = Number(parts[0]);
+    return Number.isFinite(mins) && mins > 0 ? Math.round(mins * 60) : null;
+  }
+
+  const nums = parts.map((p) => Number(p));
+  if (nums.some((n) => !Number.isFinite(n) || n < 0)) return null;
+
+  // Only the leading unit may exceed 59 — "75:00" is a valid 75-minute time.
+  if (nums.slice(1).some((n) => n > 59)) return null;
+
+  const secs =
+    parts.length === 2 ? nums[0] * 60 + nums[1] : nums[0] * 3600 + nums[1] * 60 + nums[2];
+
+  return secs > 0 ? Math.round(secs) : null;
+}
+
+/** Gap to the winner, the way a results sheet prints it. */
+export function gapLabel(behindSecs: number | null): string | null {
+  if (behindSecs === null || behindSecs <= 0) return null;
+  return `+${secsToClock(behindSecs)}`;
+}
+
 export function minsToHm(mins: number) {
   const h = Math.floor(mins / 60);
   const m = mins % 60;

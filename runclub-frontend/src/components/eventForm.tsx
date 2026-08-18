@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
+import { REMINDER_OFFSETS } from "../lib/types";
 import type { ClubEvent, EventStatus } from "../lib/types";
+import { cn } from "../lib/format";
 import { Button, Field, Input, Modal, Select } from "./ui";
 
 export const EVENT_TYPES = ["Run", "Cycle", "Swim", "Race", "Training", "Social", "Party"];
@@ -26,6 +28,18 @@ export function toLocalInput(iso: string) {
 export function dayKeyToLocalInput(dayKey: string) {
   return `${dayKey}T${pad(DEFAULT_START_HOUR)}:${pad(DEFAULT_START_MINUTE)}`;
 }
+
+/** Human labels for the offsets an organiser can pick. */
+const OFFSET_LABEL: Record<number, string> = {
+  168: "1 week",
+  72: "3 days",
+  48: "2 days",
+  24: "1 day",
+  12: "12 hours",
+  4: "4 hours",
+  2: "2 hours",
+  1: "1 hour",
+};
 
 const BLANK = {
   title: "",
@@ -57,8 +71,29 @@ export function EventFormModal({
 }) {
   const editing = Boolean(event);
   const [form, setForm] = useState(BLANK);
+  const [offsets, setOffsets] = useState<number[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Existing reminders come from the admin schedule endpoint, not the event
+  // record, so they are fetched when the dialog opens on an existing event.
+  useEffect(() => {
+    if (!open) {
+      setOffsets([]);
+      return;
+    }
+    if (!event) return;
+    let cancelled = false;
+    api
+      .eventReminders(event.id)
+      .then((s) => {
+        if (!cancelled) setOffsets(s.reminders.map((r) => r.hours_before));
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [open, event]);
 
   useEffect(() => {
     if (!open) return;
@@ -107,6 +142,7 @@ export function EventFormModal({
         location: form.location.trim(),
         price,
         status: form.status,
+        reminder_offsets: offsets,
       };
 
       const res = event
@@ -193,6 +229,47 @@ export function EventFormModal({
               <option value="ARCHIVED">Archived</option>
             </Select>
           </Field>
+        </div>
+
+        {/* Email reminders */}
+        <div className="rounded-xl border border-white/8 bg-surface-2/40 p-4">
+          <p className="eyebrow text-ink-2">Email reminders</p>
+          <p className="mt-1.5 text-[12px] leading-relaxed text-ink-3">
+            Registrants get one email per box you tick. Each is sent once, and only for
+            published events that haven't started.
+          </p>
+
+          <div className="mt-3.5 flex flex-wrap gap-2">
+            {REMINDER_OFFSETS.map((h) => {
+              const on = offsets.includes(h);
+              return (
+                <button
+                  key={h}
+                  type="button"
+                  aria-pressed={on}
+                  onClick={() =>
+                    setOffsets((prev) =>
+                      prev.includes(h) ? prev.filter((x) => x !== h) : [...prev, h],
+                    )
+                  }
+                  className={cn(
+                    "rounded-lg border px-2.5 py-1.5 text-[12px] font-medium transition-all duration-200",
+                    on
+                      ? "border-gold bg-gold/14 text-gold"
+                      : "border-white/12 text-ink-3 hover:border-white/25 hover:text-ink-2",
+                  )}
+                >
+                  {OFFSET_LABEL[h] ?? `${h}h`}
+                </button>
+              );
+            })}
+          </div>
+
+          <p className="mt-3 text-[11px] text-ink-3">
+            {offsets.length === 0
+              ? "No reminders — nobody will be emailed about this event."
+              : `${offsets.length} reminder${offsets.length === 1 ? "" : "s"} per registrant.`}
+          </p>
         </div>
 
         {error && (

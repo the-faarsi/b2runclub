@@ -5,6 +5,7 @@ import path from "path";
 import multer from "multer";
 import prisma from "../utils/prisma";
 import { AuthRequest, requireRole } from "../middleware/auth";
+import { parseGpx, summariseRoute } from "../utils/gpx";
 
 const router = Router();
 
@@ -49,11 +50,19 @@ const upload = multer({
 /* ── Gallery ──────────────────────────────────────────────── */
 
 // 1. List photos — open to everyone, including visitors (view-only page).
-router.get("/gallery", async (_req: AuthRequest, res: Response): Promise<void> => {
+// `?event_id=` filters to one session, which is what the event page uses.
+router.get("/gallery", async (req: AuthRequest, res: Response): Promise<void> => {
     try {
+        const eventId = typeof req.query.event_id === "string" ? req.query.event_id : undefined;
         const photos = await prisma.photo.findMany({
+            where: eventId ? { event_id: eventId } : {},
             orderBy: { created_at: "desc" },
-            include: { uploader: { select: { id: true, name: true, role: true } } },
+            include: {
+                uploader: { select: { id: true, name: true, role: true } },
+                // Carried so the gallery can label its "by event" filter without
+                // a second request per tagged event.
+                event: { select: { title: true } },
+            },
         }) as any;
 
         res.json(
@@ -62,6 +71,7 @@ router.get("/gallery", async (_req: AuthRequest, res: Response): Promise<void> =
                 url: p.url,
                 caption: p.caption,
                 event_id: p.event_id,
+                event_title: p.event?.title ?? null,
                 created_at: p.created_at,
                 uploader: p.uploader,
             }))
@@ -310,5 +320,144 @@ router.delete(
         }
     }
 );
+
+/* ── Route GPX ────────────────────────────────────────────────
+ * A GPX file is XML with a list of track points. Rather than pull in a parser,
+ * the points are extracted with a regex and the distance computed with the
+ * haversine formula — enough for a route summary, and no new dependency.
+ */
+
+const GPX_DIR = UPLOAD_DIR;
+
+const gpxUpload = multer({
+    storage: multer.diskStorage({
+        destination: (_req, _file, cb) => cb(null, GPX_DIR),
+        filename: (_req, _file, cb) =>
+            cb(null, `${Date.now()}-${crypto.randomBytes(6).toString("hex")}.gpx`),
+    }),
+    limits: { fileSize: 5 * 1024 * 1024, files: 1 },
+    fileFilter: (_req, file, cb) => {
+        const ok =
+            file.mimetype.includes("gpx") ||
+            file.mimetype === "application/xml" ||
+            file.mimetype === "text/xml" ||
+            file.originalname.toLowerCase().endsWith(".gpx");
+        if (ok) return cb(null, true);
+        cb(new Error("Upload a .gpx file"));
+    },
+});
+
+/** 9. Attach a GPX route to an event (Admin only). */
+router.post("/events/:id/route", requireRole(["ADMIN"]), (req: AuthRequest, res: Response) => {
+    gpxUpload.single("gpx")(req as any, res as any, async (err: any) => {
+        try {
+            if (err) {
+                res.status(400).json({ error: err.message || "Upload rejected" });
+                return;
+            }
+            const file = (req as any).file as { filename: string; path: string } | undefined;
+            if (!file) {
+                res.status(400).json({ error: "Attach a .gpx file" });
+                return;
+            }
+
+            const xml = await fs.promises.readFile(file.path, "utf8");
+            const points = parseGpx(xml);
+
+            if (points.length < 2) {
+                // Remove the useless file rather than leaving it on disk.
+                await fs.promises.unlink(file.path).catch(() => undefined);
+                res.status(400).json({ error: "No track points found in that GPX file" });
+                return;
+            }
+
+            const summary = summariseRoute(points);
+
+            const event = await prisma.event.update({
+                where: { id: req.params.id as string },
+                data: {
+                    route_gpx_url: `/uploads/${file.filename}`,
+                    route_distance_km: summary.distance_km,
+                    route_elevation_m: summary.elevation_m,
+                },
+            });
+
+            res.json({
+                message: `Route attached — ${summary.distance_km} km, ${summary.elevation_m} m climb`,
+                event,
+                summary,
+            });
+        } catch (error: any) {
+            res.status(500).json({ error: error.message || "Failed to attach the route" });
+        }
+    });
+});
+
+/**
+ * 10. Route geometry for drawing. Returns points normalised to a 0–1 box so the
+ * client can render an SVG without a mapping library or an API key.
+ */
+router.get("/events/:id/route", async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const event = await prisma.event.findUnique({ where: { id: req.params.id as string } });
+        if (!event?.route_gpx_url) {
+            res.status(404).json({ error: "No route attached to this event" });
+            return;
+        }
+
+        const filename = path.basename(event.route_gpx_url);
+        const full = path.join(UPLOAD_DIR, filename);
+        if (!full.startsWith(UPLOAD_DIR + path.sep)) {
+            res.status(400).json({ error: "Invalid route path" });
+            return;
+        }
+
+        const xml = await fs.promises.readFile(full, "utf8");
+        const points = parseGpx(xml);
+        if (points.length < 2) {
+            res.status(400).json({ error: "Route file has no usable track" });
+            return;
+        }
+
+        const lats = points.map((p) => p.lat);
+        const lons = points.map((p) => p.lon);
+        const minLat = Math.min(...lats);
+        const maxLat = Math.max(...lats);
+        const minLon = Math.min(...lons);
+        const maxLon = Math.max(...lons);
+
+        // Correct for longitude compressing with latitude, or the shape skews.
+        const midLat = ((minLat + maxLat) / 2) * (Math.PI / 180);
+        const spanLat = Math.max(1e-9, maxLat - minLat);
+        const spanLon = Math.max(1e-9, (maxLon - minLon) * Math.cos(midLat));
+        const span = Math.max(spanLat, spanLon);
+
+        // Thin very dense tracks — an SVG path does not need 20k points.
+        const stride = Math.max(1, Math.floor(points.length / 600));
+        const thinned = points.filter((_, i) => i % stride === 0);
+
+        const elevations = thinned.map((p) => p.ele).filter((e): e is number => e !== null);
+
+        res.json({
+            distance_km: event.route_distance_km,
+            elevation_m: event.route_elevation_m,
+            point_count: points.length,
+            // y is flipped so the path draws the right way up in SVG space.
+            points: thinned.map((p) => ({
+                x: Number((((p.lon - minLon) * Math.cos(midLat)) / span).toFixed(5)),
+                y: Number((1 - (p.lat - minLat) / span).toFixed(5)),
+            })),
+            elevation_profile: elevations.length
+                ? {
+                      min: Math.round(Math.min(...elevations)),
+                      max: Math.round(Math.max(...elevations)),
+                      points: thinned.map((p) => p.ele),
+                  }
+                : null,
+        });
+    } catch (error: any) {
+        res.status(500).json({ error: error.message || "Failed to read the route" });
+    }
+});
 
 export default router;

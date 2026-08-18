@@ -1,4 +1,4 @@
-import { motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import { useCallback, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { StatTile } from "../../components/charts";
@@ -23,11 +23,11 @@ import {
 } from "../../components/ui";
 import { api } from "../../lib/api";
 import { useAuth } from "../../lib/auth";
-import { cn, fullDate, ROLE_META } from "../../lib/format";
+import { cn, fullDate, minsToHm, ROLE_META } from "../../lib/format";
 import type { AssignableRole, Member } from "../../lib/types";
 import { useFetch } from "../../lib/useFetch";
 
-type Filter = "all" | "MEMBER" | "VOLUNTEER" | "VISITOR" | "ADMIN";
+type Filter = "all" | "MEMBER" | "VOLUNTEER" | "VISITOR" | "ADMIN" | "STRAVA";
 
 const ROLE_TINT: Record<string, string> = {
   ADMIN: "var(--color-gold)",
@@ -45,6 +45,31 @@ const ROLE_EXPLAINER: Record<AssignableRole, string> = {
     "Read-only. Can browse events, polls and the leaderboard, but cannot register, post or vote.",
 };
 
+/** One labelled fact in the expanded detail grid. */
+function Detail({
+  label,
+  value,
+  warn = false,
+}: {
+  label: string;
+  value: string | null;
+  warn?: boolean;
+}) {
+  return (
+    <div className="bg-surface p-3.5">
+      <p className="eyebrow">{label}</p>
+      <p
+        className={cn(
+          "mt-1 break-words text-[13.5px] font-medium",
+          value ? "text-ink" : warn ? "text-[color:var(--color-pending)]" : "text-ink-3",
+        )}
+      >
+        {value || "Not set"}
+      </p>
+    </div>
+  );
+}
+
 export function ManageMembers() {
   const { user } = useAuth();
   const toast = useToast();
@@ -55,6 +80,8 @@ export function ManageMembers() {
   const [filter, setFilter] = useState<Filter>("all");
   const [query, setQuery] = useState("");
   const [pending, setPending] = useState<{ member: Member; role: AssignableRole } | null>(null);
+  /** Which row has its full detail panel open. */
+  const [expanded, setExpanded] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [celebrate, setCelebrate] = useState(false);
 
@@ -67,12 +94,18 @@ export function ManageMembers() {
       VOLUNTEER: members.filter((m) => m.role === "VOLUNTEER").length,
       MEMBER: members.filter((m) => m.role === "MEMBER").length,
       VISITOR: members.filter((m) => m.role === "VISITOR").length,
+      STRAVA: members.filter((m) => m.strava_linked).length,
     }),
     [members],
   );
 
   const visible = useMemo(() => {
-    let list = filter === "all" ? members : members.filter((m) => m.role === filter);
+    let list =
+      filter === "all"
+        ? members
+        : filter === "STRAVA"
+          ? members.filter((m) => m.strava_linked)
+          : members.filter((m) => m.role === filter);
     const q = query.trim().toLowerCase();
     if (q) {
       list = list.filter(
@@ -172,6 +205,7 @@ export function ManageMembers() {
             { value: "MEMBER", label: "Members", count: counts.MEMBER },
             { value: "VOLUNTEER", label: "Volunteers", count: counts.VOLUNTEER },
             { value: "VISITOR", label: "Visitors", count: counts.VISITOR },
+            { value: "STRAVA", label: "On Strava", count: counts.STRAVA },
           ]}
         />
 
@@ -268,10 +302,12 @@ export function ManageMembers() {
                         </span>
                         <span>·</span>
                         <span>Joined {fullDate(m.created_at)}</span>
-                        {m.strava_linked && (
+                        {m.strava?.weekly_distance_km !== undefined && (
                           <>
                             <span>·</span>
-                            <span>Strava linked</span>
+                            <span className="tnum text-[color:var(--color-free)]">
+                              #{m.strava.rank} · {m.strava.weekly_distance_km} km this week
+                            </span>
                           </>
                         )}
                         {!m.has_emergency_contact && m.role !== "VISITOR" && (
@@ -282,6 +318,14 @@ export function ManageMembers() {
                             </span>
                           </>
                         )}
+                        <span>·</span>
+                        <button
+                          onClick={() => setExpanded(expanded === m.id ? null : m.id)}
+                          aria-expanded={expanded === m.id}
+                          className="font-semibold text-gold transition-opacity hover:opacity-75"
+                        >
+                          {expanded === m.id ? "Hide details" : "Full details"}
+                        </button>
                       </p>
                     </div>
 
@@ -322,6 +366,70 @@ export function ManageMembers() {
                       )}
                     </div>
                   </div>
+
+                  {/* Full detail — contact and Strava, admin-only by route */}
+                  <AnimatePresence initial={false}>
+                    {expanded === m.id && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: "auto", opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
+                        className="overflow-hidden"
+                      >
+                        <div className="mt-4 grid gap-px overflow-hidden rounded-xl border border-white/8 bg-white/8 sm:grid-cols-2">
+                          <Detail label="Email" value={m.email} />
+                          <Detail
+                            label="Emergency contact"
+                            value={m.emergency_contact}
+                            warn={!m.emergency_contact}
+                          />
+                          <Detail label="Club role" value={(ROLE_META[m.role] ?? ROLE_META.MEMBER).label} />
+                          <Detail label="Joined" value={fullDate(m.created_at)} />
+                          <Detail
+                            label="Registrations"
+                            value={String(m.registration_count)}
+                          />
+                          <Detail
+                            label="Strava athlete ID"
+                            value={m.strava_id}
+                            warn={!m.strava_id}
+                          />
+                        </div>
+
+                        {m.strava ? (
+                          <div className="mt-3 rounded-xl border border-[color:var(--color-free)]/25 bg-[color:var(--color-free)]/6 p-4">
+                            <p className="eyebrow text-[color:var(--color-free)]">
+                              Strava — this week
+                            </p>
+                            <div className="mt-3 grid grid-cols-2 gap-4 sm:grid-cols-4">
+                              {[
+                                { l: "Club rank", v: `#${m.strava.rank}` },
+                                { l: "Distance", v: `${m.strava.weekly_distance_km} km` },
+                                { l: "Runs", v: String(m.strava.runs_count) },
+                                { l: "Avg pace", v: m.strava.avg_pace },
+                              ].map((x) => (
+                                <div key={x.l}>
+                                  <p className="display tnum text-[20px] text-ink">{x.v}</p>
+                                  <p className="eyebrow mt-0.5">{x.l}</p>
+                                </div>
+                              ))}
+                            </div>
+                            <p className="mt-3 text-[11px] text-ink-3">
+                              Moving time {minsToHm(m.strava.moving_time_mins)}. Figures come from
+                              the club's Strava integration, which currently serves deterministic
+                              sample stats.
+                            </p>
+                          </div>
+                        ) : (
+                          <p className="mt-3 rounded-xl border border-white/8 bg-surface-2/50 px-4 py-3 text-[12.5px] text-ink-3">
+                            No Strava account linked, so this member doesn't appear on the
+                            leaderboard. They can link one from their own profile page.
+                          </p>
+                        )}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </Card>
                 </Tilt>
               </motion.div>

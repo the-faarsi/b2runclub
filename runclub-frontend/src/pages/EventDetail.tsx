@@ -2,7 +2,12 @@ import { useCallback, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { CancelRegistrationDialog } from "../components/cancelDialog";
 import { RegisterDialog, TicketModal } from "../components/events";
+import { EventFeedbackCard, FeedbackSummaryCard } from "../components/eventFeedback";
+import { EventPhotoStrip } from "../components/eventPhotos";
+import { EventReminders } from "../components/eventReminders";
+import { EventResultsSheet, ResultsEditor } from "../components/eventResults";
 import { EventRoster } from "../components/eventRoster";
+import { RouteCard } from "../components/routeMap";
 import { CalendarIcon, DisciplineIcon, ShareIcon, SparkIcon } from "../components/icons";
 import { Page } from "../components/layout";
 import { PageScene } from "../components/scene3d";
@@ -62,6 +67,8 @@ export function EventDetail() {
   const remaining = useCountdown(event?.date_time ?? new Date(0).toISOString());
   /** Volunteers pay nothing; the backend sets their registration to FREE. */
   const comped = role === "VOLUNTEER";
+  /** Who may open the event-day console — matches the backend's CREW list. */
+  const isCrew = role === "ADMIN" || role === "VOLUNTEER";
 
   if (loading) {
     return (
@@ -208,8 +215,26 @@ export function EventDetail() {
             ))}
           </div>
 
+          {/* The course, from the attached GPX. Organisers can upload one here. */}
+          <RouteCard event={event} isAdmin={isAdmin} />
+
+          {/* Published results, once an organiser has entered times */}
+          {past && <EventResultsSheet event={event} />}
+
+          {/* Photos tagged to this event */}
+          <EventPhotoStrip event={event} />
+
+          {/*
+            Feedback is only meaningful after the fact, and only from someone who
+            was on the roster — the backend enforces both.
+          */}
+          {past && registration && <EventFeedbackCard event={event} />}
+
           {/* Organisers see who is coming, and can bar someone */}
           {isAdmin && <EventRoster event={event} />}
+          {isAdmin && past && <ResultsEditor event={event} />}
+          {isAdmin && past && <FeedbackSummaryCard event={event} />}
+          {isAdmin && <EventReminders event={event} />}
 
           <Card className="mt-6 p-5">
             <h2 className="text-[15px] font-semibold text-ink">On the day</h2>
@@ -349,6 +374,22 @@ export function EventDetail() {
                   ? "Organiser accounts can't register — you're running this one."
                   : "Visitor accounts can't register. Ask an organiser to upgrade you to member."}
               </p>
+            )}
+
+            {/* Crew console. Volunteers scan at the start line, so they get it too. */}
+            {isCrew && (
+              <>
+                <div className="hairline my-5" />
+                <Link
+                  to={`/raceday/${event.id}`}
+                  className={buttonClass("outline", "md", "w-full")}
+                >
+                  Open event-day console
+                </Link>
+                <p className="mt-2 text-center text-[11px] leading-relaxed text-ink-3">
+                  Ticket scanning, marshal posts and checkpoint tracking.
+                </p>
+              </>
             )}
 
             {isAdmin && (

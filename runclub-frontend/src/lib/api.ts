@@ -1,23 +1,39 @@
 import type {
   AssignableRole,
+  CheckInResult,
+  Checkpoint,
   ClubEvent,
   ClubInfo,
   Collaborator,
   CollaboratorTier,
   Comment,
   EventRegistrationRow,
+  EventResults,
   EventStatus,
+  FeedbackSummary,
+  HealthImportResult,
+  HealthSummary,
+  ReminderSchedule,
   FinancialOverview,
   Leaderboard,
   Member,
+  MyFeedback,
+  MyResults,
   Notification,
   Photo,
   Poll,
   PollAnalytics,
   Post,
+  RaceDayDashboard,
   Registration,
+  ResultStatus,
   Role,
   RosterRow,
+  RouteGeometry,
+  RouteSummary,
+  Shift,
+  StreakSummary,
+  SweepResult,
   User,
 } from "./types";
 
@@ -173,6 +189,31 @@ export const api = {
       auth: false,
     }),
 
+  /**
+   * Start a password reset. The backend answers identically whether or not the
+   * address exists, so the UI must not branch on the response — doing so would
+   * hand an attacker an account-enumeration oracle.
+   */
+  forgotPassword: (email: string) =>
+    request<{ message: string; reset_link?: string; simulated?: boolean }>(
+      "/api/auth/forgot-password",
+      { method: "POST", body: { email }, auth: false },
+    ),
+
+  /** Checks a reset token before showing the form, so a dead link says so. */
+  checkResetToken: (token: string) =>
+    request<{ valid: boolean; email?: string }>(
+      `/api/auth/reset-password/${encodeURIComponent(token)}`,
+      { auth: false },
+    ),
+
+  resetPassword: (token: string, password: string) =>
+    request<{ message: string }>("/api/auth/reset-password", {
+      method: "POST",
+      body: { token, password },
+      auth: false,
+    }),
+
   /* ── events ─────────────────────────────────────────────── */
 
   events: () => request<ClubEvent[]>("/api/events"),
@@ -186,13 +227,18 @@ export const api = {
     location: string;
     price: number;
     status: EventStatus;
+    /** Hours-before offsets to email registrants at. */
+    reminder_offsets?: number[];
   }) =>
     request<{ message: string; event: ClubEvent }>("/api/events", {
       method: "POST",
       body: input,
     }),
 
-  updateEvent: (id: string, input: Partial<Omit<ClubEvent, "id" | "admin_id">>) =>
+  updateEvent: (
+    id: string,
+    input: Partial<Omit<ClubEvent, "id" | "admin_id">> & { reminder_offsets?: number[] },
+  ) =>
     request<{ message: string; event: ClubEvent }>(`/api/events/${id}`, {
       method: "PUT",
       body: input,
@@ -268,6 +314,13 @@ export const api = {
       body: { content },
     }),
 
+  /** Authors may remove their own; admins may remove anyone's. */
+  deletePost: (id: string) =>
+    request<{ message: string }>(`/api/forum/posts/${id}`, { method: "DELETE" }),
+
+  deleteComment: (id: string) =>
+    request<{ message: string }>(`/api/forum/comments/${id}`, { method: "DELETE" }),
+
   notifications: () => request<Notification[]>("/api/forum/notifications"),
 
   markNotificationRead: (id: string) =>
@@ -289,6 +342,13 @@ export const api = {
       body: { option_id: optionId },
     }),
 
+  /** Close a poll to freeze the result, or reopen it. Admin only. */
+  setPollActive: (pollId: string, active: boolean) =>
+    request<{ message: string; poll: Poll; changed: boolean }>(`/api/polls/${pollId}/active`, {
+      method: "PUT",
+      body: { active },
+    }),
+
   /* ── strava ─────────────────────────────────────────────── */
 
   leaderboard: () => request<Leaderboard>("/api/strava/leaderboard"),
@@ -301,7 +361,11 @@ export const api = {
 
   /* ── gallery / about / collaborators ────────────────────── */
 
-  gallery: () => request<Photo[]>("/api/content/gallery"),
+  /** Optionally narrowed to one event, for the photo strip on an event page. */
+  gallery: (eventId?: string) =>
+    request<Photo[]>(
+      eventId ? `/api/content/gallery?event_id=${encodeURIComponent(eventId)}` : "/api/content/gallery",
+    ),
 
   /**
    * Upload a photo. Takes a File (multipart) or an external URL.
@@ -361,6 +425,20 @@ export const api = {
 
   members: () => request<Member[]>("/api/admin/members"),
 
+  /** Reminder schedule + delivery status for one event (admin). */
+  eventReminders: (eventId: string) =>
+    request<ReminderSchedule>(`/api/admin/events/${eventId}/reminders`),
+
+  /** Runs the sweep now. Idempotent — already-sent reminders are skipped. */
+  runReminders: (eventId: string) =>
+    request<SweepResult>(`/api/admin/events/${eventId}/reminders/run`, { method: "POST" }),
+
+  /** Whether SMTP is configured and reachable. */
+  mailerStatus: () =>
+    request<{ configured: boolean; ok: boolean; simulated: boolean; error: string | null }>(
+      "/api/admin/mailer",
+    ),
+
   /** Interactive roster for one event (admin). The CSV export is for accounting. */
   eventRegistrations: (eventId: string) =>
     request<EventRegistrationRow[]>(`/api/admin/events/${eventId}/registrations`),
@@ -394,6 +472,170 @@ export const api = {
 
   rosterCsv: (eventId: string) =>
     request<string>(`/api/admin/events/${eventId}/roster/export`, { as: "text" }),
+
+  /**
+   * Refund a paid entry (admin). The registration is kept with `refunded_at` set
+   * rather than deleted, so the money movement stays auditable.
+   * Omit `amount` for a full refund of the entry fee.
+   */
+  refundRegistration: (registrationId: string, amount?: number) =>
+    request<{
+      message: string;
+      refund_id: string;
+      amount: number;
+      simulated: boolean;
+      registration: Registration;
+    }>(`/api/payments/refund/${registrationId}`, {
+      method: "POST",
+      body: amount === undefined ? {} : { amount },
+    }),
+
+  /* ── results ────────────────────────────────────────────── */
+
+  /** Public results sheet. Positions are derived from finish times. */
+  eventResults: (eventId: string) => request<EventResults>(`/api/results/events/${eventId}`),
+
+  /** Record or amend one runner's result (admin). Upserts on (event, user). */
+  saveResult: (
+    eventId: string,
+    input: {
+      user_id: string;
+      finish_secs?: number | null;
+      distance_km?: number | null;
+      status?: ResultStatus;
+      notes?: string;
+    },
+  ) =>
+    request<{ message: string }>(`/api/results/events/${eventId}`, {
+      method: "PUT",
+      body: input,
+    }),
+
+  deleteResult: (resultId: string) =>
+    request<{ message: string }>(`/api/results/${resultId}`, { method: "DELETE" }),
+
+  myResults: () => request<MyResults>("/api/results/me"),
+
+  /* ── post-event feedback ────────────────────────────────── */
+
+  submitFeedback: (eventId: string, input: { rating: number; comment?: string }) =>
+    request<{ message: string }>(`/api/results/feedback/${eventId}`, {
+      method: "POST",
+      body: input,
+    }),
+
+  myFeedback: (eventId: string) => request<MyFeedback>(`/api/results/feedback/me/${eventId}`),
+
+  /** Aggregate ratings and comments for one event (admin). */
+  feedbackSummary: (eventId: string) =>
+    request<FeedbackSummary>(`/api/results/feedback/${eventId}`),
+
+  /* ── streaks & badges ───────────────────────────────────── */
+
+  myStreak: () => request<StreakSummary>("/api/results/streaks/me"),
+
+  /* ── race day ───────────────────────────────────────────── */
+
+  /**
+   * Scan a ticket. Pass the decoded QR text as `qr_payload`, or a bare id as
+   * `registration_id`. Send `event_id` so a ticket for another session is caught.
+   */
+  checkIn: (input: { registration_id?: string; qr_payload?: string; event_id?: string }) =>
+    request<CheckInResult>("/api/raceday/check-in", { method: "POST", body: input }),
+
+  undoCheckIn: (registrationId: string) =>
+    request<{ message: string }>(`/api/raceday/check-in/${registrationId}/undo`, {
+      method: "POST",
+    }),
+
+  /** Everything the event-day screen needs, in one pollable request. */
+  raceDayDashboard: (eventId: string) =>
+    request<RaceDayDashboard>(`/api/raceday/events/${eventId}/dashboard`),
+
+  shifts: (eventId: string) => request<Shift[]>(`/api/raceday/events/${eventId}/shifts`),
+
+  createShift: (
+    eventId: string,
+    input: { title: string; location_note?: string; capacity?: number; sort_order?: number },
+  ) =>
+    request<{ message: string; shift: Shift }>(`/api/raceday/events/${eventId}/shifts`, {
+      method: "POST",
+      body: input,
+    }),
+
+  deleteShift: (shiftId: string) =>
+    request<{ message: string }>(`/api/raceday/shifts/${shiftId}`, { method: "DELETE" }),
+
+  /** Omit `userId` to take the shift yourself; admins may pass anyone's id. */
+  claimShift: (shiftId: string, userId?: string) =>
+    request<{ message: string; changed: boolean }>(`/api/raceday/shifts/${shiftId}/claim`, {
+      method: "POST",
+      body: userId ? { user_id: userId } : {},
+    }),
+
+  releaseShift: (shiftId: string, userId?: string) =>
+    request<{ message: string; changed: boolean }>(`/api/raceday/shifts/${shiftId}/release`, {
+      method: "POST",
+      body: userId ? { user_id: userId } : {},
+    }),
+
+  checkpoints: (eventId: string) =>
+    request<Checkpoint[]>(`/api/raceday/events/${eventId}/checkpoints`),
+
+  createCheckpoint: (
+    eventId: string,
+    input: { name: string; distance_km?: number | null; sort_order?: number },
+  ) =>
+    request<{ message: string; checkpoint: Checkpoint }>(
+      `/api/raceday/events/${eventId}/checkpoints`,
+      { method: "POST", body: input },
+    ),
+
+  deleteCheckpoint: (id: string) =>
+    request<{ message: string }>(`/api/raceday/checkpoints/${id}`, { method: "DELETE" }),
+
+  /** Tap a runner through. Idempotent per (checkpoint, runner). */
+  passCheckpoint: (checkpointId: string, userId: string) =>
+    request<{ message: string; changed: boolean }>(
+      `/api/raceday/checkpoints/${checkpointId}/pass`,
+      { method: "POST", body: { user_id: userId } },
+    ),
+
+  /* ── route map ──────────────────────────────────────────── */
+
+  /** Normalised track geometry for the SVG renderer. 404s when none attached. */
+  eventRoute: (eventId: string) =>
+    request<RouteGeometry>(`/api/content/events/${eventId}/route`),
+
+  uploadRoute: (eventId: string, file: File) => {
+    const form = new FormData();
+    form.append("gpx", file);
+    return upload<RouteSummary>(`/api/content/events/${eventId}/route`, form);
+  },
+
+  /* ── health app sync ────────────────────────────────────── */
+
+  /**
+   * Import workouts from an Apple Health `export.xml` or a single `.gpx`.
+   *
+   * A file import rather than a background sync because HealthKit and Health
+   * Connect are both on-device APIs with no server endpoint — see the backend
+   * router for the full reasoning.
+   */
+  importHealth: (file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return upload<HealthImportResult>("/api/health/import", form);
+  },
+
+  myHealth: () => request<HealthSummary>("/api/health/me"),
+
+  deleteWorkout: (id: string) =>
+    request<{ message: string }>(`/api/health/${id}`, { method: "DELETE" }),
+
+  /** Wipes every workout this member has imported. */
+  clearHealth: () =>
+    request<{ message: string; count: number }>("/api/health", { method: "DELETE" }),
 };
 
 /** Minimal RFC-4180 field splitter — the roster export quotes name/email. */

@@ -15,6 +15,10 @@ import pollsRouter from "./routes/polls.router";
 import adminRouter from "./routes/admin.router";
 import stravaRouter from "./routes/strava.router";
 import contentRouter from "./routes/content.router";
+import racedayRouter from "./routes/raceday.router";
+import resultsRouter from "./routes/results.router";
+import healthRouter from "./routes/health.router";
+import { startReminderScheduler } from "./utils/reminders";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -43,6 +47,9 @@ app.use("/api/polls", pollsRouter);
 app.use("/api/admin", adminRouter);
 app.use("/api/strava", stravaRouter);
 app.use("/api/content", contentRouter);
+app.use("/api/raceday", racedayRouter);
+app.use("/api/results", resultsRouter);
+app.use("/api/health", healthRouter);
 
 // Serve uploaded gallery/logo images. Static and public by design — the files
 // are club photos, and the URLs are unguessable (random filenames).
@@ -163,6 +170,9 @@ app.use((err: any, req: any, res: any, next: any) => {
 if (process.env.NODE_ENV !== "test") {
     app.listen(PORT, () => {
         console.log(`[Server] Run Club backend is running on http://localhost:${PORT}`);
+        // Sweeps for due event reminders. Guarded out of the test env so the
+        // integration suite never fires email as a side effect.
+        startReminderScheduler();
     });
 }
 

@@ -135,4 +135,44 @@ router.post("/:id/vote", requireRole(["MEMBER", "VOLUNTEER", "ADMIN"]), async (r
     }
 });
 
+/**
+ * 4. Close or reopen a poll (Admin only).
+ *
+ * `Poll.active` existed in the schema from the start but nothing could change it,
+ * so a poll could never be closed. Voting checks `active`, so flipping this is
+ * all that is needed to stop new votes while keeping results readable.
+ */
+router.put("/:id/active", requireRole(["ADMIN"]), async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const { active } = req.body ?? {};
+        if (typeof active !== "boolean") {
+            res.status(400).json({ error: "`active` must be true or false" });
+            return;
+        }
+
+        const poll = await prisma.poll.findUnique({ where: { id: req.params.id as string } });
+        if (!poll) {
+            res.status(404).json({ error: "Poll not found" });
+            return;
+        }
+        if (poll.active === active) {
+            res.json({ message: `Poll is already ${active ? "open" : "closed"}`, changed: false });
+            return;
+        }
+
+        const updated = await prisma.poll.update({
+            where: { id: poll.id },
+            data: { active },
+        });
+
+        res.json({
+            message: active ? "Poll reopened" : "Poll closed — no further votes",
+            poll: updated,
+            changed: true,
+        });
+    } catch (error: any) {
+        res.status(500).json({ error: error.message || "Failed to update the poll" });
+    }
+});
+
 export default router;

@@ -13,12 +13,14 @@ import {
   Input,
   useToast,
 } from "../components/ui";
+import { HealthSyncCard } from "../components/healthSync";
+import { MyResultsCard, StreakCard } from "../components/streaks";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { fullDate, ROLE_META } from "../lib/format";
 
 export function Profile() {
-  const { user, patchUser, logout } = useAuth();
+  const { user, patchUser, logout, canRegister } = useAuth();
   const toast = useToast();
 
   const [strava, setStrava] = useState(user?.strava_id ?? "");
@@ -74,6 +76,15 @@ export function Profile() {
           </>
         )}
       </Card>
+
+      {/* Attendance record and badges — only meaningful for people who run */}
+      {canRegister && (
+        <>
+          <StreakCard />
+          <MyResultsCard />
+          <HealthSyncCard />
+        </>
+      )}
 
       {/* Volunteer perks — the one benefit worth stating outright */}
       {user.role === "VOLUNTEER" && (

@@ -2,6 +2,12 @@ import { Router, Response } from "express";
 import crypto from "crypto";
 import prisma from "../utils/prisma";
 import { AuthRequest, requireRole } from "../middleware/auth";
+import Razorpay from "razorpay";
+
+const razorpay = new Razorpay({
+    key_id: process.env.RAZORPAY_KEY_ID || "rzp_test_YourTestKeyId",
+    key_secret: process.env.RAZORPAY_KEY_SECRET || "YourTestKeySecret",
+});
 
 const router = Router();
 const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET || "CreateAStrongSecret";
@@ -277,5 +283,135 @@ router.get("/config", async (_req: AuthRequest, res: Response): Promise<void> =>
         simulation_available: isMockMode && process.env.NODE_ENV !== "production",
     });
 });
+
+/**
+ * Refund a paid registration (Admin only).
+ *
+ * Calls Razorpay's refund API for the captured payment, then records the refund
+ * on the registration so it is auditable. The registration is left in place with
+ * `refunded_at` set rather than deleted — a deleted row loses the fact that money
+ * moved, which is exactly what accounting needs to see.
+ */
+router.post(
+    "/refund/:registrationId",
+    requireRole(["ADMIN"]),
+    async (req: AuthRequest, res: Response): Promise<void> => {
+        try {
+            const registration = await prisma.eventRegistration.findUnique({
+                where: { id: req.params.registrationId as string },
+                include: { event: true, user: { select: { id: true, name: true } } },
+            }) as any;
+
+            if (!registration) {
+                res.status(404).json({ error: "Registration not found" });
+                return;
+            }
+            // Checked before the status guard: a refund flips status to FAILED, so
+            // asking about status first would report "this one is FAILED" for an
+            // already-refunded row instead of saying it was refunded.
+            if (registration.refunded_at) {
+                res.status(400).json({
+                    error: `Already refunded — ₹${registration.refund_amount} on ${new Date(
+                        registration.refunded_at
+                    ).toLocaleDateString("en-IN")}.`,
+                });
+                return;
+            }
+            if (registration.status !== "PAID") {
+                res.status(400).json({
+                    error: `Only a PAID registration can be refunded — this one is ${registration.status}.`,
+                });
+                return;
+            }
+            if (!registration.razorpay_payment_id) {
+                res.status(400).json({ error: "No captured payment id to refund against" });
+                return;
+            }
+
+            // Partial refunds are supported; default to the full entry fee.
+            const requested = req.body?.amount;
+            const amount =
+                requested === undefined ? registration.event.price : Number.parseFloat(requested);
+
+            if (!Number.isFinite(amount) || amount <= 0 || amount > registration.event.price) {
+                res.status(400).json({
+                    error: `Refund must be between 0 and the entry fee (₹${registration.event.price}).`,
+                });
+                return;
+            }
+
+            let refundId: string;
+
+            if (isMockMode || registration.razorpay_payment_id.startsWith("pay_simulated")) {
+                // A simulated payment has no counterpart at Razorpay, so calling
+                // their API would 400. Record it locally instead.
+                refundId = `rfnd_local_${Date.now()}`;
+            } else {
+                try {
+                    const refund = await (razorpay as any).payments.refund(
+                        registration.razorpay_payment_id,
+                        {
+                            amount: Math.round(amount * 100), // paise
+                            speed: "normal",
+                            notes: { registration_id: registration.id, event: registration.event.title },
+                        }
+                    );
+                    refundId = refund.id;
+                } catch (err: any) {
+                    // Razorpay's SDK is inconsistent here: sometimes it gives a full
+                    // { error: { description } }, but for a 404 it throws bare
+                    // { statusCode: 404 } with no message at all. Falling straight
+                    // through to a generic string left the admin with nothing to act
+                    // on, so map the status codes we can actually explain.
+                    const byStatus: Record<number, string> = {
+                        400: "Razorpay rejected the refund — the payment may already be fully refunded.",
+                        401: "Razorpay credentials were rejected. Check RAZORPAY_KEY_ID / KEY_SECRET.",
+                        404: "Razorpay has no record of this payment. It was likely captured under different API keys.",
+                    };
+                    const detail =
+                        err?.error?.description ||
+                        err?.message ||
+                        byStatus[err?.statusCode as number] ||
+                        `Refund was rejected${err?.statusCode ? ` (HTTP ${err.statusCode})` : ""}.`;
+                    console.error(
+                        `[refund] registration ${registration.id} failed:`,
+                        JSON.stringify(err, Object.getOwnPropertyNames(err || {}))
+                    );
+                    res.status(400).json({ error: detail });
+                    return;
+                }
+            }
+
+            const updated = await prisma.eventRegistration.update({
+                where: { id: registration.id },
+                data: {
+                    refund_id: refundId,
+                    refunded_at: new Date(),
+                    refund_amount: amount,
+                    // FAILED reads correctly downstream: it drops out of revenue
+                    // and out of the ticket-ready count.
+                    status: "FAILED",
+                },
+            });
+
+            await prisma.notification.create({
+                data: {
+                    user_id: registration.user_id,
+                    message: `₹${amount} has been refunded for "${registration.event.title}". It should reach your account in 5–7 days.`,
+                },
+            });
+
+            res.json({
+                message: `₹${amount} refunded to ${registration.user.name}`,
+                refund_id: refundId,
+                amount,
+                simulated: refundId.startsWith("rfnd_local_"),
+                registration: updated,
+            });
+        } catch (error: any) {
+            res.status(500).json({ error: error.message || "Refund failed" });
+        }
+    }
+);
 
 export default router;

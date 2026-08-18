@@ -192,4 +192,65 @@ router.put("/notifications/:id/read", requireRole(["MEMBER", "VOLUNTEER", "ADMIN
     }
 });
 
+/**
+ * 6. Moderation (Admin only).
+ *
+ * There was previously no way to remove anything from the forum. An author may
+ * also delete their own contribution — the usual expectation — but only an admin
+ * can remove someone else's.
+ */
+router.delete("/posts/:id", requireRole(["MEMBER", "VOLUNTEER", "ADMIN"]), async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const post = await prisma.post.findUnique({ where: { id: req.params.id as string } });
+        if (!post) {
+            res.status(404).json({ error: "Post not found" });
+            return;
+        }
+
+        const isAdmin = req.user!.role === "ADMIN";
+        if (post.author_id !== req.user!.id && !isAdmin) {
+            res.status(403).json({ error: "You can only delete your own posts" });
+            return;
+        }
+
+        // Comments have no cascade in the schema, so clear them first or the
+        // delete fails on the foreign key.
+        await prisma.comment.deleteMany({ where: { post_id: post.id } });
+        await prisma.post.delete({ where: { id: post.id } });
+
+        // Tell the author when a moderator removed their post.
+        if (isAdmin && post.author_id !== req.user!.id) {
+            await prisma.notification.create({
+                data: {
+                    user_id: post.author_id,
+                    message: `An organiser removed your post "${post.title}".`,
+                },
+            });
+        }
+
+        res.json({ message: "Post removed" });
+    } catch (error: any) {
+        res.status(500).json({ error: error.message || "Failed to remove the post" });
+    }
+});
+
+router.delete("/comments/:id", requireRole(["MEMBER", "VOLUNTEER", "ADMIN"]), async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const comment = await prisma.comment.findUnique({ where: { id: req.params.id as string } });
+        if (!comment) {
+            res.status(404).json({ error: "Comment not found" });
+            return;
+        }
+        if (comment.user_id !== req.user!.id && req.user!.role !== "ADMIN") {
+            res.status(403).json({ error: "You can only delete your own comments" });
+            return;
+        }
+
+        await prisma.comment.delete({ where: { id: comment.id } });
+        res.json({ message: "Comment removed" });
+    } catch (error: any) {
+        res.status(500).json({ error: error.message || "Failed to remove the comment" });
+    }
+});
+
 export default router;

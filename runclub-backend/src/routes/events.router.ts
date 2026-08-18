@@ -2,6 +2,7 @@ import { Router, Response } from "express";
 import prisma from "../utils/prisma";
 import { AuthRequest, requireRole } from "../middleware/auth";
 import Razorpay from "razorpay";
+import { ALLOWED_OFFSETS } from "../utils/reminders";
 
 const router = Router();
 
@@ -15,6 +16,41 @@ const razorpay = new Razorpay({
 
 // Helper: check if we should mock Razorpay API calls
 const isRazorpayMock = !process.env.RAZORPAY_KEY_ID || process.env.RAZORPAY_KEY_ID === "rzp_test_YourTestKeyId";
+
+/**
+ * Normalises a `reminder_offsets` payload into a validated, de-duplicated,
+ * descending list of hours. Returns null when the caller omitted the field, so
+ * an update can distinguish "leave alone" from "set to none".
+ */
+function parseOffsets(raw: any): number[] | null {
+    if (raw === undefined) return null;
+    if (!Array.isArray(raw)) return [];
+    const cleaned = raw
+        .map((v: any) => Number.parseInt(String(v), 10))
+        .filter((n: number) => Number.isFinite(n) && ALLOWED_OFFSETS.includes(n));
+    return [...new Set(cleaned)].sort((a, b) => b - a);
+}
+
+/** Replaces an event's reminders with exactly `offsets`. */
+async function syncReminders(eventId: string, offsets: number[]) {
+    const existing = await prisma.eventReminder.findMany({ where: { event_id: eventId } });
+    const keep = new Set(offsets);
+
+    // Removing a reminder drops its delivery log too (cascade), which is fine:
+    // the reminder no longer exists, so there is nothing to be idempotent about.
+    const toDelete = existing.filter((r: any) => !keep.has(r.hours_before));
+    if (toDelete.length) {
+        await prisma.eventReminder.deleteMany({
+            where: { id: { in: toDelete.map((r: any) => r.id) } },
+        });
+    }
+
+    const have = new Set(existing.map((r: any) => r.hours_before));
+    const toCreate = offsets.filter((h) => !have.has(h));
+    for (const hours_before of toCreate) {
+        await prisma.eventReminder.create({ data: { event_id: eventId, hours_before } });
+    }
+}
 
 // 1. Create Event (Admin only)
 router.post("/", requireRole(["ADMIN"]), async (req: AuthRequest, res: Response): Promise<void> => {
@@ -51,7 +87,14 @@ router.post("/", requireRole(["ADMIN"]), async (req: AuthRequest, res: Response)
             },
         });
 
-        res.status(211).json({ message: "Event created successfully", event });
+        const offsets = parseOffsets(req.body.reminder_offsets);
+        if (offsets?.length) await syncReminders(event.id, offsets);
+
+        res.status(211).json({
+            message: "Event created successfully",
+            event,
+            reminder_offsets: offsets ?? [],
+        });
     } catch (error: any) {
         res.status(500).json({ error: error.message || "Failed to create event" });
     }
@@ -247,7 +290,19 @@ router.put("/:id", requireRole(["ADMIN"]), async (req: AuthRequest, res: Respons
             data: dataToUpdate,
         });
 
-        res.json({ message: "Event updated successfully", event: updatedEvent });
+        const offsets = parseOffsets(req.body.reminder_offsets);
+        if (offsets !== null) await syncReminders(id, offsets);
+
+        const reminders = await prisma.eventReminder.findMany({
+            where: { event_id: id },
+            orderBy: { hours_before: "desc" },
+        });
+
+        res.json({
+            message: "Event updated successfully",
+            event: updatedEvent,
+            reminder_offsets: reminders.map((r: any) => r.hours_before),
+        });
     } catch (error: any) {
         res.status(500).json({ error: error.message || "Failed to update event" });
     }
@@ -281,7 +336,10 @@ router.post("/:id/register", requireRole(["MEMBER", "VOLUNTEER"]), async (req: A
         const eventId = req.params.id as string;
         const userId = req.user!.id;
         const userRole = req.user!.role;
-        const { waiver_signed, emergency_contact } = req.body;
+        // `req.body` is undefined when a client posts with no JSON body at all;
+        // destructuring it directly turned that into a 500 instead of the 400 the
+        // waiver check below is meant to give.
+        const { waiver_signed, emergency_contact } = req.body ?? {};
 
         // Check emergency contact is provided (from request or check database)
         const user = await prisma.user.findUnique({ where: { id: userId } });
