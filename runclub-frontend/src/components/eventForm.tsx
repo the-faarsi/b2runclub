@@ -189,8 +189,18 @@ export function EventFormModal({
           : "Save as a draft, then publish when you're ready."
       }
       size="lg"
+      footer={
+        <div className="flex gap-2.5">
+          <Button type="button" variant="outline" onClick={onClose} className="flex-1">
+            Cancel
+          </Button>
+          <Button type="submit" form="event-form" loading={busy} className="flex-1">
+            {editing ? "Save changes" : "Create event"}
+          </Button>
+        </div>
+      }
     >
-      <form onSubmit={submit} className="space-y-5">
+      <form id="event-form" onSubmit={submit} className="space-y-5">
         <Field label="Title" htmlFor="ev-title">
           <Input
             id="ev-title"
@@ -352,14 +362,6 @@ export function EventFormModal({
           </p>
         )}
 
-        <div className="flex gap-2.5">
-          <Button type="button" variant="outline" onClick={onClose} className="flex-1">
-            Cancel
-          </Button>
-          <Button type="submit" loading={busy} className="flex-1">
-            {editing ? "Save changes" : "Create event"}
-          </Button>
-        </div>
       </form>
     </Modal>
   );

@@ -11,10 +11,9 @@ import type {
   EventResults,
   EventStatus,
   FeedbackSummary,
+  FinancialOverview,
   HealthImportResult,
   HealthSummary,
-  ReminderSchedule,
-  FinancialOverview,
   Leaderboard,
   MailerConfig,
   MailerStatus,
@@ -28,12 +27,16 @@ import type {
   Post,
   RaceDayDashboard,
   Registration,
+  ReminderSchedule,
   ResultStatus,
   Role,
   RosterRow,
   RouteGeometry,
   RouteSummary,
   Shift,
+  StravaActivity,
+  StravaConfig,
+  StravaLink,
   StreakSummary,
   SweepResult,
   User,
@@ -402,11 +405,26 @@ export const api = {
 
   leaderboard: () => request<Leaderboard>("/api/strava/leaderboard"),
 
-  linkStrava: (stravaId: string) =>
-    request<{ message: string; user: User }>("/api/strava/link", {
-      method: "POST",
-      body: { strava_id: stravaId },
-    }),
+  /** Whether OAuth is available on this server. */
+  stravaConfig: () => request<StravaConfig>("/api/strava/config"),
+
+  /** The signed-in member's Strava connection, if any. */
+  stravaLink: () => request<StravaLink>("/api/strava/me"),
+
+  /**
+   * Returns the Strava consent URL for the caller to navigate to. Deliberately not
+   * a redirect — a 302 answered to `fetch` would be followed by fetch, and the
+   * browser would never leave the page.
+   */
+  stravaAuthorizeUrl: () => request<{ url: string }>("/api/strava/authorize"),
+
+  stravaActivities: (perPage = 15) =>
+    request<{ count: number; activities: StravaActivity[] }>(
+      `/api/strava/activities?per_page=${perPage}`,
+    ),
+
+  disconnectStrava: () =>
+    request<{ message: string; changed: boolean }>("/api/strava/me", { method: "DELETE" }),
 
   /* ── gallery / about / collaborators ────────────────────── */
 

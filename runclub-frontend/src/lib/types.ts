@@ -557,3 +557,45 @@ export interface HealthImportResult {
   truncated: boolean;
   source: string;
 }
+
+/* ── Strava OAuth ───────────────────────────────────────────── */
+
+export interface StravaConfig {
+  configured: boolean;
+  redirect_uri: string;
+  /** Env var names an organiser still needs to set. */
+  missing: string[];
+}
+
+export interface StravaAthlete {
+  athlete_id: string;
+  name: string | null;
+  username: string | null;
+  avatar_url: string | null;
+  city: string | null;
+  country: string | null;
+  profile_url: string;
+}
+
+export interface StravaLink {
+  connected: boolean;
+  configured: boolean;
+  athlete?: StravaAthlete;
+  scope?: string | null;
+  connected_at?: string;
+  last_synced_at?: string | null;
+  token_expires_at?: string;
+}
+
+export interface StravaActivity {
+  id: string;
+  name: string;
+  type: string;
+  started_at: string;
+  distance_km: number | null;
+  moving_secs: number | null;
+  elapsed_secs: number | null;
+  elevation_m: number | null;
+  average_speed_kmh: number | null;
+  url: string;
+}
