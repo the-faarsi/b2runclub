@@ -341,35 +341,80 @@ export function Navbar() {
         scrolled && "border-b border-white/8 bg-void/72 backdrop-blur-xl",
       )}
     >
-      <div className="mx-auto flex h-16 max-w-7xl items-center gap-3 px-4 sm:px-6 lg:px-8">
-        <Logo />
+      <div
+        className={cn(
+          "relative mx-auto flex h-16 max-w-7xl items-center gap-3 px-4 transition-[padding] duration-500 ease-[cubic-bezier(0.16,1,0.3,1)]",
+          scrolled ? "sm:px-1 lg:px-1.5" : "sm:px-6 lg:px-8",
+        )}
+      >
+        {/* `layout` (not a manual x-tween) so this tracks wherever the row's
+            padding change actually puts it, rather than a hard-coded offset
+            that would drift out of sync if the padding values change later. */}
+        <motion.div layout transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}>
+          <Logo />
+        </motion.div>
 
-        <nav className="ml-6 hidden items-center gap-0.5 md:flex">
+        {/* Positioned absolutely against the row (not just the space between
+            the logo and the right controls) so it lands dead-centre of the
+            whole bar once scrolled, regardless of how wide either side is.
+            `layout` hands the static → absolute transition to Framer Motion,
+            which keeps it smooth across the position-scheme change — a plain
+            CSS transition can't interpolate that. */}
+        <motion.nav
+          layout
+          transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+          className={cn(
+            "hidden items-center transition-[background-color,padding,border-radius] duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] md:flex",
+            scrolled
+              ? "absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 gap-0.5 rounded-[20px] bg-gold px-3 py-2"
+              : "static flex-1 justify-evenly",
+          )}
+        >
           {items.map((it) => {
+            /*
+             * Active state is computed here rather than taken from NavLink's own
+             * `isActive`. "/admin" is a prefix of "/admin/members" and
+             * "/admin/database", so the built-in prefix match lights up two items
+             * at once — and two elements sharing layoutId="nav-underline" makes the
+             * underline jump between them.
+             */
             const isActive = isItemActive(it, location.pathname);
             return (
-              <NavLink
+              <motion.div
                 key={it.to}
-                to={it.to}
-                className={cn(
-                  "relative rounded-lg px-3 py-2 text-[13px] font-medium transition-colors duration-200",
-                  isActive ? "text-ink" : "text-ink-3 hover:text-ink-2",
-                )}
+                layout
+                transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
               >
-                {it.label}
-                {isActive && (
-                  <motion.span
-                    layoutId="nav-underline"
-                    transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-                    className="absolute inset-x-3 -bottom-0.5 h-0.5 rounded-full bg-gold"
-                  />
-                )}
-              </NavLink>
+                <NavLink
+                  to={it.to}
+                  className={cn(
+                    "relative rounded-lg px-3 py-2 text-[13px] font-medium transition-colors duration-200",
+                    scrolled
+                      ? "text-[color:var(--color-gold-ink)]"
+                      : isActive
+                        ? "text-ink"
+                        : "text-ink-3 hover:text-ink-2",
+                  )}
+                >
+                  {it.label}
+                  {isActive && !scrolled && (
+                    <motion.span
+                      layoutId="nav-underline"
+                      transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+                      className="absolute inset-x-3 -bottom-0.5 h-0.5 rounded-full bg-gold"
+                    />
+                  )}
+                </NavLink>
+              </motion.div>
             );
           })}
-        </nav>
+        </motion.nav>
 
-        <div className="ml-auto flex items-center gap-1.5">
+        <motion.div
+          layout
+          transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+          className="ml-auto flex items-center gap-1.5"
+        >
           {user ? (
             <>
               <NotificationBell />
@@ -405,7 +450,7 @@ export function Navbar() {
               />
             </svg>
           </button>
-        </div>
+        </motion.div>
       </div>
 
       <AnimatePresence>
