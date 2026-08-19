@@ -3,6 +3,7 @@ import { useCallback } from "react";
 import { Link } from "react-router-dom";
 import { EventCard } from "../components/events";
 import { CollaboratorScroller } from "../components/collaborators";
+import { CommunityLinks } from "../components/communityLinks";
 import { Hero3D } from "../components/scene3d";
 import {
   CalendarIcon,
@@ -376,6 +377,11 @@ export function Landing() {
           ))}
         </div>
       </section>
+
+      {/* ── Community channels ───────────────────────────── */}
+      {/* Sits mid-page, straight after "where you fit": someone who has just read
+          how the club works is the person most likely to join a channel. */}
+      <CommunityLinks />
 
       {/* ── Gallery preview ──────────────────────────────── */}
       {photos.length > 0 && (

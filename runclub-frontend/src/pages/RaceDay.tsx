@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ClockIcon, PinIcon, PlusIcon, UsersIcon } from "../components/icons";
 import { Page } from "../components/layout";
+import { PageScene } from "../components/scene3d";
 import { QrScanner, scannerSupported } from "../components/qrScanner";
 import {
   Avatar,
@@ -97,6 +98,9 @@ export function RaceDay() {
 
   return (
     <Page>
+      {/* Low opacity: this screen is read at a start line, not admired. Skipped
+          entirely below lg, which is where it is actually used. */}
+      <PageScene variant="pulse" opacity={0.16} />
       <Link
         to={`/events/${event.id}`}
         className="mb-6 inline-flex items-center gap-1.5 text-[13px] text-ink-3 transition-colors hover:text-gold"

@@ -18,6 +18,7 @@ import contentRouter from "./routes/content.router";
 import racedayRouter from "./routes/raceday.router";
 import resultsRouter from "./routes/results.router";
 import healthRouter from "./routes/health.router";
+import dbRouter from "./routes/db.router";
 import { startReminderScheduler } from "./utils/reminders";
 
 const app = express();
@@ -50,6 +51,7 @@ app.use("/api/content", contentRouter);
 app.use("/api/raceday", racedayRouter);
 app.use("/api/results", resultsRouter);
 app.use("/api/health", healthRouter);
+app.use("/api/db", dbRouter);
 
 // Serve uploaded gallery/logo images. Static and public by design — the files
 // are club photos, and the URLs are unguessable (random filenames).

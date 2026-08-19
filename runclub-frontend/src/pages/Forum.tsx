@@ -68,7 +68,7 @@ export function Forum() {
 
   return (
     <Page>
-      <PageScene variant="knot" opacity={0.26} />
+      <PageScene variant="constellation" opacity={0.26} />
       <PageHeader
         eyebrow="Community"
         title="Forum"

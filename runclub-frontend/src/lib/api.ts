@@ -7,6 +7,8 @@ import type {
   Collaborator,
   CollaboratorTier,
   Comment,
+  DbTablePage,
+  DbTableSummary,
   EventRegistrationRow,
   EventResults,
   EventStatus,
@@ -690,6 +692,47 @@ export const api = {
     form.append("gpx", file);
     return upload<RouteSummary>(`/api/content/events/${eventId}/route`, form);
   },
+
+  /* ── database browser (admin) ───────────────────────────── */
+
+  /** Every table with its row count. */
+  dbTables: () =>
+    request<{ database: string; tables: DbTableSummary[] }>("/api/db/tables"),
+
+  /** One page of rows, with the table's real column metadata. */
+  dbTable: (
+    table: string,
+    opts: { limit?: number; offset?: number; q?: string; sort?: string; dir?: string } = {},
+  ) => {
+    const p = new URLSearchParams();
+    if (opts.limit !== undefined) p.set("limit", String(opts.limit));
+    if (opts.offset !== undefined) p.set("offset", String(opts.offset));
+    if (opts.q) p.set("q", opts.q);
+    if (opts.sort) p.set("sort", opts.sort);
+    if (opts.dir) p.set("dir", opts.dir);
+    const qs = p.toString();
+    return request<DbTablePage>(
+      `/api/db/tables/${encodeURIComponent(table)}${qs ? `?${qs}` : ""}`,
+    );
+  },
+
+  dbInsert: (table: string, values: Record<string, unknown>) =>
+    request<{ message: string }>(`/api/db/tables/${encodeURIComponent(table)}`, {
+      method: "POST",
+      body: values,
+    }),
+
+  dbUpdate: (table: string, id: string, values: Record<string, unknown>) =>
+    request<{ message: string; affected: number }>(
+      `/api/db/tables/${encodeURIComponent(table)}/${encodeURIComponent(id)}`,
+      { method: "PATCH", body: values },
+    ),
+
+  dbDelete: (table: string, id: string) =>
+    request<{ message: string; affected: number }>(
+      `/api/db/tables/${encodeURIComponent(table)}/${encodeURIComponent(id)}`,
+      { method: "DELETE" },
+    ),
 
   /* ── health app sync ────────────────────────────────────── */
 

@@ -178,7 +178,7 @@ export function MyTickets() {
 
   return (
     <Page>
-      <PageScene variant="lattice" opacity={0.26} />
+      <PageScene variant="shards" opacity={0.26} />
       <PageHeader
         eyebrow="Your spots"
         title="My tickets"

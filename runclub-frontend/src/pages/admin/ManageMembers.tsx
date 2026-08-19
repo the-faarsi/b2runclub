@@ -138,7 +138,7 @@ export function ManageMembers() {
 
   return (
     <Page>
-      <PageScene variant="orb" opacity={0.2} />
+      <PageScene variant="constellation" opacity={0.2} />
       <Confetti show={celebrate} />
 
       <PageHeader

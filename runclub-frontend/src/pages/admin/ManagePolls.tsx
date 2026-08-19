@@ -54,7 +54,7 @@ export function ManagePolls() {
 
   return (
     <Page>
-      <PageScene variant="towers" opacity={0.2} />
+      <PageScene variant="pulse" opacity={0.2} />
       <PageHeader
         eyebrow="Organiser"
         title="Manage polls"

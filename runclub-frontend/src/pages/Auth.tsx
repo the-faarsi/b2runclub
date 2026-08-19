@@ -2,14 +2,21 @@ import { motion } from "framer-motion";
 import { useCallback, useState, type ReactNode } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { Logo } from "../components/layout";
+import { PageScene } from "../components/scene3d";
 import { Button, buttonClass, Field, Input, Select, Spinner, useToast } from "../components/ui";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useFetch } from "../lib/useFetch";
 
-/* Seeded by `npm run test:api` in the backend. Dev-only affordance. */
+/**
+ * Seeded demo logins, dev-only.
+ *
+ * The organiser account is deliberately absent: it now uses the club's real email
+ * and password, and these values are compiled into the client bundle. A one-click
+ * button for a real admin credential is not something to ship, even behind a DEV
+ * flag — sign in with it normally instead.
+ */
 const DEMO_ACCOUNTS = [
-  { label: "Organiser", email: "admin@runclub.com", password: "adminpassword" },
   { label: "Member", email: "member@runclub.com", password: "memberpassword" },
   { label: "Volunteer", email: "volunteer@runclub.com", password: "volunteerpassword" },
 ];
@@ -23,6 +30,8 @@ function AuthLayout({ children, aside }: { children: ReactNode; aside: ReactNode
           className="absolute inset-0 -z-10 speedlines opacity-60"
           aria-hidden
         />
+        {/* Sits in the pitch panel, never over the form. */}
+        <PageScene variant="helix" opacity={0.3} className="!-top-24 !right-[-18%] !w-[86%]" />
         <div
           className="absolute -left-32 top-1/4 -z-10 size-[32rem] rounded-full opacity-[0.13] blur-3xl"
           style={{ background: "var(--color-gold)" }}

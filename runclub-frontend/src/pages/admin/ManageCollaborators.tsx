@@ -61,7 +61,7 @@ export function ManageCollaborators() {
 
   return (
     <Page>
-      <PageScene variant="frames" opacity={0.22} />
+      <PageScene variant="shards" opacity={0.22} />
       <PageHeader
         eyebrow="Organiser"
         title="Collaborators"

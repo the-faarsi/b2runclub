@@ -599,3 +599,36 @@ export interface StravaActivity {
   average_speed_kmh: number | null;
   url: string;
 }
+
+/* ── Database browser (admin) ───────────────────────────────── */
+
+export interface DbTableSummary {
+  name: string;
+  rows: number;
+  columns: number;
+  /** True when the table holds a credential column, redacted on read. */
+  has_secrets: boolean;
+}
+
+export interface DbColumn {
+  name: string;
+  /** SQLite type: TEXT / INTEGER / REAL / BOOLEAN / DATETIME. */
+  type: string;
+  notnull: boolean;
+  pk: boolean;
+  dflt: string | null;
+  /** Never readable or writable through the panel. */
+  secret: boolean;
+}
+
+export interface DbTablePage {
+  table: string;
+  primary_key: string | null;
+  columns: DbColumn[];
+  total: number;
+  limit: number;
+  offset: number;
+  sort: string;
+  dir: "asc" | "desc";
+  rows: Record<string, unknown>[];
+}

@@ -73,7 +73,7 @@ export function EventDetail() {
   if (loading) {
     return (
       <Page>
-      <PageScene variant="knot" opacity={0.24} />
+      <PageScene variant="terrain" opacity={0.24} />
         <Skeleton className="h-4 w-24" />
         <Skeleton className="mt-5 h-12 w-2/3" />
         <Skeleton className="mt-4 h-4 w-1/2" />
@@ -117,6 +117,9 @@ export function EventDetail() {
 
   return (
     <Page>
+      {/* Was only present in the loading skeleton, so the loaded page had no
+          backdrop at all. Terrain suits this page — it is the route view. */}
+      <PageScene variant="terrain" opacity={0.24} />
       <Link
         to="/events"
         className="mb-6 inline-flex items-center gap-1.5 text-[13px] text-ink-3 transition-colors hover:text-gold"

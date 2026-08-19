@@ -32,7 +32,7 @@ export function Leaderboard() {
 
   return (
     <Page>
-      <PageScene variant="towers" opacity={0.28} />
+      <PageScene variant="helix" opacity={0.28} />
       <PageHeader
         eyebrow={data?.club_name ?? "Strava"}
         title="This week's board"

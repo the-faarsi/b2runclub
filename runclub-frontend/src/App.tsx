@@ -10,6 +10,7 @@ import { ForgotPassword, Login, ResetPassword, Signup } from "./pages/Auth";
 import { AdminDashboard } from "./pages/admin/Dashboard";
 import { ManageEvents } from "./pages/admin/ManageEvents";
 import { ManageCollaborators } from "./pages/admin/ManageCollaborators";
+import { DatabaseAdmin } from "./pages/admin/Database";
 import { ManageMembers } from "./pages/admin/ManageMembers";
 import { ManagePolls } from "./pages/admin/ManagePolls";
 import { Calendar } from "./pages/Calendar";
@@ -159,6 +160,16 @@ export default function App() {
           element={
             <Guard roles={["ADMIN"]}>
               <ManageMembers />
+            </Guard>
+          }
+        />
+
+        {/* Direct database access. Admin-only here and independently on the API. */}
+        <Route
+          path="/admin/database"
+          element={
+            <Guard roles={["ADMIN"]}>
+              <DatabaseAdmin />
             </Guard>
           }
         />

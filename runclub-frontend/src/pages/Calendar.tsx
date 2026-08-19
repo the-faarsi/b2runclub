@@ -109,6 +109,23 @@ export function Calendar() {
   }, [regs]);
 
   const grid = useMemo(() => buildGrid(cursor.year, cursor.month), [cursor]);
+
+  /**
+   * Figures for the month on screen — counted from the events actually in this
+   * month, not the whole calendar, so paging changes them.
+   */
+  const monthStats = useMemo(() => {
+    const inMonth = (events ?? []).filter((e) => {
+      const d = new Date(e.date_time);
+      return d.getFullYear() === cursor.year && d.getMonth() === cursor.month;
+    });
+    return {
+      total: inMonth.length,
+      upcoming: inMonth.filter((e) => !isPast(e.date_time)).length,
+      registered: inMonth.filter((e) => regByEvent.has(e.id)).length,
+      free: inMonth.filter((e) => e.price === 0).length,
+    };
+  }, [events, cursor, regByEvent]);
   const selectedEvents = byDay.get(selectedKey) ?? [];
 
   const monthLabel = new Date(cursor.year, cursor.month, 1).toLocaleString("en-IN", {
@@ -157,7 +174,7 @@ export function Calendar() {
 
   return (
     <Page>
-      <PageScene variant="lattice" opacity={0.26} />
+      <PageScene variant="terrain" opacity={0.26} />
       <PageHeader
         eyebrow="Plan your block"
         title="Calendar"
@@ -253,7 +270,45 @@ export function Calendar() {
               </div>
             </div>
 
-            <div className="grid grid-cols-7 gap-1 sm:gap-2">
+            {/*
+             * Month summary. The header previously said only "N days with sessions",
+             * which tells an organiser nothing about the block they are looking at.
+             */}
+            <div className="mt-5 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-white/8 bg-white/8 sm:grid-cols-4">
+              {[
+                { label: "Sessions", value: String(monthStats.total), note: "this month" },
+                {
+                  label: "Still to come",
+                  value: String(monthStats.upcoming),
+                  note: monthStats.upcoming > 0 ? "open for entry" : "nothing left",
+                  tone: monthStats.upcoming > 0 ? "var(--color-gold)" : undefined,
+                },
+                {
+                  label: "You're in",
+                  value: String(monthStats.registered),
+                  note: monthStats.registered > 0 ? "registered" : "none yet",
+                  tone: monthStats.registered > 0 ? "var(--color-paid)" : undefined,
+                },
+                {
+                  label: "Free entry",
+                  value: String(monthStats.free),
+                  note: `of ${monthStats.total || 0}`,
+                },
+              ].map((x) => (
+                <div key={x.label} className="bg-surface px-3.5 py-3">
+                  <p className="eyebrow">{x.label}</p>
+                  <p
+                    className="display mt-1 text-[20px] leading-none tnum"
+                    style={x.tone ? { color: x.tone } : undefined}
+                  >
+                    {x.value}
+                  </p>
+                  <p className="mt-0.5 text-[10.5px] text-ink-3">{x.note}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-5 grid grid-cols-7 gap-1 sm:gap-2">
               {WEEKDAYS.map((w) => (
                 <div
                   key={w}
@@ -277,79 +332,119 @@ export function Calendar() {
                     key={cell.key}
                     onClick={() => setSelectedKey(cell.key)}
                     aria-label={`${fullDate(cell.date.toISOString())}${
-                      has ? `, ${dayEvents.length} session` : ", no sessions"
+                      has
+                        ? `, ${dayEvents.length} session${dayEvents.length === 1 ? "" : "s"}`
+                        : ", no sessions"
                     }`}
                     aria-pressed={isSelected}
                     className={cn(
-                      "relative flex aspect-square flex-col items-center justify-center rounded-lg border transition-all duration-200",
+                      /*
+                       * Taller than square so a cell can hold a readable chip. A pure
+                       * aspect-square grid left room for a dot and nothing else, which
+                       * meant you had to select a day to learn anything about it.
+                       */
+                      "group/day relative flex min-h-[76px] flex-col rounded-lg border p-1.5 text-left transition-colors duration-200 sm:min-h-[92px] sm:p-2",
                       isSelected
                         ? "border-gold bg-gold/12"
                         : has
-                          ? "border-gold/25 bg-gold/6 hover:border-gold/50"
+                          ? "border-gold/25 bg-gold/[0.055] hover:border-gold/50"
                           : "border-white/6 hover:border-white/16 hover:bg-white/4",
                       !cell.inMonth && "opacity-35",
                     )}
                   >
-                    <span
-                      className={cn(
-                        "tnum text-[13px] font-semibold sm:text-[14px]",
-                        isSelected || has ? "text-ink" : "text-ink-2",
+                    <span className="flex items-center justify-between gap-1">
+                      <span
+                        className={cn(
+                          "tnum text-[12.5px] font-semibold sm:text-[13.5px]",
+                          isToday
+                            ? "grid size-5 place-items-center rounded-full bg-gold text-[11px] text-[color:var(--color-gold-ink)] sm:size-6 sm:text-[12px]"
+                            : isSelected || has
+                              ? "text-ink"
+                              : "text-ink-2",
+                        )}
+                      >
+                        {cell.date.getDate()}
+                      </span>
+
+                      {/* Registered marker sits with the date, not floating over a chip. */}
+                      {mine && (
+                        <span
+                          className="size-1.5 shrink-0 rounded-full bg-[color:var(--color-paid)]"
+                          aria-hidden
+                          title="You're registered"
+                        />
                       )}
-                    >
-                      {cell.date.getDate()}
                     </span>
 
-                    {isToday && (
-                      <span className="mt-0.5 text-[8px] font-bold uppercase tracking-wider text-gold">
-                        Today
-                      </span>
-                    )}
-
-                    {/* Event pips — capped at three, then a count */}
+                    {/*
+                     * One chip for the first session — discipline icon plus start time,
+                     * which is what someone scanning a month actually wants. Extra
+                     * sessions collapse to a count rather than overflowing the cell.
+                     */}
                     {has && (
-                      <span className="absolute bottom-1.5 flex items-center gap-0.5">
-                        {dayEvents.slice(0, 3).map((e) => (
+                      <span className="mt-auto flex flex-col gap-0.5">
+                        {dayEvents.slice(0, 1).map((e) => (
                           <span
                             key={e.id}
                             className={cn(
-                              "size-1 rounded-full",
-                              allPast ? "bg-ink-3" : "bg-gold",
+                              "flex items-center gap-1 rounded px-1 py-0.5 text-[9.5px] font-semibold leading-tight sm:text-[10px]",
+                              allPast
+                                ? "bg-white/5 text-ink-3"
+                                : "bg-gold/16 text-gold",
                             )}
-                            aria-hidden
-                          />
+                          >
+                            <DisciplineIcon type={e.type} className="size-2.5 shrink-0" />
+                            <span className="truncate">{eventTime(e.date_time)}</span>
+                          </span>
                         ))}
-                        {dayEvents.length > 3 && (
-                          <span className="ml-0.5 text-[8px] font-bold text-gold">
-                            +{dayEvents.length - 3}
+                        {dayEvents.length > 1 && (
+                          <span className="px-1 text-[9px] font-semibold text-ink-3">
+                            +{dayEvents.length - 1} more
                           </span>
                         )}
                       </span>
-                    )}
-
-                    {/* Registered marker */}
-                    {mine && (
-                      <span
-                        className="absolute right-1 top-1 size-1.5 rounded-full bg-[color:var(--color-paid)]"
-                        aria-hidden
-                      />
                     )}
                   </button>
                 );
               })}
             </div>
 
-            {/* Legend */}
-            <div className="mt-5 flex flex-wrap gap-x-5 gap-y-2 border-t border-white/6 pt-4">
-              {[
-                { c: "bg-gold", l: "Session scheduled" },
-                { c: "bg-ink-3", l: "Already run" },
-                { c: "bg-[color:var(--color-paid)]", l: "You're registered" },
-              ].map((x) => (
-                <span key={x.l} className="flex items-center gap-1.5 text-[11px] text-ink-3">
-                  <span className={cn("size-1.5 rounded-full", x.c)} aria-hidden />
-                  {x.l}
+            {/* Legend — mirrors the markers the cells actually use. */}
+            <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-white/6 pt-4">
+              <span className="flex items-center gap-1.5 text-[11px] text-ink-3">
+                <span
+                  className="rounded bg-gold/16 px-1 py-0.5 text-[9px] font-semibold text-gold"
+                  aria-hidden
+                >
+                  6:30
                 </span>
-              ))}
+                Start time · coming up
+              </span>
+              <span className="flex items-center gap-1.5 text-[11px] text-ink-3">
+                <span
+                  className="rounded bg-white/5 px-1 py-0.5 text-[9px] font-semibold text-ink-3"
+                  aria-hidden
+                >
+                  6:30
+                </span>
+                Already run
+              </span>
+              <span className="flex items-center gap-1.5 text-[11px] text-ink-3">
+                <span
+                  className="size-1.5 rounded-full bg-[color:var(--color-paid)]"
+                  aria-hidden
+                />
+                You're registered
+              </span>
+              <span className="flex items-center gap-1.5 text-[11px] text-ink-3">
+                <span
+                  className="grid size-4 place-items-center rounded-full bg-gold text-[8px] font-bold text-[color:var(--color-gold-ink)]"
+                  aria-hidden
+                >
+                  {today.getDate()}
+                </span>
+                Today
+              </span>
             </div>
           </Card>
 

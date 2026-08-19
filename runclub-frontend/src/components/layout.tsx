@@ -6,7 +6,6 @@ import { useAuth } from "../lib/auth";
 import { cn, relativeTime, ROLE_META } from "../lib/format";
 import type { Notification } from "../lib/types";
 import { useFetch } from "../lib/useFetch";
-import { InstagramIcon, WhatsAppIcon } from "./icons";
 import { Avatar, buttonClass } from "./ui";
 
 /* ── Wordmark ─────────────────────────────────────────────── */
@@ -307,9 +306,12 @@ function navItems(isAdmin: boolean, canRegister: boolean, isClubMember: boolean)
          */
         active: (path) =>
           path === "/admin" ||
-          (path.startsWith("/admin/") && !path.startsWith("/admin/members")),
+          (path.startsWith("/admin/") &&
+            !path.startsWith("/admin/members") &&
+            !path.startsWith("/admin/database")),
       },
       { to: "/admin/members", label: "Members" },
+      { to: "/admin/database", label: "Database" },
     );
   }
   return items;
@@ -504,29 +506,6 @@ export function Footer() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-4">
-          {club?.whatsapp && (
-            <a
-              href={club.whatsapp}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-1.5 text-xs font-medium text-ink-2 transition-colors hover:text-gold"
-            >
-              <WhatsAppIcon className="size-3.5" />
-              WhatsApp community
-            </a>
-          )}
-          {/* Stored as a bare handle by the backend, so build the URL here. */}
-          {club?.instagram && (
-            <a
-              href={`https://instagram.com/${club.instagram}`}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-1.5 text-xs font-medium text-ink-2 transition-colors hover:text-gold"
-            >
-              <InstagramIcon className="size-3.5" />
-              @{club.instagram}
-            </a>
-          )}
           {club?.contact_email && (
             <a
               href={`mailto:${club.contact_email}`}

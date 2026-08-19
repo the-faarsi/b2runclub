@@ -19,11 +19,16 @@ const GOLD_DIM = "#7a5f1a";
 
 export type SceneVariant =
   | "ribbon" // landing — the running route
-  | "lattice" // events / calendar / tickets — floating date tiles
-  | "towers" // leaderboard / polls / dashboard — extruded bars
+  | "lattice" // events admin — floating date tiles
+  | "towers" // dashboard — extruded bars
   | "orb" // about / profile — a slowly turning wireframe solid
   | "frames" // gallery — drifting photo planes
-  | "knot"; // forum / misc — an interlinked torus knot
+  | "knot" // 404 — an interlinked torus knot
+  | "terrain" // calendar / event detail — elevation profile ridge
+  | "helix" // leaderboard — twin climbing spirals
+  | "constellation" // forum / members — a network of linked nodes
+  | "pulse" // polls / race day — concentric start-line rings
+  | "shards"; // tickets / collaborators — scattered angled planes
 
 /* ── Shared rig ───────────────────────────────────────────── */
 
@@ -436,6 +441,252 @@ function Knot({ calm }: { calm: boolean }) {
 
 /* ── Dispatcher ───────────────────────────────────────────── */
 
+/* ── 7. Terrain — an elevation ridge (calendar, event detail) ── */
+
+function Terrain({ calm }: { calm: boolean }) {
+  const mesh = useRef<THREE.Mesh>(null);
+  const glow = useRef<THREE.Mesh>(null);
+
+  /**
+   * A plane displaced by layered sine waves, drawn as wireframe so it reads as a
+   * route profile rather than solid ground. The displacement is baked once —
+   * animating vertices every frame would cost far more than this earns.
+   */
+  const geometry = useMemo(() => {
+    const g = new THREE.PlaneGeometry(13, 7, 46, 22);
+    const pos = g.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i);
+      const y = pos.getY(i);
+      const h =
+        Math.sin(x * 0.55) * 0.62 +
+        Math.sin(x * 1.3 + y * 0.7) * 0.28 +
+        Math.cos(y * 0.9) * 0.22;
+      pos.setZ(i, h);
+    }
+    g.computeVertexNormals();
+    return g;
+  }, []);
+
+  useEffect(() => () => geometry.dispose(), [geometry]);
+
+  useFrame((state, delta) => {
+    if (calm) return;
+    if (mesh.current) mesh.current.rotation.z += delta * 0.02;
+    // A marker running the ridge, like a position along a route.
+    if (glow.current) {
+      const t = (state.clock.elapsedTime * 0.34) % (Math.PI * 2);
+      const x = Math.sin(t) * 5.2;
+      glow.current.position.set(x, Math.cos(t * 0.6) * 1.4, Math.sin(x * 0.55) * 0.62 + 0.3);
+    }
+  });
+
+  return (
+    <group rotation={[-1.02, 0, 0.34]}>
+      <mesh ref={mesh} geometry={geometry}>
+        <meshBasicMaterial color={GOLD_DEEP} wireframe transparent opacity={0.42} />
+      </mesh>
+      <mesh ref={glow}>
+        <sphereGeometry args={[0.13, 14, 14]} />
+        <meshStandardMaterial color={GOLD} emissive={GOLD} emissiveIntensity={2.4} />
+      </mesh>
+    </group>
+  );
+}
+
+/* ── 8. Helix — twin climbing spirals (leaderboard) ─────────── */
+
+function Helix({ calm }: { calm: boolean }) {
+  const group = useRef<THREE.Group>(null);
+
+  // Two offset strands, so it reads as competition rather than one rising line.
+  const nodes = useMemo(
+    () =>
+      Array.from({ length: 44 }, (_, i) => {
+        const strand = i % 2;
+        const step = Math.floor(i / 2);
+        const t = step * 0.46 + strand * Math.PI;
+        return {
+          key: i,
+          x: Math.cos(t) * 1.85,
+          y: step * 0.42 - 4.4,
+          z: Math.sin(t) * 1.85,
+          // The leading strand glows; the trailing one sits back.
+          lit: strand === 0,
+          size: strand === 0 ? 0.17 : 0.13,
+        };
+      }),
+    [],
+  );
+
+  useFrame((_, delta) => {
+    if (calm || !group.current) return;
+    group.current.rotation.y += delta * 0.22;
+  });
+
+  return (
+    <group ref={group} rotation={[0.12, 0, 0.16]}>
+      {nodes.map((n) => (
+        <mesh key={n.key} position={[n.x, n.y, n.z]}>
+          <boxGeometry args={[n.size, n.size, n.size]} />
+          <meshStandardMaterial
+            color={n.lit ? GOLD : "#242832"}
+            emissive={n.lit ? GOLD_DEEP : GOLD_DIM}
+            emissiveIntensity={n.lit ? 1.1 : 0.1}
+            metalness={0.75}
+            roughness={0.32}
+          />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
+/* ── 9. Constellation — a linked network (forum, members) ───── */
+
+function Constellation({ calm }: { calm: boolean }) {
+  const group = useRef<THREE.Group>(null);
+
+  const { points, lines } = useMemo(() => {
+    const pts = Array.from({ length: 26 }, () => ({
+      x: (Math.random() - 0.5) * 9,
+      y: (Math.random() - 0.5) * 6,
+      z: (Math.random() - 0.5) * 4,
+      phase: Math.random() * Math.PI * 2,
+    }));
+
+    // Join near neighbours only, which is what makes it read as a network
+    // instead of a cloud. Capped so the line count stays small.
+    const segs: number[] = [];
+    for (let i = 0; i < pts.length; i++) {
+      for (let j = i + 1; j < pts.length; j++) {
+        const d = Math.hypot(pts[i].x - pts[j].x, pts[i].y - pts[j].y, pts[i].z - pts[j].z);
+        if (d < 2.6) segs.push(pts[i].x, pts[i].y, pts[i].z, pts[j].x, pts[j].y, pts[j].z);
+      }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.Float32BufferAttribute(segs, 3));
+    return { points: pts, lines: geo };
+  }, []);
+
+  useEffect(() => () => lines.dispose(), [lines]);
+
+  useFrame((state, delta) => {
+    if (calm || !group.current) return;
+    group.current.rotation.y += delta * 0.05;
+    group.current.rotation.x = Math.sin(state.clock.elapsedTime * 0.16) * 0.09;
+  });
+
+  return (
+    <group ref={group}>
+      <lineSegments geometry={lines}>
+        <lineBasicMaterial color={GOLD_DEEP} transparent opacity={0.3} />
+      </lineSegments>
+      {points.map((pt, i) => (
+        <mesh key={i} position={[pt.x, pt.y, pt.z]}>
+          <sphereGeometry args={[i % 5 === 0 ? 0.15 : 0.08, 12, 12]} />
+          <meshStandardMaterial
+            color={i % 5 === 0 ? GOLD : "#3a4150"}
+            emissive={i % 5 === 0 ? GOLD_DEEP : GOLD_DIM}
+            emissiveIntensity={i % 5 === 0 ? 1.6 : 0.2}
+          />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
+/* ── 10. Pulse — concentric start-line rings (polls, race day) ─ */
+
+function Pulse({ calm }: { calm: boolean }) {
+  const rings = useRef<THREE.Group>(null);
+  const COUNT = 6;
+
+  useFrame((state) => {
+    if (calm || !rings.current) return;
+    rings.current.children.forEach((child, i) => {
+      // Each ring expands and fades on a staggered loop, like a countdown.
+      const t = (state.clock.elapsedTime * 0.34 + i / COUNT) % 1;
+      const scale = 0.4 + t * 3.4;
+      child.scale.setScalar(scale);
+      const mat = (child as THREE.Mesh).material as THREE.MeshBasicMaterial;
+      mat.opacity = (1 - t) * 0.5;
+    });
+  });
+
+  return (
+    <group rotation={[-1.16, 0, 0]}>
+      <group ref={rings}>
+        {Array.from({ length: COUNT }, (_, i) => (
+          <mesh key={i}>
+            <ringGeometry args={[1.32, 1.4, 72]} />
+            <meshBasicMaterial color={GOLD} transparent opacity={0.4} side={THREE.DoubleSide} />
+          </mesh>
+        ))}
+      </group>
+      {/* A still marker at the centre so the rings have an origin. */}
+      <mesh>
+        <circleGeometry args={[0.3, 32]} />
+        <meshBasicMaterial color={GOLD} transparent opacity={0.7} side={THREE.DoubleSide} />
+      </mesh>
+    </group>
+  );
+}
+
+/* ── 11. Shards — scattered angled planes (tickets, partners) ── */
+
+function Shards({ calm }: { calm: boolean }) {
+  const group = useRef<THREE.Group>(null);
+
+  const cards = useMemo(
+    () =>
+      Array.from({ length: 13 }, (_, i) => ({
+        key: i,
+        x: (Math.random() - 0.5) * 8.5,
+        y: (Math.random() - 0.5) * 5.5,
+        z: (Math.random() - 0.5) * 3.2,
+        rx: (Math.random() - 0.5) * 0.9,
+        ry: (Math.random() - 0.5) * 1.2,
+        rz: (Math.random() - 0.5) * 0.6,
+        spin: (Math.random() - 0.5) * 0.16,
+        lit: i % 4 === 0,
+      })),
+    [],
+  );
+
+  useFrame((state, delta) => {
+    if (calm || !group.current) return;
+    group.current.rotation.y += delta * 0.04;
+    group.current.children.forEach((child, i) => {
+      const c = cards[i];
+      if (!c) return;
+      child.rotation.z = c.rz + Math.sin(state.clock.elapsedTime * 0.4 + i) * 0.12;
+      child.position.y = c.y + Math.sin(state.clock.elapsedTime * 0.35 + i) * 0.16;
+    });
+  });
+
+  return (
+    <group ref={group} rotation={[0.16, -0.3, 0]}>
+      {cards.map((c) => (
+        <mesh key={c.key} position={[c.x, c.y, c.z]} rotation={[c.rx, c.ry, c.rz]}>
+          {/* Ticket-shaped: wider than tall. */}
+          <planeGeometry args={[1.5, 0.78]} />
+          <meshStandardMaterial
+            color={c.lit ? GOLD : "#20242c"}
+            emissive={c.lit ? GOLD_DEEP : GOLD_DIM}
+            emissiveIntensity={c.lit ? 0.85 : 0.08}
+            metalness={0.6}
+            roughness={0.4}
+            transparent
+            opacity={c.lit ? 0.9 : 0.66}
+            side={THREE.DoubleSide}
+          />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
 const CAMERA: Record<SceneVariant, [number, number, number]> = {
   ribbon: [0, 0.8, 8.2],
   lattice: [0, 0, 7.6],
@@ -443,6 +694,11 @@ const CAMERA: Record<SceneVariant, [number, number, number]> = {
   orb: [0, 0, 6.4],
   frames: [0, 0.5, 6.8],
   knot: [0, 0, 6.2],
+  terrain: [0, 0.2, 8.6],
+  helix: [0, 0, 8.4],
+  constellation: [0, 0, 8.0],
+  pulse: [0, 0.6, 7.4],
+  shards: [0, 0, 7.8],
 };
 
 function Contents({ variant, calm }: { variant: SceneVariant; calm: boolean }) {
@@ -457,6 +713,16 @@ function Contents({ variant, calm }: { variant: SceneVariant; calm: boolean }) {
       return <Frames calm={calm} />;
     case "knot":
       return <Knot calm={calm} />;
+    case "terrain":
+      return <Terrain calm={calm} />;
+    case "helix":
+      return <Helix calm={calm} />;
+    case "constellation":
+      return <Constellation calm={calm} />;
+    case "pulse":
+      return <Pulse calm={calm} />;
+    case "shards":
+      return <Shards calm={calm} />;
     case "ribbon":
     default:
       return <Ribbon calm={calm} />;
