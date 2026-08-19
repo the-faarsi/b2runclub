@@ -23,8 +23,8 @@ import {
 } from "../../components/ui";
 import { api } from "../../lib/api";
 import { useAuth } from "../../lib/auth";
-import { cn, fullDate, minsToHm, ROLE_META } from "../../lib/format";
-import type { AssignableRole, Member } from "../../lib/types";
+import { ROLE_META, cn, eventDate, fullDate, inr, minsToHm } from "../../lib/format";
+import type { AssignableRole, Member, MemberActivity } from "../../lib/types";
 import { useFetch } from "../../lib/useFetch";
 
 type Filter = "all" | "MEMBER" | "VOLUNTEER" | "VISITOR" | "ADMIN" | "STRAVA";
@@ -397,6 +397,8 @@ export function ManageMembers() {
                           />
                         </div>
 
+                        <ActivityPanel activity={m.activity} />
+
                         {m.strava ? (
                           <div className="mt-3 rounded-xl border border-[color:var(--color-free)]/25 bg-[color:var(--color-free)]/6 p-4">
                             <p className="eyebrow text-[color:var(--color-free)]">
@@ -516,5 +518,119 @@ export function ManageMembers() {
         )}
       </Modal>
     </Page>
+  );
+}
+
+/* ── Activity ─────────────────────────────────────────────── */
+
+function Figure({
+  label,
+  value,
+  tone,
+  note,
+}: {
+  label: string;
+  value: string;
+  tone?: string;
+  note?: string;
+}) {
+  return (
+    <div className="bg-surface p-3.5">
+      <p className="eyebrow">{label}</p>
+      <p className="display mt-1 text-[20px] leading-none tnum" style={tone ? { color: tone } : undefined}>
+        {value}
+      </p>
+      {note && <p className="mt-1 text-[10.5px] text-ink-3">{note}</p>}
+    </div>
+  );
+}
+
+/**
+ * A person's record with the club. Kept to figures an organiser acts on —
+ * whether they turn up, whether they've paid, whether they marshal.
+ *
+ * Imported health workouts are absent by design: members are promised organisers
+ * never see them.
+ */
+function ActivityPanel({ activity: a }: { activity: MemberActivity }) {
+  const neverRegistered = a.registrations === 0;
+
+  return (
+    <div className="mt-3">
+      <p className="eyebrow mb-2">Record with the club</p>
+
+      {neverRegistered ? (
+        <p className="rounded-xl border border-white/8 bg-surface-2/40 px-3.5 py-3 text-[12.5px] text-ink-3">
+          Hasn't registered for a session yet.
+        </p>
+      ) : (
+        <>
+          <div className="grid gap-px overflow-hidden rounded-xl border border-white/8 bg-white/8 sm:grid-cols-4">
+            <Figure label="Registered" value={String(a.registrations)} note="sessions signed up for" />
+            <Figure
+              label="Turned up"
+              value={String(a.attended)}
+              tone={a.attended > 0 ? "var(--color-paid)" : undefined}
+              note="scanned at the start"
+            />
+            <Figure
+              label="No-shows"
+              value={String(a.no_shows)}
+              tone={a.no_shows > 0 ? "var(--color-pending)" : undefined}
+              note="had a ticket, didn't come"
+            />
+            <Figure
+              label="Attendance"
+              value={a.attendance_rate === null ? "—" : `${a.attendance_rate}%`}
+              note={a.attendance_rate === null ? "nothing attendable yet" : "of ticketed entries"}
+            />
+          </div>
+
+          <div className="mt-2 grid gap-px overflow-hidden rounded-xl border border-white/8 bg-white/8 sm:grid-cols-4">
+            <Figure label="Paid" value={inr(a.total_paid)} note={`${a.paid_count} entries`} />
+            <Figure
+              label="Refunded"
+              value={a.total_refunded > 0 ? inr(a.total_refunded) : "—"}
+              note={a.refunded_count > 0 ? `${a.refunded_count} refunds` : "none"}
+            />
+            <Figure
+              label="Marshalled"
+              value={String(a.marshalled_count)}
+              tone={a.marshalled_count > 0 ? "var(--color-free)" : undefined}
+              note={`${a.shifts_claimed} post${a.shifts_claimed === 1 ? "" : "s"} claimed`}
+            />
+            <Figure label="Finished" value={String(a.results_finished)} note="results recorded" />
+          </div>
+
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            {a.pending_count > 0 && (
+              <Badge color="var(--color-pending)">
+                {a.pending_count} awaiting payment
+              </Badge>
+            )}
+            {a.blocked_count > 0 && (
+              <Badge color="var(--color-failed)">
+                Blocked from {a.blocked_count} event{a.blocked_count === 1 ? "" : "s"}
+              </Badge>
+            )}
+            {a.comped_count > 0 && (
+              <Badge color="var(--color-free)">{a.comped_count} comped</Badge>
+            )}
+          </div>
+
+          {a.last_event && (
+            <p className="mt-2.5 text-[12px] text-ink-3">
+              Most recent: <span className="text-ink-2">{a.last_event.title}</span> on{" "}
+              {eventDate(a.last_event.date_time)} —{" "}
+              {a.last_event.attended ? (
+                <span className="text-[color:var(--color-paid)]">attended</span>
+              ) : (
+                <span className="text-[color:var(--color-pending)]">didn't check in</span>
+              )}
+            </p>
+          )}
+        </>
+      )}
+    </div>
   );
 }

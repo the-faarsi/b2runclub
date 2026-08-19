@@ -24,6 +24,14 @@ export interface ClubEvent {
   price: number;
   status: EventStatus;
   admin_id: string;
+  /** Organiser's brief for the event. Null when none was written. */
+  description?: string | null;
+  /** Maximum participants. Null means no limit. */
+  capacity?: number | null;
+  /** Participant places used. Null on an uncapped event. Volunteers don't count. */
+  taken?: number | null;
+  spots_left?: number | null;
+  full?: boolean;
 }
 
 export interface Registration {
@@ -147,6 +155,36 @@ export interface Member {
   /** Null unless Strava is linked. */
   strava: MemberStrava | null;
   registration_count: number;
+  /** Full history for the directory's detail view. */
+  activity: MemberActivity;
+}
+
+/**
+ * A person's history with the club, as an organiser needs to see it.
+ *
+ * Deliberately excludes imported health workouts — members are told organisers
+ * never see those.
+ */
+export interface MemberActivity {
+  registrations: number;
+  attended: number;
+  /** Ticket-ready entries they didn't turn up for. */
+  no_shows: number;
+  /** Percentage, or null when they've never had an attendable entry. */
+  attendance_rate: number | null;
+  paid_count: number;
+  pending_count: number;
+  comped_count: number;
+  refunded_count: number;
+  blocked_count: number;
+  /** Registrations taken as a volunteer. */
+  marshalled_count: number;
+  /** Marshal posts claimed on the race-day console. */
+  shifts_claimed: number;
+  results_finished: number;
+  total_paid: number;
+  total_refunded: number;
+  last_event: { title: string; date_time: string; attended: boolean } | null;
 }
 
 /** Roles an organiser may assign — ADMIN is deliberately not grantable. */
@@ -211,6 +249,8 @@ export interface ClubInfo {
   contact_email: string | null;
   instagram: string | null;
   strava_club: string | null;
+  /** Invite URL for the club's WhatsApp community, or null if not set. */
+  whatsapp: string | null;
   updated_at: string | null;
 }
 
@@ -248,6 +288,36 @@ export interface ReminderSchedule {
   /** False when SMTP is unset — reminders are logged, not emailed. */
   mailer_configured: boolean;
   reminders: EventReminder[];
+}
+
+/* ── Email configuration ────────────────────────────────────── */
+
+/**
+ * Which mail settings the backend can see. Values are never sent for the
+ * credentials — only whether they're present — so this is safe to display.
+ */
+export interface MailerConfig {
+  configured: boolean;
+  host: string | null;
+  port: number;
+  /** Implicit TLS on 465, STARTTLS otherwise. */
+  secure: boolean;
+  user_set: boolean;
+  pass_set: boolean;
+  from: string;
+  app_url: string;
+  /** Env var names that still need setting. */
+  missing: string[];
+}
+
+export interface MailerStatus {
+  configured: boolean;
+  /** The SMTP handshake and login succeeded. */
+  ok: boolean;
+  /** True when there's no transport, so mail is logged instead of sent. */
+  simulated: boolean;
+  error: string | null;
+  config: MailerConfig;
 }
 
 export interface SweepResult {

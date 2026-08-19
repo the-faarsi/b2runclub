@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 
-const JWT_SECRET = process.env.JWT_SECRET || "YourSuperSecretJWTString";
+import { JWT_SECRET } from "../utils/secrets";
 
 export interface AuthRequest extends Request {
     user?: {
@@ -37,4 +37,23 @@ export function requireRole(allowedRoles: string[]) {
             res.status(403).json({ error: "Forbidden: Access denied" });
         }
     };
+}
+
+/**
+ * Demands a real signed-in account, whatever its role.
+ *
+ * `requireRole` cannot express this. It maps an anonymous request to the role
+ * "VISITOR", so a list that includes VISITOR — which it must, because VISITOR is a
+ * genuine registered role — also lets signed-out traffic straight through. Any
+ * handler then reading `req.user!.id` gets undefined and fails as a 500 instead of
+ * an honest 401.
+ *
+ * Use this for anything scoped to "my own account".
+ */
+export function requireAccount(req: AuthRequest, res: Response, next: NextFunction) {
+    if (!req.user?.id) {
+        res.status(401).json({ error: "Sign in to continue" });
+        return;
+    }
+    next();
 }

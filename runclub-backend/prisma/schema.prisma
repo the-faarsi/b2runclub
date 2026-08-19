@@ -111,6 +111,9 @@ model ClubInfo {
   contact_email String?
   instagram     String?
   strava_club   String?
+  /// Invite URL for the club's WhatsApp community. Editable because WhatsApp
+  /// invite links can be reset by a group admin, which retires the old one.
+  whatsapp      String?
   updated_at    DateTime @updatedAt
 }
 
@@ -136,6 +139,12 @@ model Event {
   location    String
   price       Float
   status      String @default("DRAFT")
+
+  /// Free-text brief shown on the event page. Optional.
+  description String?
+  /// Maximum attendees. Null means no limit, which is the default so existing
+  /// events keep behaving exactly as they did before capacity existed.
+  capacity    Int?
 
   admin_id    String
   created_by  User     @relation(fields: [admin_id], references: [id])

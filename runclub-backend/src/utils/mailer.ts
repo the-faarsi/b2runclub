@@ -84,6 +84,63 @@ export async function sendMail(mail: Mail): Promise<SendResult> {
     }
 }
 
+/**
+ * Which mail settings are present, for the admin diagnostics panel.
+ *
+ * Values are never returned — only whether each is set — so the panel can be
+ * looked at over a screen share without leaking the SMTP password.
+ */
+export function mailerConfig() {
+    return {
+        configured: mailerConfigured,
+        host: SMTP_HOST ?? null,
+        port: SMTP_PORT,
+        /** Implicit TLS on 465, STARTTLS elsewhere. */
+        secure: SMTP_PORT === 465,
+        user_set: Boolean(SMTP_USER),
+        pass_set: Boolean(SMTP_PASS),
+        from: MAIL_FROM,
+        app_url: process.env.APP_URL ?? "http://localhost:5173 (default)",
+        missing: (
+            [
+                ["SMTP_HOST", SMTP_HOST],
+                ["SMTP_USER", SMTP_USER],
+                ["SMTP_PASS", SMTP_PASS],
+            ] as const
+        )
+            .filter(([, v]) => !v)
+            .map(([k]) => k),
+    };
+}
+
+/** A deliberately plain message for confirming delivery actually works. */
+export function testEmail(input: { name: string; host: string }): Mail {
+    const html = shell(
+        `
+      <p style="margin:0 0 6px;color:${GOLD};font-size:11px;font-weight:700;letter-spacing:0.16em;text-transform:uppercase;">Test message</p>
+      <h1 style="margin:0 0 14px;color:${INK};font-size:24px;line-height:1.2;font-weight:800;letter-spacing:-0.03em;">Email is working</h1>
+      <p style="margin:0 0 18px;color:#a5aab5;font-size:14px;line-height:1.6;">
+        Hi ${input.name}, this was sent from the B Squared backend through
+        <strong style="color:${INK};">${input.host}</strong>. If it reached your inbox, event
+        reminders and password-reset links will too.
+      </p>
+      <p style="margin:0;color:#6d737f;font-size:12px;line-height:1.6;">
+        Nobody else received this. Sent because an organiser pressed "Send a test email".
+      </p>`,
+        "B Squared email is working",
+    );
+
+    const text = [
+        "Email is working",
+        "",
+        `Hi ${input.name},`,
+        `This was sent from the B Squared backend through ${input.host}.`,
+        "If it reached your inbox, event reminders and password-reset links will too.",
+    ].join("\n");
+
+    return { to: "", subject: "B Squared — test email", html, text };
+}
+
 /** Verifies the SMTP connection — used by the admin diagnostics endpoint. */
 export async function verifyMailer(): Promise<SendResult> {
     const t = getTransport();

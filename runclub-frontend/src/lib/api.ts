@@ -16,6 +16,8 @@ import type {
   ReminderSchedule,
   FinancialOverview,
   Leaderboard,
+  MailerConfig,
+  MailerStatus,
   Member,
   MyFeedback,
   MyResults,
@@ -189,6 +191,35 @@ export const api = {
       auth: false,
     }),
 
+  /* ── your own account ───────────────────────────────────── */
+
+  /**
+   * Authoritative read of the signed-in account. The JWT carries a snapshot from
+   * sign-in, so it goes stale as soon as a detail changes or an organiser changes
+   * your role — prefer this over `session.user()` on the profile page.
+   */
+  me: () => request<{ user: User }>("/api/auth/me"),
+
+  /** Details with no security weight. Role is deliberately not accepted. */
+  updateProfile: (input: { name?: string; emergency_contact?: string }) =>
+    request<{ message: string; user: User }>("/api/auth/me", {
+      method: "PATCH",
+      body: input,
+    }),
+
+  /** Email is the login identity, so the current password is required. */
+  changeEmail: (input: { email: string; current_password: string }) =>
+    request<{ message: string; user: User; changed: boolean }>("/api/auth/me/email", {
+      method: "PATCH",
+      body: input,
+    }),
+
+  changePassword: (input: { current_password: string; password: string }) =>
+    request<{ message: string }>("/api/auth/me/password", {
+      method: "POST",
+      body: input,
+    }),
+
   /**
    * Start a password reset. The backend answers identically whether or not the
    * address exists, so the UI must not branch on the response — doing so would
@@ -227,6 +258,9 @@ export const api = {
     location: string;
     price: number;
     status: EventStatus;
+    description?: string | null;
+    /** Null or omitted means unlimited places. */
+    capacity?: number | null;
     /** Hours-before offsets to email registrants at. */
     reminder_offsets?: number[];
   }) =>
@@ -282,6 +316,21 @@ export const api = {
       "/api/payments/simulate",
       { method: "POST", body: { registration_id: registrationId } },
     ),
+
+  /**
+   * Mint a fresh Razorpay order for a PENDING registration whose existing order
+   * can't be paid — typically an `order_mock_…` id created before real Razorpay
+   * keys were configured. Preserves the registration rather than redoing it.
+   */
+  refreshPaymentOrder: (registrationId: string) =>
+    request<{
+      message: string;
+      registration: Registration;
+      razorpay_order_id: string;
+      previous_order_id: string | null;
+      razorpay_key_id: string;
+      amount: number;
+    }>(`/api/payments/order/${registrationId}/refresh`, { method: "POST" }),
 
   /** Hands a Checkout callback to the backend, which verifies the signature. */
   verifyPayment: (input: {
@@ -433,11 +482,22 @@ export const api = {
   runReminders: (eventId: string) =>
     request<SweepResult>(`/api/admin/events/${eventId}/reminders/run`, { method: "POST" }),
 
-  /** Whether SMTP is configured and reachable. */
-  mailerStatus: () =>
-    request<{ configured: boolean; ok: boolean; simulated: boolean; error: string | null }>(
-      "/api/admin/mailer",
-    ),
+  /** Whether SMTP is configured and reachable, plus which settings are present. */
+  mailerStatus: () => request<MailerStatus>("/api/admin/mailer"),
+
+  /**
+   * Sends a real test email to the signed-in organiser's own address.
+   * `mailerStatus` only proves the connection authenticates; this proves a message
+   * is actually accepted by the relay.
+   */
+  sendTestEmail: () =>
+    request<{
+      message: string;
+      sent: boolean;
+      to: string;
+      took_ms: number;
+      config: MailerConfig;
+    }>("/api/admin/mailer/test", { method: "POST" }),
 
   /** Interactive roster for one event (admin). The CSV export is for accounting. */
   eventRegistrations: (eventId: string) =>

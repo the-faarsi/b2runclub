@@ -4,14 +4,21 @@ import prisma from "../utils/prisma";
 import { AuthRequest, requireRole } from "../middleware/auth";
 import Razorpay from "razorpay";
 
+import {
+    RAZORPAY_KEY_ID,
+    RAZORPAY_KEY_SECRET,
+    RAZORPAY_MOCK_MODE,
+    RAZORPAY_WEBHOOK_SECRET,
+    WEBHOOKS_VERIFIABLE,
+} from "../utils/secrets";
+
 const razorpay = new Razorpay({
-    key_id: process.env.RAZORPAY_KEY_ID || "rzp_test_YourTestKeyId",
-    key_secret: process.env.RAZORPAY_KEY_SECRET || "YourTestKeySecret",
+    // Placeholder strings only; every call is gated behind RAZORPAY_MOCK_MODE.
+    key_id: RAZORPAY_KEY_ID ?? "unconfigured",
+    key_secret: RAZORPAY_KEY_SECRET ?? "unconfigured",
 });
 
 const router = Router();
-const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET || "CreateAStrongSecret";
-const razorpayKeySecret = process.env.RAZORPAY_KEY_SECRET || "YourTestKeySecret";
 
 // Extended request type to support raw body stored by custom JSON parser verification
 interface WebhookRequest extends AuthRequest {
@@ -21,6 +28,22 @@ interface WebhookRequest extends AuthRequest {
 // Razorpay Webhook Endpoint
 router.post("/webhook", async (req: WebhookRequest, res: Response): Promise<void> => {
     try {
+        /**
+         * With no webhook secret configured there is nothing to verify against, so
+         * every request is refused. Previously this fell back to a default string
+         * published in the source, which meant an unconfigured deployment happily
+         * accepted forged "payment.captured" events and marked entries paid.
+         */
+        if (!WEBHOOKS_VERIFIABLE) {
+            console.error(
+                "[webhook] rejected: RAZORPAY_WEBHOOK_SECRET is not set, so signatures cannot be verified",
+            );
+            res.status(503).json({
+                error: "Webhooks are not configured on this server",
+            });
+            return;
+        }
+
         const signature = req.headers["x-razorpay-signature"] as string;
 
         if (!signature) {
@@ -36,7 +59,7 @@ router.post("/webhook", async (req: WebhookRequest, res: Response): Promise<void
 
         // Verify signature using HMAC SHA256
         const expectedSignature = crypto
-            .createHmac("sha256", webhookSecret)
+            .createHmac("sha256", RAZORPAY_WEBHOOK_SECRET!)
             .update(rawBody)
             .digest("hex");
 
@@ -125,7 +148,7 @@ router.post(
 
             // Signature is over "<order_id>|<payment_id>" keyed with the API secret.
             const expectedSignature = crypto
-                .createHmac("sha256", razorpayKeySecret)
+                .createHmac("sha256", RAZORPAY_KEY_SECRET!)
                 .update(`${razorpay_order_id}|${razorpay_payment_id}`)
                 .digest("hex");
 
@@ -197,8 +220,7 @@ router.post(
  * With real keys configured, this route refuses every request and the genuine
  * Checkout → /verify path is the only way to pay.
  */
-const isMockMode =
-    !process.env.RAZORPAY_KEY_ID || process.env.RAZORPAY_KEY_ID === "rzp_test_YourTestKeyId";
+const isMockMode = RAZORPAY_MOCK_MODE;
 
 router.post(
     "/simulate",
@@ -274,12 +296,117 @@ router.post(
     }
 );
 
+/**
+ * Mint a fresh Razorpay order for a registration that cannot be paid.
+ *
+ * A registration created while Razorpay was unconfigured carries an
+ * `order_mock_…` id. Once real keys are added, that registration is stranded:
+ * Checkout rejects the order because it does not exist at Razorpay, and
+ * `/simulate` refuses because keys are now present. The member is left with a
+ * PENDING entry and no way to settle it.
+ *
+ * This re-mints a genuine order against the same registration, so the spot and
+ * the signup date are preserved rather than being cancelled and redone.
+ */
+router.post(
+    "/order/:registrationId/refresh",
+    requireRole(["MEMBER", "VOLUNTEER", "ADMIN"]),
+    async (req: AuthRequest, res: Response): Promise<void> => {
+        try {
+            if (isMockMode) {
+                res.status(400).json({
+                    error: "Razorpay isn't configured on this server, so a real order can't be created.",
+                });
+                return;
+            }
+
+            const registration = (await prisma.eventRegistration.findUnique({
+                where: { id: req.params.registrationId as string },
+                include: { event: true },
+            })) as any;
+
+            if (!registration) {
+                res.status(404).json({ error: "Registration not found" });
+                return;
+            }
+            if (registration.user_id !== req.user!.id && req.user!.role !== "ADMIN") {
+                res.status(403).json({ error: "You can only refresh your own registration" });
+                return;
+            }
+            if (registration.status !== "PENDING") {
+                res.status(400).json({
+                    error: `Only a PENDING registration needs a new order — this one is ${registration.status}.`,
+                });
+                return;
+            }
+            if (registration.blocked_at) {
+                res.status(403).json({
+                    error: "An organiser has removed you from this event.",
+                });
+                return;
+            }
+            if (registration.event.price <= 0) {
+                res.status(400).json({ error: "This event is free — no payment is required." });
+                return;
+            }
+
+            let order: { id: string };
+            try {
+                order = (await (razorpay.orders as any).create({
+                    amount: Math.round(registration.event.price * 100), // paise
+                    currency: "INR",
+                    receipt: `reg_${registration.id.slice(0, 30)}`,
+                    notes: {
+                        registration_id: registration.id,
+                        event: registration.event.title,
+                        reason: "re-issued for an unusable order id",
+                    },
+                })) as { id: string };
+            } catch (err: any) {
+                const detail =
+                    err?.error?.description ||
+                    err?.message ||
+                    (err?.statusCode === 401
+                        ? "Razorpay rejected the API credentials."
+                        : `Razorpay refused to create the order${err?.statusCode ? ` (HTTP ${err.statusCode})` : ""}.`);
+                console.error(
+                    `[order-refresh] registration ${registration.id}:`,
+                    JSON.stringify(err, Object.getOwnPropertyNames(err || {})),
+                );
+                res.status(400).json({ error: detail });
+                return;
+            }
+
+            const previous = registration.razorpay_order_id;
+            const updated = await prisma.eventRegistration.update({
+                where: { id: registration.id },
+                data: { razorpay_order_id: order.id },
+            });
+
+            console.log(
+                `[order-refresh] registration ${registration.id}: ${previous} -> ${order.id}`,
+            );
+
+            res.json({
+                message: "A new payment order is ready",
+                registration: updated,
+                razorpay_order_id: order.id,
+                previous_order_id: previous,
+                razorpay_key_id: RAZORPAY_KEY_ID,
+                amount: Math.round(registration.event.price * 100),
+            });
+        } catch (error: any) {
+            res.status(500).json({ error: error.message || "Could not create a new order" });
+        }
+    }
+);
+
 /** Lets the client know whether real Checkout is available. */
 router.get("/config", async (_req: AuthRequest, res: Response): Promise<void> => {
     res.json({
         mock_mode: isMockMode,
         // Publishable key only — never the secret.
-        key_id: isMockMode ? null : process.env.RAZORPAY_KEY_ID,
+        key_id: isMockMode ? null : RAZORPAY_KEY_ID,
         simulation_available: isMockMode && process.env.NODE_ENV !== "production",
     });
 });

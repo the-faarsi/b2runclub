@@ -103,6 +103,16 @@ export function EventDetail() {
     { label: "Location", value: event.location },
     { label: "Discipline", value: event.type },
     { label: "Entry", value: event.price === 0 ? "Free" : inr(event.price) },
+    ...(event.capacity != null
+      ? [
+          {
+            label: "Places",
+            value: event.full
+              ? `Full — ${event.capacity} taken`
+              : `${event.spots_left} of ${event.capacity} left`,
+          },
+        ]
+      : []),
   ];
 
   return (
@@ -155,6 +165,13 @@ export function EventDetail() {
               ? " Free to enter."
               : ` Entry is ${inr(event.price)}, paid at registration.`}
           </p>
+
+          {/* The organiser's brief. Newlines are preserved — people write lists. */}
+          {event.description && (
+            <p className="mt-4 max-w-2xl whitespace-pre-wrap text-[15px] leading-relaxed text-ink-2">
+              {event.description}
+            </p>
+          )}
 
           {/* Live countdown — ticks every second */}
           {!past && !remaining.done && (
@@ -358,11 +375,31 @@ export function EventDetail() {
                   Create an account
                 </Link>
               </div>
+            ) : /*
+                 A full event says so up front instead of letting someone fill in
+                 the waiver and then be refused. Volunteers are exempt from the cap
+                 on the backend, so they still get the register button.
+               */
+            event.full && role !== "VOLUNTEER" ? (
+              <div className="space-y-3">
+                <Button className="w-full" disabled>
+                  Fully booked
+                </Button>
+                <p className="text-center text-[11.5px] leading-relaxed text-ink-3">
+                  All {event.capacity} places are taken. Registrations sometimes free up —
+                  check back, or ask an organiser in the forum about a waiting list.
+                </p>
+              </div>
             ) : canRegister ? (
               <div className="space-y-3">
                 <Button className="w-full" onClick={() => setDialogOpen(true)}>
                   Register
                 </Button>
+                {event.spots_left != null && event.spots_left <= 5 && (
+                  <p className="text-center text-[12px] font-medium text-[color:var(--color-pending)]">
+                    Only {event.spots_left} {event.spots_left === 1 ? "place" : "places"} left
+                  </p>
+                )}
                 <p className="text-center text-[11px] leading-relaxed text-ink-3">
                   Waiver and emergency contact required.
                 </p>

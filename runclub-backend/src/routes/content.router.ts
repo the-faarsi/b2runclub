@@ -107,15 +107,34 @@ router.post(
                     return;
                 }
 
-                const photo = await prisma.photo.create({
+                const created = await prisma.photo.create({
                     data: {
                         url,
                         caption: caption?.trim() || null,
                         event_id: event_id || null,
                         uploader_id: req.user!.id,
                     },
-                    include: { uploader: { select: { id: true, name: true, role: true } } },
-                });
+                    include: {
+                        uploader: { select: { id: true, name: true, role: true } },
+                        event: { select: { title: true } },
+                    },
+                }) as any;
+
+                /**
+                 * Shaped identically to a row from GET /gallery, `event_title` included.
+                 * The client merges this straight into its list, so a create response
+                 * missing the field made a freshly-tagged photo show up under
+                 * "Untitled session" until the page was reloaded.
+                 */
+                const photo = {
+                    id: created.id,
+                    url: created.url,
+                    caption: created.caption,
+                    event_id: created.event_id,
+                    event_title: created.event?.title ?? null,
+                    created_at: created.created_at,
+                    uploader: created.uploader,
+                };
 
                 res.status(211).json({ message: "Photo added to the gallery", photo });
             } catch (error: any) {
@@ -178,6 +197,7 @@ const CLUB_DEFAULTS = {
     contact_email: null as string | null,
     instagram: null as string | null,
     strava_club: null as string | null,
+    whatsapp: null as string | null,
 };
 
 // 4. Read the About content — public.
@@ -203,6 +223,7 @@ router.put("/club", requireRole(["ADMIN"]), async (req: AuthRequest, res: Respon
             "contact_email",
             "instagram",
             "strava_club",
+            "whatsapp",
         ] as const;
 
         const data: Record<string, string | null> = {};
@@ -216,6 +237,82 @@ router.put("/club", requireRole(["ADMIN"]), async (req: AuthRequest, res: Respon
         // headline/about/mission are non-nullable in the schema.
         for (const key of ["headline", "about", "mission"] as const) {
             if (data[key] === null) data[key] = "";
+        }
+
+        /**
+         * Sanity-check the WhatsApp invite. A wrong value here is published to every
+         * visitor as a join button, so a typo is worth catching at the point of
+         * entry rather than discovering when members can't get in.
+         *
+         * Only the host is checked — WhatsApp appends query parameters to invite
+         * URLs, and the invite code format is theirs to change.
+         */
+        if (data.whatsapp) {
+            let host: string | null = null;
+            try {
+                host = new URL(data.whatsapp).hostname.toLowerCase();
+            } catch {
+                res.status(400).json({
+                    error: "That WhatsApp link isn't a valid URL. Copy the invite from the group's 'Invite via link' screen.",
+                });
+                return;
+            }
+            if (host !== "chat.whatsapp.com") {
+                res.status(400).json({
+                    error: "A WhatsApp community invite looks like https://chat.whatsapp.com/… — use the group's 'Invite via link'.",
+                });
+                return;
+            }
+        }
+
+        /**
+         * Instagram accepts either a handle or a full profile URL, so both shapes are
+         * normalised to a bare handle here. Storing one shape means the clients don't
+         * each have to guess which they were given.
+         *
+         * A URL copied from the Instagram app carries an `igsh` share token — a
+         * per-share identifier that serves no purpose once the link is published, so
+         * it is dropped along with any other query string.
+         */
+        if (data.instagram) {
+            const raw = data.instagram;
+
+            if (/^https?:\/\//i.test(raw)) {
+                let url: URL;
+                try {
+                    url = new URL(raw);
+                } catch {
+                    res.status(400).json({ error: "That Instagram link isn't a valid URL." });
+                    return;
+                }
+
+                const host = url.hostname.toLowerCase().replace(/^www\./, "");
+                if (host !== "instagram.com") {
+                    res.status(400).json({
+                        error: "That doesn't look like an Instagram profile. Use instagram.com/yourhandle, or just the handle.",
+                    });
+                    return;
+                }
+
+                const handle = url.pathname.replace(/^\/+|\/+$/g, "").split("/")[0];
+                if (!handle) {
+                    res.status(400).json({
+                        error: "That Instagram link has no profile in it — it should end with the handle.",
+                    });
+                    return;
+                }
+                data.instagram = handle;
+            } else {
+                data.instagram = raw.replace(/^@/, "").replace(/\/+$/, "");
+            }
+
+            // Instagram handles are letters, numbers, underscores and full stops.
+            if (!/^[A-Za-z0-9._]{1,30}$/.test(data.instagram)) {
+                res.status(400).json({
+                    error: `"${data.instagram}" isn't a valid Instagram handle.`,
+                });
+                return;
+            }
         }
 
         const info = await prisma.clubInfo.upsert({

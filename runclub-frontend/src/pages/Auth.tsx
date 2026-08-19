@@ -233,7 +233,7 @@ export function Signup() {
           <dl className="mt-8 space-y-4">
             {[
               ["Members", "Register for runs, pay in-app, carry a QR ticket."],
-              ["Volunteers", "Marshal an event and your entry is comped."],
+              ["Volunteers", "Promoted by an organiser. Marshal a session, entry comped."],
               ["Visitors", "Browse the calendar and the forum, no account needed."],
             ].map(([term, def]) => (
               <div key={term} className="flex gap-3">
@@ -291,10 +291,16 @@ export function Signup() {
           />
         </Field>
 
-        <Field label="I'm joining as" htmlFor="role">
+        {/* Volunteer is not offered here: it comps entry to every event, so an
+            organiser grants it from the directory. The backend refuses it on
+            /register regardless of what the client sends. */}
+        <Field
+          label="I'm joining as"
+          htmlFor="role"
+          hint="Want to marshal? Join as a member and ask an organiser to promote you."
+        >
           <Select id="role" value={form.role} onChange={set("role")}>
             <option value="MEMBER">Member — I want to run</option>
-            <option value="VOLUNTEER">Volunteer — I want to marshal</option>
             <option value="VISITOR">Visitor — just looking</option>
           </Select>
         </Field>

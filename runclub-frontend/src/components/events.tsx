@@ -1,7 +1,7 @@
 import { motion } from "framer-motion";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { api } from "../lib/api";
+import { api, ApiError } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import {
   cn,
@@ -130,6 +130,18 @@ export function EventCard({
 
               {showStatus && event.status !== "PUBLISHED" && (
                 <Badge color={EVENT_STATUS_TINT[event.status]}>{event.status}</Badge>
+              )}
+
+              {/* Places remaining. Only worth the space when it's scarce or gone —
+                  "38 of 40 left" is noise on a card. */}
+              {!past && event.capacity != null && (
+                event.full ? (
+                  <Badge color="var(--color-failed)">Full</Badge>
+                ) : event.spots_left != null && event.spots_left <= 5 ? (
+                  <Badge color="var(--color-pending)">
+                    {event.spots_left} left
+                  </Badge>
+                ) : null
               )}
 
               <span className="ml-auto flex items-center gap-2">
@@ -275,7 +287,16 @@ export function RegisterDialog({
         onClose();
         return;
       }
-      setError(err instanceof Error ? err.message : "Registration failed");
+      /**
+       * 409 means the last place went while this dialog was open. Say so plainly —
+       * the generic "Registration failed" reads like a bug when it isn't, and there
+       * is nothing the member can retry.
+       */
+      if (err instanceof ApiError && err.status === 409) {
+        setError("The last place just went — this event filled up while you were signing up.");
+      } else {
+        setError(err instanceof Error ? err.message : "Registration failed");
+      }
       // The registration exists even though payment didn't finish; surface it
       // so the caller's list stays in step with the server.
       if (held) onDone(held);

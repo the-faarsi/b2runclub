@@ -57,41 +57,65 @@ export function MyTickets() {
    * config, since the register response that carried it is long gone.
    */
   const payNow = async (reg: Registration) => {
-    const orderId = reg.razorpay_order_id;
+    let orderId = reg.razorpay_order_id;
     const keyId = publishableKey();
 
-    // No real credentials? Settle the mock order through the dev-only route so
-    // the flow still completes, rather than dead-ending on a toast.
     if (!orderId || isMockPayment(keyId, orderId)) {
-      if (!payCfg?.simulation_available) {
+      // No real credentials at all? Settle the mock order through the dev-only
+      // route so the flow still completes, rather than dead-ending on a toast.
+      if (payCfg?.simulation_available) {
+        setPayingId(reg.id);
+        try {
+          const res = await api.simulatePayment(reg.id);
+          setData((prev) =>
+            (prev ?? []).map((r) =>
+              r.id === reg.id ? { ...res.registration, event: r.event } : r,
+            ),
+          );
+          toast(`${res.message} (development mode — no card was charged)`, "ok");
+        } catch (err) {
+          toast(err instanceof Error ? err.message : "Could not settle the payment", "err");
+        } finally {
+          setPayingId(null);
+        }
+        return;
+      }
+
+      /**
+       * Real keys are configured but this registration still carries a mock order
+       * from before they were added. Checkout would reject it and simulation is
+       * off, so the entry used to be permanently unpayable. Re-mint a genuine
+       * order and carry straight on into Checkout.
+       */
+      if (!payCfg?.mock_mode && keyId) {
+        setPayingId(reg.id);
+        try {
+          const fresh = await api.refreshPaymentOrder(reg.id);
+          orderId = fresh.razorpay_order_id;
+          setData((prev) =>
+            (prev ?? []).map((r) =>
+              r.id === reg.id ? { ...r, razorpay_order_id: fresh.razorpay_order_id } : r,
+            ),
+          );
+        } catch (err) {
+          toast(err instanceof Error ? err.message : "Could not prepare the payment", "err");
+          setPayingId(null);
+          return;
+        }
+      } else {
         toast(
           "Card payments aren't configured on this backend — see the README to add Razorpay keys.",
           "info",
         );
         return;
       }
-      setPayingId(reg.id);
-      try {
-        const res = await api.simulatePayment(reg.id);
-        setData((prev) =>
-          (prev ?? []).map((r) =>
-            r.id === reg.id ? { ...res.registration, event: r.event } : r,
-          ),
-        );
-        toast(`${res.message} (development mode — no card was charged)`, "ok");
-      } catch (err) {
-        toast(err instanceof Error ? err.message : "Could not settle the payment", "err");
-      } finally {
-        setPayingId(null);
-      }
-      return;
     }
 
     setPayingId(reg.id);
     try {
       const result = await openCheckout({
         keyId: keyId!,
-        orderId,
+        orderId: orderId!,
         amountPaise: Math.round((reg.event?.price ?? 0) * 100),
         eventTitle: reg.event?.title ?? "Event",
         userName: user?.name ?? "",

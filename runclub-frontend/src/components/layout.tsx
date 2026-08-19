@@ -1,10 +1,12 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { cn, relativeTime, ROLE_META } from "../lib/format";
 import type { Notification } from "../lib/types";
+import { useFetch } from "../lib/useFetch";
+import { InstagramIcon, WhatsAppIcon } from "./icons";
 import { Avatar, buttonClass } from "./ui";
 
 /* ── Wordmark ─────────────────────────────────────────────── */
@@ -266,8 +268,21 @@ function UserMenu() {
 
 /* ── Navbar ───────────────────────────────────────────────── */
 
-function navItems(isAdmin: boolean, canRegister: boolean, isClubMember: boolean) {
-  const items = [
+/** Exact match, or a child path, unless the item defines its own test. */
+function isItemActive(item: NavItem, pathname: string) {
+  if (item.active) return item.active(pathname);
+  return pathname === item.to || pathname.startsWith(item.to + "/");
+}
+
+interface NavItem {
+  to: string;
+  label: string;
+  /** Overrides the default "exact or a child path" test. */
+  active?: (pathname: string) => boolean;
+}
+
+function navItems(isAdmin: boolean, canRegister: boolean, isClubMember: boolean): NavItem[] {
+  const items: NavItem[] = [
     { to: "/calendar", label: "Calendar" },
     { to: "/events", label: "Events" },
     { to: "/gallery", label: "Gallery" },
@@ -277,7 +292,26 @@ function navItems(isAdmin: boolean, canRegister: boolean, isClubMember: boolean)
   // The forum is club-only — visitors and signed-out users never see the link.
   if (isClubMember) items.splice(3, 0, { to: "/forum", label: "Forum" });
   if (canRegister) items.push({ to: "/tickets", label: "My tickets" });
-  if (isAdmin) items.push({ to: "/admin", label: "Dashboard" });
+  if (isAdmin) {
+    // Dashboard first, then the directory. Members was previously reachable only
+    // via a button on the dashboard, which made it hard to find.
+    items.push(
+      {
+        to: "/admin",
+        label: "Dashboard",
+        /**
+         * "/admin" is a prefix of "/admin/members", so the default test would light
+         * both up at once — and two items sharing layoutId="nav-underline" makes the
+         * sliding underline jump between them. Dashboard therefore claims every
+         * admin page except the one Members owns.
+         */
+        active: (path) =>
+          path === "/admin" ||
+          (path.startsWith("/admin/") && !path.startsWith("/admin/members")),
+      },
+      { to: "/admin/members", label: "Members" },
+    );
+  }
   return items;
 }
 
@@ -309,31 +343,28 @@ export function Navbar() {
         <Logo />
 
         <nav className="ml-6 hidden items-center gap-0.5 md:flex">
-          {items.map((it) => (
-            <NavLink
-              key={it.to}
-              to={it.to}
-              className={({ isActive }) =>
-                cn(
+          {items.map((it) => {
+            const isActive = isItemActive(it, location.pathname);
+            return (
+              <NavLink
+                key={it.to}
+                to={it.to}
+                className={cn(
                   "relative rounded-lg px-3 py-2 text-[13px] font-medium transition-colors duration-200",
                   isActive ? "text-ink" : "text-ink-3 hover:text-ink-2",
-                )
-              }
-            >
-              {({ isActive }) => (
-                <>
-                  {it.label}
-                  {isActive && (
-                    <motion.span
-                      layoutId="nav-underline"
-                      transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-                      className="absolute inset-x-3 -bottom-0.5 h-0.5 rounded-full bg-gold"
-                    />
-                  )}
-                </>
-              )}
-            </NavLink>
-          ))}
+                )}
+              >
+                {it.label}
+                {isActive && (
+                  <motion.span
+                    layoutId="nav-underline"
+                    transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+                    className="absolute inset-x-3 -bottom-0.5 h-0.5 rounded-full bg-gold"
+                  />
+                )}
+              </NavLink>
+            );
+          })}
         </nav>
 
         <div className="ml-auto flex items-center gap-1.5">
@@ -385,16 +416,15 @@ export function Navbar() {
             className="overflow-hidden border-b border-white/8 bg-void/95 backdrop-blur-xl md:hidden"
           >
             <div className="space-y-0.5 px-4 py-3">
+              {/* Same active test as the desktop nav, so the two never disagree. */}
               {items.map((it) => (
                 <NavLink
                   key={it.to}
                   to={it.to}
-                  className={({ isActive }) =>
-                    cn(
-                      "block rounded-lg px-3 py-2.5 text-sm font-medium",
-                      isActive ? "bg-white/6 text-ink" : "text-ink-3",
-                    )
-                  }
+                  className={cn(
+                    "block rounded-lg px-3 py-2.5 text-sm font-medium",
+                    isItemActive(it, location.pathname) ? "bg-white/6 text-ink" : "text-ink-3",
+                  )}
                 >
                   {it.label}
                 </NavLink>
@@ -456,6 +486,14 @@ export function PageHeader({
 }
 
 export function Footer() {
+  /**
+   * The WhatsApp invite comes from editable club info rather than a constant, so
+   * an organiser can replace it when WhatsApp resets the group link. Mounted once
+   * in the app shell, so this is a single request for the whole session.
+   */
+  const loadClub = useCallback(() => api.clubInfo(), []);
+  const { data: club } = useFetch(loadClub);
+
   return (
     <footer className="border-t border-white/8 py-8">
       <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
@@ -465,7 +503,38 @@ export function Footer() {
             B Squared Run Club · {new Date().getFullYear()}
           </p>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-4">
+          {club?.whatsapp && (
+            <a
+              href={club.whatsapp}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1.5 text-xs font-medium text-ink-2 transition-colors hover:text-gold"
+            >
+              <WhatsAppIcon className="size-3.5" />
+              WhatsApp community
+            </a>
+          )}
+          {/* Stored as a bare handle by the backend, so build the URL here. */}
+          {club?.instagram && (
+            <a
+              href={`https://instagram.com/${club.instagram}`}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1.5 text-xs font-medium text-ink-2 transition-colors hover:text-gold"
+            >
+              <InstagramIcon className="size-3.5" />
+              @{club.instagram}
+            </a>
+          )}
+          {club?.contact_email && (
+            <a
+              href={`mailto:${club.contact_email}`}
+              className="text-xs text-ink-2 transition-colors hover:text-gold"
+            >
+              {club.contact_email}
+            </a>
+          )}
           <Link to="/about" className="text-xs text-ink-3 transition-colors hover:text-gold">
             About the club
           </Link>

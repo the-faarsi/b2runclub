@@ -2,10 +2,17 @@ import app from "./server";
 import prisma from "./utils/prisma";
 import crypto from "crypto";
 import { Server } from "http";
+import { RAZORPAY_WEBHOOK_SECRET } from "./utils/secrets";
 
 const PORT = 3333;
 const BASE_URL = `http://localhost:${PORT}`;
-const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET || "CreateAStrongSecret";
+/**
+ * Read through the same validated module the server uses. Signing with a literal
+ * fallback would make the webhook test use a different secret than the server
+ * verifies with, so it would fail for a reason unrelated to the code under test.
+ */
+const webhookSecret = RAZORPAY_WEBHOOK_SECRET ?? "";
+const webhooksTestable = webhookSecret.length > 0;
 
 async function runTests() {
     console.log("=== STARTING RUN CLUB BACKEND INTEGRATION TESTS ===");

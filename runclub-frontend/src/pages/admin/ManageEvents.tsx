@@ -199,10 +199,22 @@ export function ManageEvents() {
                         </Link>
                         <Badge color={STATUS_TINT[ev.status]}>{ev.status}</Badge>
                         {isPast(ev.date_time) && <Badge>Past</Badge>}
+                        {ev.full && <Badge color="var(--color-failed)">Full</Badge>}
                       </div>
                       <p className="mt-1.5 text-[13px] text-ink-3">
                         {fullDate(ev.date_time)} · {eventTime(ev.date_time)} · {ev.location} ·{" "}
                         {ev.price === 0 ? "Free" : inr(ev.price)}
+                        {/* Organisers scanning the list need to see how full each
+                            event is without opening it. */}
+                        {ev.capacity != null && (
+                          <>
+                            {" · "}
+                            <span className="tnum">
+                              {ev.taken ?? 0}/{ev.capacity}
+                            </span>{" "}
+                            places
+                          </>
+                        )}
                       </p>
                     </div>
 

@@ -3,7 +3,7 @@ import { api } from "../lib/api";
 import { REMINDER_OFFSETS } from "../lib/types";
 import type { ClubEvent, EventStatus } from "../lib/types";
 import { cn } from "../lib/format";
-import { Button, Field, Input, Modal, Select } from "./ui";
+import { Button, Field, Input, Modal, Select, Textarea } from "./ui";
 
 export const EVENT_TYPES = ["Run", "Cycle", "Swim", "Race", "Training", "Social", "Party"];
 
@@ -48,6 +48,9 @@ const BLANK = {
   location: "",
   price: "0",
   status: "DRAFT" as EventStatus,
+  description: "",
+  /** Empty string means unlimited — the backend reads a blank as null. */
+  capacity: "",
 };
 
 /**
@@ -106,6 +109,8 @@ export function EventFormModal({
         location: event.location,
         price: String(event.price),
         status: event.status,
+        description: event.description ?? "",
+        capacity: event.capacity != null ? String(event.capacity) : "",
       });
     } else {
       setForm({
@@ -132,6 +137,19 @@ export function EventFormModal({
       return;
     }
 
+    // Blank is a valid answer meaning unlimited; anything else must be a whole
+    // number of at least one.
+    const capacityText = form.capacity.trim();
+    let capacity: number | null = null;
+    if (capacityText !== "") {
+      const n = Number(capacityText);
+      if (!Number.isInteger(n) || n < 1) {
+        setError("Capacity must be a whole number of 1 or more, or blank for no limit.");
+        return;
+      }
+      capacity = n;
+    }
+
     setBusy(true);
     try {
       const payload = {
@@ -142,6 +160,8 @@ export function EventFormModal({
         location: form.location.trim(),
         price,
         status: form.status,
+        description: form.description.trim() || null,
+        capacity,
         reminder_offsets: offsets,
       };
 
@@ -210,6 +230,23 @@ export function EventFormModal({
           />
         </Field>
 
+        <Field
+          label="Description"
+          htmlFor="ev-desc"
+          hint="Optional. The brief members read on the event page — route, pace groups, what to bring."
+        >
+          <Textarea
+            id="ev-desc"
+            rows={4}
+            value={form.description}
+            onChange={set("description")}
+            placeholder={
+              "Six by 800m up the west face, jog back down between reps.\n" +
+              "Meet at the gate. Bring water — there's no tap on the climb."
+            }
+          />
+        </Field>
+
         <div className="grid gap-5 sm:grid-cols-2">
           <Field label="Entry price (INR)" htmlFor="ev-price" hint="Zero makes it free to enter.">
             <Input
@@ -222,6 +259,24 @@ export function EventFormModal({
             />
           </Field>
 
+          <Field
+            label="Places"
+            htmlFor="ev-capacity"
+            hint="Leave blank for no limit. Volunteers don't use a place."
+          >
+            <Input
+              id="ev-capacity"
+              type="number"
+              min="1"
+              step="1"
+              value={form.capacity}
+              onChange={set("capacity")}
+              placeholder="Unlimited"
+            />
+          </Field>
+        </div>
+
+        <div className="grid gap-5 sm:grid-cols-2">
           <Field label="Status" htmlFor="ev-status">
             <Select id="ev-status" value={form.status} onChange={set("status")}>
               <option value="DRAFT">Draft — hidden from members</option>
@@ -229,6 +284,22 @@ export function EventFormModal({
               <option value="ARCHIVED">Archived</option>
             </Select>
           </Field>
+
+          {/* Editing an event that already has signups: show how full it is, so
+              the organiser knows what they can safely lower the cap to. */}
+          {editing && event?.capacity != null && (
+            <div className="rounded-xl border border-white/8 bg-surface-2/40 px-3.5 py-3">
+              <p className="eyebrow">Currently</p>
+              <p className="mt-1.5 text-[13.5px] text-ink-2">
+                <span className="tnum font-semibold text-ink">{event.taken ?? 0}</span> of{" "}
+                <span className="tnum">{event.capacity}</span> places taken
+                {event.full && <span className="ml-1.5 text-[color:var(--color-pending)]">· full</span>}
+              </p>
+              <p className="mt-1 text-[11.5px] leading-relaxed text-ink-3">
+                The cap can't go below what's already taken.
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Email reminders */}

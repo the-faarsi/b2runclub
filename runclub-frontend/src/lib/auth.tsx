@@ -34,6 +34,8 @@ interface AuthValue {
   }) => Promise<User>;
   logout: () => void;
   patchUser: (patch: Partial<User>) => void;
+  /** Re-reads the account from the server and replaces the cached copy. */
+  refreshUser: () => Promise<User | null>;
 }
 
 const AuthContext = createContext<AuthValue | null>(null);
@@ -42,17 +44,44 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [ready, setReady] = useState(false);
 
-  // Restore the session once on boot. There is no /me endpoint, so the user
-  // object is rehydrated from storage and the token checked for expiry.
+  /**
+   * Restore the session on boot, then revalidate against the server.
+   *
+   * Storage is read first so there is no signed-out flash on every reload, but the
+   * stored copy is a snapshot from sign-in and drifts: an organiser promoting
+   * someone to volunteer, or a detail edited on another device, would not show up
+   * until the 24h token expired. The /me round-trip reconciles it.
+   *
+   * A failed refresh is deliberately non-fatal — with the backend down, the app
+   * still runs on the cached user rather than logging everyone out. A genuinely
+   * dead token comes back 401, which the listener below already handles.
+   */
   useEffect(() => {
     const token = session.token();
     const stored = session.user();
-    if (token && stored && !tokenExpired(token)) {
-      setUser(stored);
-    } else if (token) {
-      session.clear();
+
+    if (!token || tokenExpired(token)) {
+      if (token) session.clear();
+      setReady(true);
+      return;
     }
+
+    if (stored) setUser(stored);
     setReady(true);
+
+    let cancelled = false;
+    api
+      .me()
+      .then((res) => {
+        if (cancelled) return;
+        session.save(token, res.user);
+        setUser(res.user);
+      })
+      .catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const logout = useCallback(() => {
@@ -88,6 +117,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser((prev) => (prev ? { ...prev, ...patch } : prev));
   }, []);
 
+  const refreshUser = useCallback(async () => {
+    const token = session.token();
+    if (!token) return null;
+    try {
+      const res = await api.me();
+      session.save(token, res.user);
+      setUser(res.user);
+      return res.user;
+    } catch {
+      // Leave the cached user in place; a dead token is handled by the 401 listener.
+      return null;
+    }
+  }, []);
+
   const value = useMemo<AuthValue>(() => {
     const role: Role = user?.role ?? "VISITOR";
     return {
@@ -101,8 +144,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signup,
       logout,
       patchUser,
+      refreshUser,
     };
-  }, [user, ready, login, signup, logout, patchUser]);
+  }, [user, ready, login, signup, logout, patchUser, refreshUser]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

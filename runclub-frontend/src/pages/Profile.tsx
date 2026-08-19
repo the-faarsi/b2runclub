@@ -13,6 +13,7 @@ import {
   Input,
   useToast,
 } from "../components/ui";
+import { AccountSettings } from "../components/accountSettings";
 import { HealthSyncCard } from "../components/healthSync";
 import { MyResultsCard, StreakCard } from "../components/streaks";
 import { api } from "../lib/api";
@@ -75,6 +76,17 @@ export function Profile() {
             <p className="text-[12px] text-ink-3">Member since {fullDate(user.created_at)}</p>
           </>
         )}
+      </Card>
+
+      {/* Everything editable, in one place */}
+      <Card className="mt-5 p-6">
+        <h3 className="text-[15px] font-semibold text-ink">Your details</h3>
+        <p className="mt-1.5 text-[13px] leading-relaxed text-ink-3">
+          Edit any of these yourself. Changes take effect straight away.
+        </p>
+        <div className="mt-5">
+          <AccountSettings />
+        </div>
       </Card>
 
       {/* Attendance record and badges — only meaningful for people who run */}
@@ -140,28 +152,6 @@ export function Profile() {
           </div>
         </Card>
       )}
-
-      {/* Emergency contact — read-only reflection of what the API stores */}
-      <Card className="mt-5 p-6">
-        <h3 className="text-[15px] font-semibold text-ink">Emergency contact</h3>
-        <p className="mt-1.5 text-[13px] leading-relaxed text-ink-3">
-          Shared with organisers on event day. It's saved the first time you register, and you can
-          update it from any registration form.
-        </p>
-
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/8 bg-surface-2/50 px-4 py-3">
-          <span className="text-[14px] text-ink">
-            {user.emergency_contact ? (
-              user.emergency_contact
-            ) : (
-              <span className="text-ink-3">Not set yet</span>
-            )}
-          </span>
-          <Link to="/events" className={buttonClass("outline", "sm")}>
-            {user.emergency_contact ? "Update at next registration" : "Add on registration"}
-          </Link>
-        </div>
-      </Card>
 
       {/* Strava */}
       <Card className="mt-5 p-6">

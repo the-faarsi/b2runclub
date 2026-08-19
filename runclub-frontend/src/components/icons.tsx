@@ -315,3 +315,34 @@ export function TrackGraphic({ className }: IconProps) {
     </svg>
   );
 }
+
+/** WhatsApp glyph — the official mark, drawn as a single path. */
+export function WhatsAppIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className ?? "size-4"} aria-hidden>
+      <path
+        fill="currentColor"
+        d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.46 1.32 4.96L2 22l5.25-1.38a9.9 9.9 0 0 0 4.79 1.22h.01c5.46 0 9.91-4.45 9.91-9.91S17.5 2 12.04 2Zm0 18.18h-.01a8.2 8.2 0 0 1-4.18-1.15l-.3-.18-3.11.82.83-3.04-.2-.31a8.2 8.2 0 0 1-1.26-4.37c0-4.54 3.7-8.23 8.24-8.23 2.2 0 4.26.86 5.82 2.41a8.18 8.18 0 0 1 2.41 5.83c0 4.54-3.7 8.22-8.24 8.22Zm4.52-6.16c-.25-.12-1.47-.72-1.7-.8-.22-.09-.39-.13-.55.12-.16.25-.64.8-.78.96-.14.17-.29.19-.53.06a6.7 6.7 0 0 1-1.98-1.22 7.4 7.4 0 0 1-1.37-1.7c-.14-.25-.02-.38.11-.5.11-.12.25-.3.37-.45.12-.15.16-.25.25-.42.08-.16.04-.31-.02-.43-.06-.12-.55-1.33-.76-1.82-.2-.48-.4-.42-.55-.42h-.47c-.16 0-.42.06-.64.3-.22.25-.84.83-.84 2.02 0 1.19.86 2.34.98 2.5.12.17 1.7 2.6 4.12 3.64.58.25 1.02.4 1.37.51.51.16.95.14 1.3.09.4-.06 1.24-.51 1.42-1 .17-.5.17-.92.12-1.01-.05-.09-.18-.15-.38-.27Z"
+      />
+    </svg>
+  );
+}
+
+/** Instagram glyph — rounded square, lens and flash dot. */
+export function InstagramIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className ?? "size-4"} fill="none" aria-hidden>
+      <rect
+        x="3"
+        y="3"
+        width="18"
+        height="18"
+        rx="5"
+        stroke="currentColor"
+        strokeWidth="1.9"
+      />
+      <circle cx="12" cy="12" r="4" stroke="currentColor" strokeWidth="1.9" />
+      <circle cx="17.2" cy="6.8" r="1.15" fill="currentColor" />
+    </svg>
+  );
+}
