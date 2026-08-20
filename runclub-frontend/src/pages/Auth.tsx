@@ -3,7 +3,7 @@ import { useCallback, useState, type ReactNode } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { Logo } from "../components/layout";
 import { PageScene } from "../components/scene3d";
-import { Button, buttonClass, Field, Input, Select, Spinner, useToast } from "../components/ui";
+import { Button, buttonClass, Field, Input, Spinner, useToast } from "../components/ui";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useFetch } from "../lib/useFetch";
@@ -300,19 +300,10 @@ export function Signup() {
           />
         </Field>
 
-        {/* Volunteer is not offered here: it comps entry to every event, so an
-            organiser grants it from the directory. The backend refuses it on
-            /register regardless of what the client sends. */}
-        <Field
-          label="I'm joining as"
-          htmlFor="role"
-          hint="Want to marshal? Join as a member and ask an organiser to promote you."
-        >
-          <Select id="role" value={form.role} onChange={set("role")}>
-            <option value="MEMBER">Member — I want to run</option>
-            <option value="VISITOR">Visitor — just looking</option>
-          </Select>
-        </Field>
+        {/* No role picker. Everyone signs up as a member; an organiser changes a
+            role from the directory afterwards. The backend already refuses any
+            role other than MEMBER/VISITOR on /register, and now always receives
+            MEMBER from this form. */}
 
         <Field
           label="Emergency contact"

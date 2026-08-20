@@ -404,7 +404,11 @@ export function DatabaseAdmin() {
                             </button>
                           </th>
                         ))}
-                        <th className="px-3 py-2 text-right">
+                        {/* Pinned. Wide tables (User is 1318px, StravaAccount wider) overflow the
+                            card, and as the last column in a scrolling row this used to sit off
+                            the right edge — Edit and Delete were rendered but unreachable without
+                            scrolling, so the page looked insert-only. */}
+                        <th className="sticky right-0 z-20 border-l border-white/8 bg-surface-2 px-3 py-2 text-right">
                           <span className="font-mono text-[10.5px] uppercase text-ink-3">
                             actions
                           </span>
@@ -444,12 +448,14 @@ export function DatabaseAdmin() {
                                 </td>
                               );
                             })}
-                            <td className="whitespace-nowrap px-3 py-2 text-right">
+                            <td className="sticky right-0 z-10 whitespace-nowrap border-l border-white/8 bg-surface-2 px-3 py-2 text-right">
                               {pk ? (
                                 <span className="inline-flex gap-1">
+                                  {/* Bordered chips rather than bare text: as dim inline labels
+                                      these did not read as controls at all. */}
                                   <button
                                     onClick={() => startEdit(row)}
-                                    className="rounded px-1.5 py-1 text-[11px] font-semibold text-ink-3 transition-colors hover:text-gold"
+                                    className="rounded-md border border-white/12 px-2 py-1 text-[11px] font-semibold text-ink-2 transition-colors hover:border-gold/50 hover:text-gold"
                                   >
                                     Edit
                                   </button>
@@ -457,7 +463,7 @@ export function DatabaseAdmin() {
                                     onClick={() => setConfirmDelete(row)}
                                     disabled={isSelf}
                                     title={isSelf ? "That's your own account" : undefined}
-                                    className="rounded px-1.5 py-1 text-[11px] font-semibold text-ink-3 transition-colors hover:text-[color:var(--color-failed)] disabled:opacity-30"
+                                    className="rounded-md border border-white/12 px-2 py-1 text-[11px] font-semibold text-ink-2 transition-colors hover:border-[color:var(--color-failed)]/50 hover:text-[color:var(--color-failed)] disabled:cursor-not-allowed disabled:opacity-30"
                                   >
                                     Delete
                                   </button>

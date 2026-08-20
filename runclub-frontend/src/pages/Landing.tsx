@@ -157,15 +157,28 @@ export function Landing() {
   // ── Scroll refs for the "How it works" sticky section ──
   const stickyRef = useRef<HTMLDivElement>(null);
 
+  /*
+   * "start end" (section top reaching the viewport *bottom*) rather than
+   * "start start" (section top reaching the viewport top). With the old offset
+   * progress was still 0 at the instant the section pinned, so it locked to an
+   * empty screen and only then began revealing. Starting a viewport earlier
+   * means the heading and the first card are already coming in as the section
+   * rises, and by the time it pins there is something on screen.
+   * Progress 0.56 ≈ the moment it pins; the card ranges below are set in this
+   * space, so keep the two in step if this offset changes.
+   */
   const { scrollYProgress } = useScroll({
     target: stickyRef,
-    offset: ["start start", "end end"],
+    offset: ["start end", "end end"],
   });
 
+  // Stiffer and lighter than before (was 60 / 20 / 0.4). The old spring lagged
+  // far enough behind the wheel that the cards felt disconnected from the
+  // scroll — part of why the section read as "blank while I'm scrolling".
   const smoothProgress = useSpring(scrollYProgress, {
-    stiffness: 60,
-    damping: 20,
-    mass: 0.4,
+    stiffness: 130,
+    damping: 26,
+    mass: 0.25,
   });
 
   // Each card has its own independent scroll-driven motion — staggered start
@@ -178,10 +191,31 @@ export function Landing() {
   //   opacity  — fully invisible (0) to fully visible (1)
   //   rotateX / rotateZ / scale — a 3D "diagonal drop" (tilted, shrunk,
   //   angled) that straightens into a flat, full-size resting position
-  const card0 = useCardReveal(smoothProgress, [0.05, 0.6], 460);
-  const card1 = useCardReveal(smoothProgress, [0.1, 0.65], 560);
-  const card2 = useCardReveal(smoothProgress, [0.15, 0.7], 500);
-  const card3 = useCardReveal(smoothProgress, [0.2, 0.75], 640);
+  //
+  // Card 0 starts at progress 0 so the first card is already rising the moment
+  // the section pins — previously nothing moved until 5–20% in, which read as a
+  // blank screen. The last card finishes at 0.9 rather than 0.75, so there is
+  // almost no dead scroll left at the end. The `yFrom` offsets are also much
+  // smaller than the original 460–640px: a card that starts 640px low is far
+  // below the fold, so most of its travel happened out of sight.
+  /*
+   * Ranges live in the "start end" progress space above, where ~0.556 is the pin
+   * point. Each start is set to roughly the progress at which that card's top
+   * crosses the viewport bottom, so every card begins fading in as it rises into
+   * view — all four are already moving before the section pins, rather than the
+   * section locking to a still screen and starting from there.
+   *
+   * Measured entry points at a 1465x800 viewport (card top → fully in view):
+   *   01  0.217 → 0.379      02  0.276 → 0.438
+   *   03  0.433 → 0.594      04  0.491 → 0.653
+   *
+   * `yFrom` stays small — a card starting 600px low (the original 460-640) does
+   * most of its travel below the fold where none of it is visible.
+   */
+  const card0 = useCardReveal(smoothProgress, [0.2, 0.52], 150);
+  const card1 = useCardReveal(smoothProgress, [0.27, 0.62], 190);
+  const card2 = useCardReveal(smoothProgress, [0.4, 0.74], 170);
+  const card3 = useCardReveal(smoothProgress, [0.48, 0.9], 210);
   const cardMotionValues = [card0, card1, card2, card3];
 
   // ── Hero entrance choreography (GSAP) ──
@@ -550,18 +584,22 @@ export function Landing() {
 
       {/* ── How it works — scroll-driven sticky section ───── */}
       {/*
-        Outer wrapper is 300vh — gives enough scroll runway for the animation.
-        Inner sticky div locks to viewport top while the animation plays, but
-        uses min-h-screen (not a hard h-screen) with overflow-visible so that
-        once the staggered/masonry layout is taller than the viewport — e.g.
-        the pushed-down right column, or a card growing on a small screen —
-        the section expands to fit it instead of clipping the bottom cards.
-        The bottom padding matches the right column's own push-down offset so
-        card 04 always has room to fully land before the section ends.
+        Runway is 180vh, so the inner sticky div pins for 80vh of scrolling.
+        It was 300vh (2 full screens pinned), which read as an endless scroll
+        with a blank screen at the start — and because the padding and the
+        masonry push-down made the content 569px TALLER than the viewport, the
+        lower cards were animating below the fold where nobody could see them.
+        The spacing below is tuned to keep all four cards on screen at once;
+        if a card grows, shorten these rather than lengthening the runway.
       */}
-      <div ref={stickyRef} style={{ height: "300vh" }} className="relative">
-        <div className="sticky top-0 min-h-screen overflow-visible">
-          <div className="flex min-h-screen flex-col justify-start px-4 pb-[clamp(160px,18vw,240px)] pt-16 sm:px-6 lg:px-8">
+      <div ref={stickyRef} style={{ height: "180vh" }} className="relative">
+        {/* top-16, not top-0: the navbar is a 64px sticky band, so pinning flush
+            to the viewport top put the "How it works" eyebrow underneath it. */}
+        {/* min-h is the viewport *minus the navbar*, not a full 100vh: pinned at
+            top-16 there are only calc(100vh-4rem) visible pixels, so min-h-screen
+            guaranteed a 64px overflow at every window size. */}
+        <div className="sticky top-16 min-h-[calc(100vh-4rem)] overflow-visible">
+          <div className="flex min-h-[calc(100vh-4rem)] flex-col justify-start px-4 pb-[clamp(12px,1.5vw,20px)] pt-8 sm:px-6 lg:px-8">
             <div className="mx-auto w-full max-w-7xl">
 
               {/* Section header — eyebrow + scroll-driven text reveal */}
@@ -577,7 +615,7 @@ export function Landing() {
                   tilt on each card real 3D depth instead of a flat skew.
                   Each card fades in, un-tilts and un-scales, and rises together
                   via its own useCardReveal() motion values. */}
-              <div className="mt-8 flex gap-5" style={{ perspective: "1000px" }}>
+              <div className="mt-5 flex gap-5" style={{ perspective: "1000px" }}>
 
                 {/* Left column — cards 01 and 03 */}
                 <div className="flex flex-1 flex-col gap-5">
@@ -605,11 +643,13 @@ export function Landing() {
                   </motion.div>
                 </div>
 
-                {/* Right column — pushed down so card 02 top aligns with
-                    card 01 bottom-third, creating genuine masonry overlap */}
+                {/* Right column — pushed down for masonry overlap. Kept modest:
+                    this offset is added to the section's height twice over (once
+                    here, once as matching bottom padding), and at 240px it was
+                    what pushed the lower cards off screen. */}
                 <div
                   className="flex flex-1 flex-col gap-5"
-                  style={{ marginTop: "clamp(160px, 18vw, 240px)" }}
+                  style={{ marginTop: "clamp(24px, 3vw, 44px)" }}
                 >
                   <motion.div
                     style={{
@@ -887,8 +927,12 @@ function ScrollRevealText({
       aria-label={text}
     >
       {chars.map((char, i) => {
-        const start = 0.05 + (i / chars.length) * 0.38;
-        const end = start + 0.1;
+        /* Was 0.05 + (i/n) * 0.38 with a 0.1 window, so the last character did
+           not finish until 53% of the section's scroll and the heading was
+           entirely invisible at 0 — the section pinned to a blank screen. Now
+           it starts writing on immediately and is fully readable by 25%. */
+        const start = 0.06 + (i / chars.length) * 0.3;
+        const end = start + 0.08;
         return (
           <CharSpan
             key={i}
@@ -945,8 +989,12 @@ function HowStepCard({
         className="group relative overflow-hidden rounded-3xl"
         style={{
           background: "#111214",
-          padding: "clamp(24px, 3vw, 36px)",
-          minHeight: "clamp(260px, 30vw, 340px)",
+          padding: "clamp(24px, 3vw, 32px)",
+          /* Was clamp(260px, 30vw, 340px) — 340px on a desktop width, well past
+             what the number + badge + two lines of copy need. Two stacked cards
+             at that height could not fit a viewport alongside the headline, so
+             the lower row sat below the fold for most of the scroll. */
+          minHeight: "clamp(180px, 17vw, 230px)",
         }}
       >
         {/* One-pixel top-edge highlight */}

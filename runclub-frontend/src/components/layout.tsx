@@ -337,7 +337,14 @@ export function Navbar() {
   return (
     <header
       className={cn(
-        "sticky top-0 z-40 transition-all duration-300",
+        /* `pointer-events-none` on the bar itself, re-enabled on each control
+           below. The bar is a full-width 64px sticky band at z-40, so anything
+           the page scrolls underneath it stayed *visible* through the 72%-opaque
+           backdrop but stopped being clickable — the click landed on <header>.
+           Page-header actions ("New post", "Manage polls", the dashboard's
+           buttons) sit near the top of the content and are the first things to
+           slide under it. */
+        "pointer-events-none sticky top-0 z-40 transition-all duration-300",
         scrolled && "border-b border-white/8 bg-void/72 backdrop-blur-xl",
       )}
     >
@@ -350,7 +357,11 @@ export function Navbar() {
         {/* `layout` (not a manual x-tween) so this tracks wherever the row's
             padding change actually puts it, rather than a hard-coded offset
             that would drift out of sync if the padding values change later. */}
-        <motion.div layout transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}>
+        <motion.div
+          layout
+          transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+          className="pointer-events-auto"
+        >
           <Logo />
         </motion.div>
 
@@ -364,7 +375,7 @@ export function Navbar() {
           layout
           transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
           className={cn(
-            "hidden items-center transition-[background-color,padding,border-radius] duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] md:flex",
+            "pointer-events-auto hidden items-center transition-[background-color,padding,border-radius] duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] md:flex",
             scrolled
               ? "absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 gap-0.5 rounded-[20px] bg-gold px-3 py-2"
               : "static flex-1 justify-evenly",
@@ -413,7 +424,7 @@ export function Navbar() {
         <motion.div
           layout
           transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-          className="ml-auto flex items-center gap-1.5"
+          className="pointer-events-auto ml-auto flex items-center gap-1.5"
         >
           {user ? (
             <>
@@ -460,7 +471,7 @@ export function Navbar() {
             animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
             transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
-            className="overflow-hidden border-b border-white/8 bg-void/95 backdrop-blur-xl md:hidden"
+            className="pointer-events-auto overflow-hidden border-b border-white/8 bg-void/95 backdrop-blur-xl md:hidden"
           >
             <div className="space-y-0.5 px-4 py-3">
               {/* Same active test as the desktop nav, so the two never disagree. */}
