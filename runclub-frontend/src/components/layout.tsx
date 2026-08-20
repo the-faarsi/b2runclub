@@ -339,13 +339,20 @@ export function Navbar() {
       className={cn(
         /* `pointer-events-none` on the bar itself, re-enabled on each control
            below. The bar is a full-width 64px sticky band at z-40, so anything
-           the page scrolls underneath it stayed *visible* through the 72%-opaque
-           backdrop but stopped being clickable — the click landed on <header>.
+           the page scrolls underneath it stayed *visible* through the backdrop
+           but stopped being clickable — the click landed on <header>.
            Page-header actions ("New post", "Manage polls", the dashboard's
            buttons) sit near the top of the content and are the first things to
-           slide under it. */
+           slide under it.
+
+           The background is fully opaque when scrolled, not 72%. At 72% a button
+           passing under the bar was still legible, so it read as a live control
+           that ignored clicks — and the bar's own logo, nav pill and bell/avatar
+           are necessarily click-catching, so some of that strip can never be
+           handed back to the page. Hiding what is behind the bar is what makes
+           it unambiguous. */
         "pointer-events-none sticky top-0 z-40 transition-all duration-300",
-        scrolled && "border-b border-white/8 bg-void/72 backdrop-blur-xl",
+        scrolled && "border-b border-white/8 bg-void backdrop-blur-xl",
       )}
     >
       <div
@@ -531,8 +538,16 @@ export function PageHeader({
   description?: string;
   action?: ReactNode;
 }) {
+  /*
+   * Actions sit on their own row under the heading, aligned left, rather than
+   * floating right on the title row. Right-aligned they shared the top-right
+   * corner with the navbar's bell and avatar — which have to stay clickable — so
+   * a button scrolling under the bar landed on those instead of itself. On their
+   * own row they also start lower down the page, so it takes more scrolling
+   * before they reach the bar at all.
+   */
   return (
-    <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
+    <div className="mb-8 flex flex-col items-start gap-4">
       <div className="min-w-0">
         {eyebrow && <p className="eyebrow mb-2 text-gold">{eyebrow}</p>}
         <h1 className="display text-[clamp(28px,4.5vw,40px)]">{title}</h1>
