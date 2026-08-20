@@ -1,5 +1,44 @@
-import { motion } from "framer-motion";
-import { useCallback } from "react";
+import { motion, useScroll, useTransform, useSpring, MotionValue } from "framer-motion";
+import { useCallback, useRef } from "react";
+import { gsap } from "gsap";
+import { SplitText } from "gsap/SplitText";
+import { useGSAP } from "@gsap/react";
+
+gsap.registerPlugin(SplitText);
+
+/**
+ * Magnetic hover: the element nudges toward the cursor as it moves within
+ * its bounds, and eases back to rest on pointer leave. Uses `quickTo` so
+ * repeated pointermove events reuse one tween per axis instead of spawning
+ * a new one every frame. Not a hook — plain setup/cleanup, safe to call
+ * from inside a useGSAP() callback for each button that wants the effect.
+ */
+function attachMagneticHover(el: HTMLElement | null, strength = 0.3) {
+  if (!el) return () => {};
+
+  const xTo = gsap.quickTo(el, "x", { duration: 0.35, ease: "power3.out" });
+  const yTo = gsap.quickTo(el, "y", { duration: 0.35, ease: "power3.out" });
+
+  const handlePointerMove = (event: PointerEvent) => {
+    const bounds = el.getBoundingClientRect();
+    const relativeX = event.clientX - (bounds.left + bounds.width / 2);
+    const relativeY = event.clientY - (bounds.top + bounds.height / 2);
+    xTo(relativeX * strength);
+    yTo(relativeY * strength);
+  };
+  const handlePointerLeave = () => {
+    xTo(0);
+    yTo(0);
+  };
+
+  el.addEventListener("pointermove", handlePointerMove);
+  el.addEventListener("pointerleave", handlePointerLeave);
+
+  return () => {
+    el.removeEventListener("pointermove", handlePointerMove);
+    el.removeEventListener("pointerleave", handlePointerLeave);
+  };
+}
 import { Link } from "react-router-dom";
 import { EventCard } from "../components/events";
 import { CollaboratorScroller } from "../components/collaborators";
@@ -39,14 +78,64 @@ const PILLARS = [
   },
 ];
 
+const HOW_STEPS = [
+  {
+    n: "01",
+    t: "Pick a session",
+    b: "Browse the calendar or the list. Every session shows route, start time and entry.",
+    badge: { label: "Calendar", color: "var(--color-gold)", bg: "rgba(233,185,73,0.13)", icon: "📅" },
+  },
+  {
+    n: "02",
+    t: "Sign the waiver",
+    b: "Once, with your emergency contact. We keep it for the organisers on the day.",
+    badge: { label: "One time", color: "var(--color-free)", bg: "rgba(100,200,120,0.13)", icon: "✍️" },
+  },
+  {
+    n: "03",
+    t: "Pay in-app",
+    b: "Card payment through Razorpay. Volunteers marshal and pay nothing.",
+    badge: { label: "Secure pay", color: "var(--color-paid)", bg: "rgba(100,160,255,0.13)", icon: "💳" },
+  },
+  {
+    n: "04",
+    t: "Show your ticket",
+    b: "A QR code we scan at the start line. Screenshots are fine.",
+    badge: { label: "QR ticket", color: "#c084fc", bg: "rgba(192,132,252,0.13)", icon: "🎟️" },
+  },
+];
+
+/**
+ * Scroll-driven reveal for a single "How it works" card.
+ *
+ * Hidden state (progress === range[0]):
+ *   opacity 0, perspective(1000px) rotateX(25deg) rotateZ(-3deg) scale(0.85),
+ *   offset `yFrom`px below its resting spot.
+ *
+ * Revealed state (progress === range[1]):
+ *   opacity 1, rotateX(0deg) rotateZ(0deg) scale(1), y 0 — flat and landed.
+ *
+ * All five properties share the same input range so they land in sync.
+ */
+function useCardReveal(
+  progress: MotionValue<number>,
+  range: [number, number],
+  yFrom: number,
+) {
+  const y = useTransform(progress, range, [yFrom, 0]);
+  const opacity = useTransform(progress, range, [0, 1]);
+  const rotateX = useTransform(progress, range, [25, 0]);
+  const rotateZ = useTransform(progress, range, [-3, 0]);
+  const scale = useTransform(progress, range, [0.85, 1]);
+  return { y, opacity, rotateX, rotateZ, scale };
+}
+
 export function Landing() {
   const { user } = useAuth();
 
   const load = useCallback(() => api.events(), []);
   const { data: events, loading } = useFetch(load);
 
-  // Extra reads for the long-form sections. All public endpoints, so these work
-  // for signed-out visitors too; each degrades to an omitted section if empty.
   const loadGallery = useCallback(() => api.gallery(), []);
   const { data: gallery } = useFetch(loadGallery);
   const loadBoard = useCallback(() => api.leaderboard(), []);
@@ -65,28 +154,204 @@ export function Landing() {
   const board = leaderboard?.leaderboard ?? [];
   const clubKm = board.reduce((sum, r) => sum + r.weekly_distance_km, 0);
 
+  // ── Scroll refs for the "How it works" sticky section ──
+  const stickyRef = useRef<HTMLDivElement>(null);
+
+  const { scrollYProgress } = useScroll({
+    target: stickyRef,
+    offset: ["start start", "end end"],
+  });
+
+  const smoothProgress = useSpring(scrollYProgress, {
+    stiffness: 60,
+    damping: 20,
+    mass: 0.4,
+  });
+
+  // Each card has its own independent scroll-driven motion — staggered start
+  // points so they rise with continuous momentum rather than moving as a
+  // block. Cards further right and lower start from deeper below.
+  //
+  // Every card animates four properties together over the same [start, end]
+  // window:
+  //   y        — rises from its offset down to 0
+  //   opacity  — fully invisible (0) to fully visible (1)
+  //   rotateX / rotateZ / scale — a 3D "diagonal drop" (tilted, shrunk,
+  //   angled) that straightens into a flat, full-size resting position
+  const card0 = useCardReveal(smoothProgress, [0.05, 0.6], 460);
+  const card1 = useCardReveal(smoothProgress, [0.1, 0.65], 560);
+  const card2 = useCardReveal(smoothProgress, [0.15, 0.7], 500);
+  const card3 = useCardReveal(smoothProgress, [0.2, 0.75], 640);
+  const cardMotionValues = [card0, card1, card2, card3];
+
+  // ── Hero entrance choreography (GSAP) ──
+  // One timeline sequences every hero element in a deliberate order —
+  // pill → headline → paragraph → buttons (staggered) → 3D graphic →
+  // next-event spotlight — instead of each piece fading in independently.
+  const heroRef = useRef<HTMLElement>(null);
+  const heroPillRef = useRef<HTMLSpanElement>(null);
+  const heroHeadlineRef = useRef<HTMLHeadingElement>(null);
+  const heroParagraphRef = useRef<HTMLParagraphElement>(null);
+  const heroButtonsRef = useRef<HTMLDivElement>(null);
+  const heroBtnPrimaryRef = useRef<HTMLAnchorElement>(null);
+  const heroBtnSecondaryRef = useRef<HTMLAnchorElement>(null);
+  const heroBtnGhostRef = useRef<HTMLAnchorElement>(null);
+  const heroGraphicRef = useRef<HTMLDivElement>(null);
+  const heroGraphicFloatRef = useRef<HTMLDivElement>(null);
+  const heroGraphicParallaxRef = useRef<HTMLDivElement>(null);
+  const heroSpotlightRef = useRef<HTMLDivElement>(null);
+
+  useGSAP(
+    () => {
+      // Split "Find your / stride." into individual word spans so each one
+      // can animate in on its own, instead of the headline moving as one
+      // block. `perspective` on the h1 (its direct parent) is what makes
+      // the per-word rotateX read as real 3D tilt rather than a flat skew.
+      const headlineSplit = heroHeadlineRef.current
+        ? new SplitText(heroHeadlineRef.current, { type: "words", wordsClass: "hero-word" })
+        : null;
+      if (headlineSplit) {
+        gsap.set(headlineSplit.words, { display: "inline-block" });
+      }
+
+      const tl = gsap.timeline({ defaults: { ease: "power3.out" } });
+
+      tl.fromTo(
+        heroPillRef.current,
+        { opacity: 0, y: -10, scale: 0.9 },
+        { opacity: 1, y: 0, scale: 1, duration: 0.5, ease: "back.out(1.7)" },
+      )
+        .fromTo(
+          headlineSplit ? headlineSplit.words : heroHeadlineRef.current,
+          { opacity: 0, y: 40, rotateX: -40, transformOrigin: "50% 100%" },
+          { opacity: 1, y: 0, rotateX: 0, duration: 0.8, stagger: 0.08, ease: "power4.out" },
+          "-=0.25",
+        )
+        .fromTo(
+          heroParagraphRef.current,
+          { opacity: 0, y: 16 },
+          { opacity: 1, y: 0, duration: 0.5 },
+          "-=0.4",
+        )
+        .fromTo(
+          heroButtonsRef.current ? heroButtonsRef.current.children : [],
+          { opacity: 0, y: 14 },
+          { opacity: 1, y: 0, duration: 0.45, stagger: 0.08 },
+          "-=0.3",
+        )
+        .fromTo(
+          heroGraphicRef.current,
+          { opacity: 0, scale: 0.96 },
+          { opacity: 1, scale: 1, duration: 1.1, ease: "power2.out" },
+          "-=1.0",
+        )
+        .fromTo(
+          heroSpotlightRef.current,
+          { opacity: 0, y: 22 },
+          { opacity: 1, y: 0, duration: 0.55 },
+          "-=0.55",
+        );
+
+      // ── Ambient idle float ──
+      // A slow, infinite up/down drift with a touch of rotation, so the
+      // graphic never sits perfectly still once it has landed. Runs on its
+      // own wrapper (heroGraphicFloatRef) so it never competes with the
+      // entrance tween's opacity/scale on heroGraphicRef.
+      if (heroGraphicFloatRef.current) {
+        gsap
+          .timeline({ repeat: -1, yoyo: true, defaults: { ease: "sine.inOut" } })
+          .to(heroGraphicFloatRef.current, { y: -16, rotation: 1.4, duration: 3.6 })
+          .to(heroGraphicFloatRef.current, { y: 8, rotation: -1.1, duration: 4.2 });
+      }
+
+      // ── Mouse-follow parallax ──
+      // The graphic nudges gently toward the cursor and eases back when the
+      // pointer leaves. `quickTo` reuses one tween per axis instead of
+      // spawning a new tween on every mousemove — the recommended GSAP
+      // pattern for continuous, high-frequency updates. Runs on its own
+      // wrapper (heroGraphicParallaxRef) so it never fights the idle float's
+      // y/rotation on the wrapper above it.
+      let handlePointerMove: ((event: PointerEvent) => void) | null = null;
+      let handlePointerLeave: (() => void) | null = null;
+      const sectionEl = heroRef.current;
+
+      if (sectionEl && heroGraphicParallaxRef.current) {
+        const parallaxX = gsap.quickTo(heroGraphicParallaxRef.current, "x", {
+          duration: 0.9,
+          ease: "power3.out",
+        });
+        const parallaxY = gsap.quickTo(heroGraphicParallaxRef.current, "y", {
+          duration: 0.9,
+          ease: "power3.out",
+        });
+
+        handlePointerMove = (event: PointerEvent) => {
+          const bounds = sectionEl.getBoundingClientRect();
+          const relativeX = (event.clientX - bounds.left) / bounds.width - 0.5;
+          const relativeY = (event.clientY - bounds.top) / bounds.height - 0.5;
+          parallaxX(relativeX * 32);
+          parallaxY(relativeY * 24);
+        };
+        handlePointerLeave = () => {
+          parallaxX(0);
+          parallaxY(0);
+        };
+
+        sectionEl.addEventListener("pointermove", handlePointerMove);
+        sectionEl.addEventListener("pointerleave", handlePointerLeave);
+      }
+
+      // ── Magnetic button hover ──
+      // Skip on touch-only devices — pointermove-based magnetism has no
+      // meaning without a hovering cursor, and could misfire on tap.
+      const magneticCleanups: Array<() => void> = [];
+      if (typeof window !== "undefined" && window.matchMedia("(pointer: fine)").matches) {
+        magneticCleanups.push(attachMagneticHover(heroBtnPrimaryRef.current, 0.3));
+        magneticCleanups.push(attachMagneticHover(heroBtnSecondaryRef.current, 0.3));
+        magneticCleanups.push(attachMagneticHover(heroBtnGhostRef.current, 0.3));
+      }
+
+      // SplitText mutates the DOM (wraps words in spans) — revert it on
+      // cleanup so re-renders/unmounts don't leave stray markup behind.
+      // Also detach the pointer listeners we added by hand above.
+      return () => {
+        headlineSplit?.revert();
+        if (sectionEl && handlePointerMove && handlePointerLeave) {
+          sectionEl.removeEventListener("pointermove", handlePointerMove);
+          sectionEl.removeEventListener("pointerleave", handlePointerLeave);
+        }
+        magneticCleanups.forEach((cleanup) => cleanup());
+      };
+    },
+    { scope: heroRef },
+  );
+
   return (
     <>
       {/* ── Hero ─────────────────────────────────────────── */}
-      <section className="relative mx-auto max-w-7xl px-4 pb-16 pt-14 sm:px-6 sm:pt-20 lg:px-8">
-        {/* Route trace, drawn in on load. Sits behind the copy on small screens. */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 1.2, ease: [0.16, 1, 0.3, 1] }}
+      <section
+        ref={heroRef}
+        className="relative mx-auto max-w-7xl px-4 pb-16 pt-14 sm:px-6 sm:pt-20 lg:px-8"
+      >
+        <div
+          ref={heroGraphicRef}
           className="pointer-events-none absolute -top-10 right-[-6%] hidden h-[620px] w-[60%] lg:block"
           aria-hidden
         >
-          <Hero3D className="h-full w-full" />
-        </motion.div>
+          {/* heroGraphicFloatRef: slow, infinite ambient drift (idle loop). */}
+          <div ref={heroGraphicFloatRef} className="h-full w-full">
+            {/* heroGraphicParallaxRef: nudges toward the cursor on mousemove. */}
+            <div ref={heroGraphicParallaxRef} className="h-full w-full">
+              <Hero3D className="h-full w-full" />
+            </div>
+          </div>
+        </div>
 
-        <motion.div
-          initial={{ opacity: 0, y: 18 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.55, ease: [0.16, 1, 0.3, 1] }}
-          className="relative max-w-3xl"
-        >
-          <span className="inline-flex items-center gap-2 rounded-full border border-gold/25 bg-gold/8 px-3 py-1.5">
+        <div className="relative max-w-3xl">
+          <span
+            ref={heroPillRef}
+            className="inline-flex items-center gap-2 rounded-full border border-gold/25 bg-gold/8 px-3 py-1.5"
+          >
             <span className="size-1.5 rounded-full bg-gold pulse-ring" aria-hidden />
             <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-gold">
               {upcoming.length > 0
@@ -95,19 +360,23 @@ export function Landing() {
             </span>
           </span>
 
-          <h1 className="display mt-6 text-[clamp(44px,9vw,86px)]">
+          <h1
+            ref={heroHeadlineRef}
+            className="display mt-6 text-[clamp(44px,9vw,86px)]"
+            style={{ perspective: "600px" }}
+          >
             Find your
             <br />
             <span className="text-gold">stride.</span>
           </h1>
 
-          <p className="mt-6 max-w-xl text-[17px] leading-relaxed text-ink-2">
+          <p ref={heroParagraphRef} className="mt-6 max-w-xl text-[17px] leading-relaxed text-ink-2">
             A running club that actually runs on time. Pick a session, sign the waiver, pay once,
             and turn up with a ticket in your pocket.
           </p>
 
-          <div className="mt-9 flex flex-wrap items-center gap-3">
-            <Link to="/calendar" className={buttonClass("gold", "lg", "sweep")}>
+          <div ref={heroButtonsRef} className="mt-9 flex flex-wrap items-center gap-3">
+            <Link ref={heroBtnPrimaryRef} to="/calendar" className={buttonClass("gold", "lg", "sweep")}>
               See the calendar
               <svg viewBox="0 0 24 24" className="size-4" fill="none" aria-hidden>
                 <path
@@ -120,23 +389,18 @@ export function Landing() {
               </svg>
             </Link>
             {!user && (
-              <Link to="/signup" className={buttonClass("outline", "lg")}>
+              <Link ref={heroBtnSecondaryRef} to="/signup" className={buttonClass("outline", "lg")}>
                 Join the club
               </Link>
             )}
-            <Link to="/leaderboard" className={buttonClass("ghost", "lg")}>
+            <Link ref={heroBtnGhostRef} to="/leaderboard" className={buttonClass("ghost", "lg")}>
               This week's board
             </Link>
           </div>
-        </motion.div>
+        </div>
 
         {/* Next event spotlight */}
-        <motion.div
-          initial={{ opacity: 0, y: 22 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.55, delay: 0.12, ease: [0.16, 1, 0.3, 1] }}
-          className="mt-14"
-        >
+        <div ref={heroSpotlightRef} className="mt-14">
           {loading ? (
             <Card className="p-6">
               <Skeleton className="h-4 w-28" />
@@ -198,7 +462,7 @@ export function Landing() {
               </p>
             </Card>
           )}
-        </motion.div>
+        </div>
       </section>
 
       {/* ── Pillars ──────────────────────────────────────── */}
@@ -258,9 +522,7 @@ export function Landing() {
         </section>
       )}
 
-      {/* ── Collaborators ────────────────────────────────── */}
-
-      {/* ── By the numbers ───────────────────────────────── */}
+      {/* ── By the numbers — ORIGINAL, untouched ─────────── */}
       <Reveal>
         <section className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
           <div className="datastrip mb-10" />
@@ -286,40 +548,98 @@ export function Landing() {
         </section>
       </Reveal>
 
-      {/* ── How it works ─────────────────────────────────── */}
-      <section className="relative mx-auto max-w-7xl px-4 py-14 sm:px-6 lg:px-8">
-        <Reveal>
-          <p className="eyebrow mb-2 text-gold">How it works</p>
-          <h2 className="display text-[clamp(26px,3.6vw,38px)]">
-            Four steps from curious to running.
-          </h2>
-        </Reveal>
+      {/* ── How it works — scroll-driven sticky section ───── */}
+      {/*
+        Outer wrapper is 300vh — gives enough scroll runway for the animation.
+        Inner sticky div locks to viewport top while the animation plays, but
+        uses min-h-screen (not a hard h-screen) with overflow-visible so that
+        once the staggered/masonry layout is taller than the viewport — e.g.
+        the pushed-down right column, or a card growing on a small screen —
+        the section expands to fit it instead of clipping the bottom cards.
+        The bottom padding matches the right column's own push-down offset so
+        card 04 always has room to fully land before the section ends.
+      */}
+      <div ref={stickyRef} style={{ height: "300vh" }} className="relative">
+        <div className="sticky top-0 min-h-screen overflow-visible">
+          <div className="flex min-h-screen flex-col justify-start px-4 pb-[clamp(160px,18vw,240px)] pt-16 sm:px-6 lg:px-8">
+            <div className="mx-auto w-full max-w-7xl">
 
-        <div className="mt-10 grid gap-4 lg:grid-cols-4">
-          {[
-            { n: "01", t: "Pick a session", b: "Browse the calendar or the list. Every session shows route, start time and entry." },
-            { n: "02", t: "Sign the waiver", b: "Once, with your emergency contact. We keep it for the organisers on the day." },
-            { n: "03", t: "Pay in-app", b: "Card payment through Razorpay. Volunteers marshal and pay nothing." },
-            { n: "04", t: "Show your ticket", b: "A QR code we scan at the start line. Screenshots are fine." },
-          ].map((step, i) => (
-            <Reveal key={step.n} delay={i * 0.07}>
-              <Tilt max={7} lift={9}>
-                <Card hover className="hud edge-gold group h-full p-6">
-                  <TiltLayer depth={30}>
-                    <span className="display text-[34px] leading-none text-gold/35 transition-colors duration-300 group-hover:text-gold/70">
-                      {step.n}
-                    </span>
-                  </TiltLayer>
-                  <TiltLayer depth={14}>
-                    <h3 className="mt-3 text-[15px] font-semibold text-ink">{step.t}</h3>
-                    <p className="mt-2 text-[13.5px] leading-relaxed text-ink-3">{step.b}</p>
-                  </TiltLayer>
-                </Card>
-              </Tilt>
-            </Reveal>
-          ))}
+              {/* Section header — eyebrow + scroll-driven text reveal */}
+              <p className="eyebrow mb-4 text-gold">How it works</p>
+              <ScrollRevealText
+                text="Four steps from curious to running."
+                scrollProgress={smoothProgress}
+              />
+
+              {/* Masonry layout — left col flush, right col pushed down 220px
+                  so the two columns genuinely overlap vertically at mid-scroll.
+                  `perspective` on this shared ancestor gives the rotateX/rotateZ
+                  tilt on each card real 3D depth instead of a flat skew.
+                  Each card fades in, un-tilts and un-scales, and rises together
+                  via its own useCardReveal() motion values. */}
+              <div className="mt-8 flex gap-5" style={{ perspective: "1000px" }}>
+
+                {/* Left column — cards 01 and 03 */}
+                <div className="flex flex-1 flex-col gap-5">
+                  <motion.div
+                    style={{
+                      y: cardMotionValues[0].y,
+                      opacity: cardMotionValues[0].opacity,
+                      rotateX: cardMotionValues[0].rotateX,
+                      rotateZ: cardMotionValues[0].rotateZ,
+                      scale: cardMotionValues[0].scale,
+                    }}
+                  >
+                    <HowStepCard step={HOW_STEPS[0]} />
+                  </motion.div>
+                  <motion.div
+                    style={{
+                      y: cardMotionValues[2].y,
+                      opacity: cardMotionValues[2].opacity,
+                      rotateX: cardMotionValues[2].rotateX,
+                      rotateZ: cardMotionValues[2].rotateZ,
+                      scale: cardMotionValues[2].scale,
+                    }}
+                  >
+                    <HowStepCard step={HOW_STEPS[2]} />
+                  </motion.div>
+                </div>
+
+                {/* Right column — pushed down so card 02 top aligns with
+                    card 01 bottom-third, creating genuine masonry overlap */}
+                <div
+                  className="flex flex-1 flex-col gap-5"
+                  style={{ marginTop: "clamp(160px, 18vw, 240px)" }}
+                >
+                  <motion.div
+                    style={{
+                      y: cardMotionValues[1].y,
+                      opacity: cardMotionValues[1].opacity,
+                      rotateX: cardMotionValues[1].rotateX,
+                      rotateZ: cardMotionValues[1].rotateZ,
+                      scale: cardMotionValues[1].scale,
+                    }}
+                  >
+                    <HowStepCard step={HOW_STEPS[1]} />
+                  </motion.div>
+                  <motion.div
+                    style={{
+                      y: cardMotionValues[3].y,
+                      opacity: cardMotionValues[3].opacity,
+                      rotateX: cardMotionValues[3].rotateX,
+                      rotateZ: cardMotionValues[3].rotateZ,
+                      scale: cardMotionValues[3].scale,
+                    }}
+                  >
+                    <HowStepCard step={HOW_STEPS[3]} />
+                  </motion.div>
+                </div>
+
+              </div>
+            </div>
+          </div>
         </div>
-      </section>
+      </div>
 
       {/* ── Who it's for ─────────────────────────────────── */}
       <section className="mx-auto max-w-7xl px-4 py-14 sm:px-6 lg:px-8">
@@ -543,5 +863,166 @@ export function Landing() {
         </section>
       )}
     </>
+  );
+}
+
+// ── Sub-components ────────────────────────────────────────
+
+/**
+ * Scroll-driven character opacity reveal.
+ * Each character fades from 0 → 1 (starts fully hidden) as scroll progress
+ * passes its threshold, left to right across progress range 0.05 → 0.50.
+ */
+function ScrollRevealText({
+  text,
+  scrollProgress,
+}: {
+  text: string;
+  scrollProgress: ReturnType<typeof useSpring>;
+}) {
+  const chars = text.split("");
+  return (
+    <h2
+      className="display text-[clamp(26px,3.6vw,48px)] leading-tight"
+      aria-label={text}
+    >
+      {chars.map((char, i) => {
+        const start = 0.05 + (i / chars.length) * 0.38;
+        const end = start + 0.1;
+        return (
+          <CharSpan
+            key={i}
+            char={char}
+            scrollProgress={scrollProgress}
+            inputRange={[start, end]}
+          />
+        );
+      })}
+    </h2>
+  );
+}
+
+/**
+ * Single character — isolated so each only re-evaluates its own opacity range.
+ */
+function CharSpan({
+  char,
+  scrollProgress,
+  inputRange,
+}: {
+  char: string;
+  scrollProgress: ReturnType<typeof useSpring>;
+  inputRange: [number, number];
+}) {
+  const opacity = useTransform(scrollProgress, inputRange, [0, 1]);
+  return (
+    <motion.span style={{ opacity }} className="inline-block whitespace-pre">
+      {char}
+    </motion.span>
+  );
+}
+
+/**
+ * "How it works" step card.
+ *
+ * Tall dark solid card — no border, no bracket, no grid overlay.
+ * Large step number dominates the top half for typography contrast.
+ * Graphic badge pill (icon + label) sits anchored below the number.
+ */
+function HowStepCard({
+  step,
+}: {
+  step: {
+    n: string;
+    t: string;
+    b: string;
+    badge: { label: string; color: string; bg: string; icon: string };
+  };
+}) {
+  return (
+    <Tilt max={4} lift={10}>
+      <div
+        className="group relative overflow-hidden rounded-3xl"
+        style={{
+          background: "#111214",
+          padding: "clamp(24px, 3vw, 36px)",
+          minHeight: "clamp(260px, 30vw, 340px)",
+        }}
+      >
+        {/* One-pixel top-edge highlight */}
+        <span
+          aria-hidden
+          className="pointer-events-none absolute inset-x-0 top-0 h-px"
+          style={{ background: "rgba(255,255,255,0.08)" }}
+        />
+
+        {/* Large step number — dominant, high contrast */}
+        <p
+          className="display leading-none tnum select-none"
+          style={{
+            fontSize: "clamp(56px, 8vw, 88px)",
+            color: "rgba(255,255,255,0.08)",
+            letterSpacing: "-0.03em",
+          }}
+        >
+          {step.n}
+        </p>
+
+        {/* Graphic badge pill — icon + label, colour-coded per step */}
+        <div className="mt-4 flex items-center gap-2">
+          <span
+            className="inline-flex items-center gap-1.5 rounded-full px-3 py-1"
+            style={{ background: step.badge.bg }}
+          >
+            {/* Emoji icon */}
+            <span className="text-[13px] leading-none" aria-hidden>
+              {step.badge.icon}
+            </span>
+            <span
+              className="text-[11px] font-bold uppercase tracking-[0.1em]"
+              style={{ color: step.badge.color }}
+            >
+              {step.badge.label}
+            </span>
+          </span>
+
+          {/* Step counter pill — faint, right-aligned */}
+          <span
+            className="ml-auto rounded-full px-2.5 py-0.5 text-[10px] font-bold tracking-widest"
+            style={{
+              background: "rgba(255,255,255,0.06)",
+              color: "rgba(255,255,255,0.3)",
+            }}
+          >
+            STEP {step.n}
+          </span>
+        </div>
+
+        {/* Title — bold, large */}
+        <h3
+          className="mt-5 font-semibold leading-tight text-white"
+          style={{ fontSize: "clamp(17px, 2vw, 21px)" }}
+        >
+          {step.t}
+        </h3>
+
+        {/* Body — small, recessive */}
+        <p
+          className="mt-2.5 text-[13px] leading-relaxed"
+          style={{ color: "rgba(255,255,255,0.38)" }}
+        >
+          {step.b}
+        </p>
+
+        {/* Bottom colour wash on hover — matches badge colour */}
+        <span
+          aria-hidden
+          className="pointer-events-none absolute inset-x-0 bottom-0 h-24 rounded-b-3xl opacity-0 transition-opacity duration-500 group-hover:opacity-100"
+          style={{
+            background: `linear-gradient(to top, ${step.badge.bg}, transparent)`,
+          }}
+        />
+      </div>
+    </Tilt>
   );
 }
