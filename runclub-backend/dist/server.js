@@ -17,6 +17,12 @@ const forum_router_1 = __importDefault(require("./routes/forum.router"));
 const polls_router_1 = __importDefault(require("./routes/polls.router"));
 const admin_router_1 = __importDefault(require("./routes/admin.router"));
 const strava_router_1 = __importDefault(require("./routes/strava.router"));
+const content_router_1 = __importDefault(require("./routes/content.router"));
+const raceday_router_1 = __importDefault(require("./routes/raceday.router"));
+const results_router_1 = __importDefault(require("./routes/results.router"));
+const health_router_1 = __importDefault(require("./routes/health.router"));
+const db_router_1 = __importDefault(require("./routes/db.router"));
+const reminders_1 = require("./utils/reminders");
 const app = (0, express_1.default)();
 const PORT = process.env.PORT || 3000;
 // CORS configuration
@@ -37,6 +43,19 @@ app.use("/api/forum", forum_router_1.default);
 app.use("/api/polls", polls_router_1.default);
 app.use("/api/admin", admin_router_1.default);
 app.use("/api/strava", strava_router_1.default);
+app.use("/api/content", content_router_1.default);
+app.use("/api/raceday", raceday_router_1.default);
+app.use("/api/results", results_router_1.default);
+app.use("/api/health", health_router_1.default);
+app.use("/api/db", db_router_1.default);
+// Serve uploaded gallery/logo images. Static and public by design — the files
+// are club photos, and the URLs are unguessable (random filenames).
+const path_1 = __importDefault(require("path"));
+app.use("/uploads", express_1.default.static(path_1.default.resolve(process.cwd(), "uploads"), {
+    maxAge: "7d",
+    // Never execute anything out of the upload directory.
+    setHeaders: (res) => res.setHeader("X-Content-Type-Options", "nosniff"),
+}));
 // Basic health check route
 app.get("/health", (req, res) => {
     res.json({ status: "healthy", database: "connected" });
@@ -63,6 +82,15 @@ app.get("/api/events/registration/:id/ticket", async (req, res) => {
         // Security: user can only view their own ticket unless admin
         if (reg.user_id !== userId && req.user.role !== "ADMIN") {
             res.status(403).json({ error: "Access denied to ticket" });
+            return;
+        }
+        // A blocked registration keeps its PAID/FREE status on purpose, so the
+        // block has to be checked separately or a barred member would still be
+        // handed a scannable ticket.
+        if (reg.blocked_at) {
+            res.status(403).json({
+                error: "An organiser has removed you from this event, so no ticket is available.",
+            });
             return;
         }
         // Verify registration is valid
@@ -124,6 +152,9 @@ app.use((err, req, res, next) => {
 if (process.env.NODE_ENV !== "test") {
     app.listen(PORT, () => {
         console.log(`[Server] Run Club backend is running on http://localhost:${PORT}`);
+        // Sweeps for due event reminders. Guarded out of the test env so the
+        // integration suite never fires email as a side effect.
+        (0, reminders_1.startReminderScheduler)();
     });
 }
 exports.default = app;
