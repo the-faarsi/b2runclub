@@ -66,10 +66,29 @@ exports.UPLOAD_DIR = process.env.UPLOAD_DIR
 /** Vercel injects this when a Blob store is attached to the project. */
 const BLOB_TOKEN = process.env.BLOB_READ_WRITE_TOKEN?.trim();
 exports.usingBlob = Boolean(BLOB_TOKEN);
-// Only the disk driver needs a directory, and creating one on a read-only
-// filesystem would throw at import time.
-if (!exports.usingBlob && !fs_1.default.existsSync(exports.UPLOAD_DIR)) {
-    fs_1.default.mkdirSync(exports.UPLOAD_DIR, { recursive: true });
+/**
+ * Only the disk driver needs a directory — and this must never throw.
+ *
+ * This runs at import time, so an exception here takes down the entire server
+ * before a single route is registered. On a read-only filesystem (a serverless
+ * host with no Blob store attached yet) mkdirSync fails, and the result is an
+ * opaque FUNCTION_INVOCATION_FAILED on every request with nothing in the logs
+ * pointing at uploads.
+ *
+ * Degrading instead: the app boots, everything unrelated to uploads works, and
+ * an upload attempt fails on its own with a real error.
+ */
+let diskWritable = false;
+if (!exports.usingBlob) {
+    try {
+        if (!fs_1.default.existsSync(exports.UPLOAD_DIR))
+            fs_1.default.mkdirSync(exports.UPLOAD_DIR, { recursive: true });
+        diskWritable = true;
+    }
+    catch (err) {
+        console.warn(`[storage] ${exports.UPLOAD_DIR} is not writable (${err instanceof Error ? err.message : err}). Uploads are disabled — attach a Blob store and set ` +
+            `BLOB_READ_WRITE_TOKEN, or point UPLOAD_DIR at a writable disk.`);
+    }
 }
 /** A generated, collision-resistant name. Client filenames are never trusted. */
 function safeFilename(ext) {
@@ -97,6 +116,10 @@ async function putObject(filename, body, contentType) {
             addRandomSuffix: false,
         });
         return result.url;
+    }
+    if (!diskWritable) {
+        throw new Error("File uploads are not configured on this deployment. Attach a Blob " +
+            "store (BLOB_READ_WRITE_TOKEN) or set UPLOAD_DIR to a writable path.");
     }
     await fs_1.default.promises.writeFile(path_1.default.join(exports.UPLOAD_DIR, filename), body);
     return `/uploads/${filename}`;

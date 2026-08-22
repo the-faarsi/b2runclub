@@ -16,8 +16,8 @@ SMTP_PASS="jqgochfyescyimpy"
 MAIL_FROM="B Squared Run Club <Burnandbond.club@gmail.com>"
 
 # Base URL used for links inside emails (ticket links, reset links).
-APP_URL="https://b2runclub-three.vercel.app/"
-API_URL="https://b2runclub-three.vercel.app/"
+APP_URL="https://b2runclub-three.vercel.app"
+API_URL="https://b2runclub-three.vercel.app"
 
 # ── Strava (per-athlete OAuth) ───────────────────────────────
 # Create an app at https://www.strava.com/settings/api

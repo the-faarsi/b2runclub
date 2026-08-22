@@ -25,5 +25,20 @@
  *
  * Note: vercel.json takes no comments — JSON has none, and Vercel rejects
  * unknown properties like "_comment" outright — which is why this lives here.
+ *
+ * ── Why migrations and the seed run in the build command ──
+ *
+ * `npm start` is never executed here. Render runs it and gets
+ * `prisma migrate deploy && node dist/seed.js && node dist/server.js`; Vercel
+ * imports this module per request instead, so on its own the database would
+ * never gain a single table and no admin account would exist.
+ *
+ * vercel.json's buildCommand therefore appends both steps. Each is safe to
+ * repeat: `migrate deploy` applies only pending migrations, and the seed exits
+ * early once any ADMIN row exists.
+ *
+ * One consequence worth knowing: preview deployments build too, so they run
+ * against whatever DATABASE_URL is configured for the Preview environment. Give
+ * previews their own database, or they will migrate production.
  */
 export { default } from "../src/server";
