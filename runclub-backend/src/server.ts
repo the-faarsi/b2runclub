@@ -14,7 +14,7 @@ import forumRouter from "./routes/forum.router";
 import pollsRouter from "./routes/polls.router";
 import adminRouter from "./routes/admin.router";
 import stravaRouter from "./routes/strava.router";
-import contentRouter from "./routes/content.router";
+import contentRouter, { UPLOAD_DIR } from "./routes/content.router";
 import racedayRouter from "./routes/raceday.router";
 import resultsRouter from "./routes/results.router";
 import healthRouter from "./routes/health.router";
@@ -55,10 +55,12 @@ app.use("/api/db", dbRouter);
 
 // Serve uploaded gallery/logo images. Static and public by design — the files
 // are club photos, and the URLs are unguessable (random filenames).
-import path from "path";
+// UPLOAD_DIR is imported rather than recomputed here: the writer and the reader
+// must agree, and this copy used to hard-code process.cwd()/uploads while the
+// router honoured the env override.
 app.use(
     "/uploads",
-    express.static(path.resolve(process.cwd(), "uploads"), {
+    express.static(UPLOAD_DIR, {
         maxAge: "7d",
         // Never execute anything out of the upload directory.
         setHeaders: (res) => res.setHeader("X-Content-Type-Options", "nosniff"),

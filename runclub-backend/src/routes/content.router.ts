@@ -16,7 +16,15 @@ const router = Router();
  * just a URL, so swapping the destination needs no schema change.
  */
 
-export const UPLOAD_DIR = path.resolve(process.cwd(), "uploads");
+/**
+ * Overridable so uploads can live on a mounted disk rather than the app
+ * directory. On a host like Render the working directory is rebuilt on every
+ * deploy, which silently destroys every uploaded photo and logo; pointing
+ * UPLOAD_DIR at the disk mount (e.g. /data/uploads) keeps them.
+ */
+export const UPLOAD_DIR = process.env.UPLOAD_DIR
+    ? path.resolve(process.env.UPLOAD_DIR)
+    : path.resolve(process.cwd(), "uploads");
 
 if (!fs.existsSync(UPLOAD_DIR)) {
     fs.mkdirSync(UPLOAD_DIR, { recursive: true });

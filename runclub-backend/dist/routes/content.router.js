@@ -19,7 +19,15 @@ const router = (0, express_1.Router)();
  * this should move to object storage (S3/R2) — the stored value is
  * just a URL, so swapping the destination needs no schema change.
  */
-exports.UPLOAD_DIR = path_1.default.resolve(process.cwd(), "uploads");
+/**
+ * Overridable so uploads can live on a mounted disk rather than the app
+ * directory. On a host like Render the working directory is rebuilt on every
+ * deploy, which silently destroys every uploaded photo and logo; pointing
+ * UPLOAD_DIR at the disk mount (e.g. /data/uploads) keeps them.
+ */
+exports.UPLOAD_DIR = process.env.UPLOAD_DIR
+    ? path_1.default.resolve(process.env.UPLOAD_DIR)
+    : path_1.default.resolve(process.cwd(), "uploads");
 if (!fs_1.default.existsSync(exports.UPLOAD_DIR)) {
     fs_1.default.mkdirSync(exports.UPLOAD_DIR, { recursive: true });
 }
