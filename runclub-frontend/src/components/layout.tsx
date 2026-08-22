@@ -6,6 +6,7 @@ import { useAuth } from "../lib/auth";
 import { cn, relativeTime, ROLE_META } from "../lib/format";
 import type { Notification } from "../lib/types";
 import { useFetch } from "../lib/useFetch";
+import { CreatorsCredit } from "./creatorsLogo";
 import { Avatar, buttonClass } from "./ui";
 
 /* ── Wordmark ─────────────────────────────────────────────── */
@@ -596,6 +597,17 @@ export function Footer() {
             Gallery
           </Link>
           <p className="text-xs text-ink-3">Bring water.</p>
+        </div>
+      </div>
+
+      {/* Creators' credit — distinct from the club's own mark above, so it gets
+          its own rule and a quieter position. <Footer> is mounted inside
+          <Shell>, which wraps every chrome route, so this shows for visitors,
+          members, volunteers and admins alike. */}
+      <div className="mx-auto mt-7 max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div className="hairline mb-5" />
+        <div className="flex justify-center sm:justify-start">
+          <CreatorsCredit />
         </div>
       </div>
     </footer>

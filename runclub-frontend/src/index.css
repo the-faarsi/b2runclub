@@ -505,6 +505,111 @@
     z-index: 5;
   }
 
+  /* ── Creators' mark ──────────────────────────────────────
+     The "WTF · With Thariq & faarsi" credit. Tilts toward the cursor in 3D,
+     with a sheen that follows it and a glow that lifts behind the artwork.
+     --rx/--ry/--mx/--my/--lift are written by <CreatorsLogo> on pointermove.
+     Nothing here is interactive, so the moving transform cannot swallow a
+     click the way a hover transform on a button would. */
+  .creator-stage {
+    display: inline-block;
+    perspective: 700px;
+  }
+  .creator-tilt {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    transform-style: preserve-3d;
+    transform: rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg))
+      scale(calc(1 + var(--lift, 0) * 0.06));
+    transition: transform 0.45s var(--ease-out-expo);
+    will-change: transform;
+  }
+  .creator-img {
+    position: relative;
+    z-index: 2;
+    width: auto;
+    max-width: min(240px, 62vw);
+    object-fit: contain;
+    /* Sits on a near-black footer, so a cool rim keeps the white strokes from
+       melting into the background. */
+    filter: drop-shadow(0 2px 6px rgb(0 0 0 / 0.65))
+      drop-shadow(0 0 calc(var(--lift, 0) * 14px) rgb(56 152 255 / 0.55));
+    transition: filter 0.45s var(--ease-out-expo);
+  }
+  /* Glow pad behind the mark. */
+  .creator-glow {
+    position: absolute;
+    /* Generous inset so the gradient reaches transparent well before the box
+       edge — clipped at the edge it reads as a soft rectangle rather than a
+       glow. */
+    inset: -60% -30%;
+    z-index: 1;
+    pointer-events: none;
+    opacity: var(--lift, 0);
+    transform: translateZ(-24px);
+    background: radial-gradient(
+      42% 46% at var(--mx, 50%) var(--my, 50%),
+      rgb(56 152 255 / 0.45),
+      rgb(56 152 255 / 0.1) 42%,
+      transparent 62%
+    );
+    filter: blur(18px);
+    transition: opacity 0.45s var(--ease-out-expo);
+  }
+  /* Specular sweep riding above the artwork. */
+  .creator-sheen {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    pointer-events: none;
+    opacity: calc(var(--lift, 0) * 0.6);
+    transform: translateZ(34px);
+    background: radial-gradient(
+      26% 44% at var(--mx, 50%) var(--my, 50%),
+      rgb(255 255 255 / 0.34),
+      transparent 58%
+    );
+    /* Feathered at its own bounds. Screen-blended over a near-black footer, a
+       gradient cut square at the edge reads as a pale rectangle rather than a
+       highlight. */
+    -webkit-mask-image: radial-gradient(closest-side, #000 55%, transparent 100%);
+    mask-image: radial-gradient(closest-side, #000 55%, transparent 100%);
+    mix-blend-mode: screen;
+    transition: opacity 0.45s var(--ease-out-expo);
+  }
+  /* Shown only when the artwork is missing, so the credit still reads. */
+  .creator-fallback {
+    position: relative;
+    z-index: 2;
+    display: inline-flex;
+    flex-direction: column;
+    line-height: 1;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    font-size: 17px;
+    color: #eaf3ff;
+    text-shadow: 0 0 10px rgb(56 152 255 / 0.55);
+  }
+  .creator-fallback-sub {
+    margin-top: 2px;
+    font-size: 8.5px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: #4a9bff;
+    text-shadow: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .creator-tilt,
+    .creator-img,
+    .creator-glow,
+    .creator-sheen {
+      transition: none;
+    }
+  }
+
   /* Thin gold rule with a soft falloff, for section breaks. */
   .rule-gold {
     height: 1px;

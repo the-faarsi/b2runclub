@@ -388,7 +388,89 @@ router.post(
     }
 );
 
-// 8. Remove a collaborator — admin only.
+// 8. Edit a collaborator — admin only. Same multipart shape as the create
+// route, so the client can reuse one form for both. Every field is optional:
+// only what is sent gets written, which keeps a logo-only edit from blanking
+// the blurb. Uploading a new logo deletes the old file it replaces.
+router.patch(
+    "/collaborators/:id",
+    requireRole(["ADMIN"]),
+    (req: AuthRequest, res: Response) => {
+        upload.single("logo")(req as any, res as any, async (err: any) => {
+            try {
+                if (err) {
+                    res.status(400).json({ error: err.message || "Upload rejected" });
+                    return;
+                }
+
+                const existing = await prisma.collaborator.findUnique({
+                    where: { id: req.params.id as string },
+                });
+                if (!existing) {
+                    res.status(404).json({ error: "Collaborator not found" });
+                    return;
+                }
+
+                const file = (req as any).file as { filename: string } | undefined;
+                const { name, blurb, website, tier, sort_order, logo_url } = req.body ?? {};
+
+                // Present-but-empty is a real instruction to clear a field, so
+                // these are distinguished by `undefined`, not by falsiness.
+                const data: Record<string, unknown> = {};
+
+                if (name !== undefined) {
+                    if (!String(name).trim()) {
+                        res.status(400).json({ error: "A collaborator name is required" });
+                        return;
+                    }
+                    data.name = String(name).trim();
+                }
+                if (blurb !== undefined) data.blurb = String(blurb).trim();
+                if (website !== undefined) data.website = String(website).trim() || null;
+
+                if (tier !== undefined) {
+                    if (!TIERS.includes(tier)) {
+                        res.status(400).json({ error: `Tier must be one of: ${TIERS.join(", ")}` });
+                        return;
+                    }
+                    data.tier = tier;
+                }
+
+                if (sort_order !== undefined) {
+                    const n = Number.parseInt(String(sort_order), 10);
+                    data.sort_order = Number.isFinite(n) ? n : 0;
+                }
+
+                // A newly uploaded file wins over a pasted URL.
+                const replacedLogo = existing.logo_url;
+                if (file) data.logo_url = `/uploads/${file.filename}`;
+                else if (logo_url !== undefined) data.logo_url = String(logo_url).trim() || null;
+
+                const collaborator = await prisma.collaborator.update({
+                    where: { id: existing.id },
+                    data,
+                });
+
+                // Only bin the previous upload once the row actually points elsewhere.
+                if (
+                    replacedLogo?.startsWith("/uploads/") &&
+                    collaborator.logo_url !== replacedLogo
+                ) {
+                    const full = path.join(UPLOAD_DIR, path.basename(replacedLogo));
+                    if (full.startsWith(UPLOAD_DIR + path.sep)) {
+                        fs.promises.unlink(full).catch(() => undefined);
+                    }
+                }
+
+                res.json({ message: `${collaborator.name} updated`, collaborator });
+            } catch (error: any) {
+                res.status(500).json({ error: error.message || "Failed to update the collaborator" });
+            }
+        });
+    }
+);
+
+// 9. Remove a collaborator — admin only.
 router.delete(
     "/collaborators/:id",
     requireRole(["ADMIN"]),

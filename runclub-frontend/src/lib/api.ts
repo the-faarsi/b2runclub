@@ -148,12 +148,12 @@ async function request<T>(path: string, opts: Options = {}): Promise<T> {
  * Multipart sibling of `request`. Content-Type is deliberately not set — the
  * browser has to add it along with the multipart boundary.
  */
-async function upload<T>(path: string, form: FormData): Promise<T> {
+async function upload<T>(path: string, form: FormData, method = "POST"): Promise<T> {
   const headers: Record<string, string> = {};
   const token = session.token();
   if (token) headers.Authorization = `Bearer ${token}`;
 
-  const res = await fetch(`${BASE}${path}`, { method: "POST", headers, body: form });
+  const res = await fetch(`${BASE}${path}`, { method, headers, body: form });
 
   if (res.status === 401) {
     session.clear();
@@ -482,6 +482,38 @@ export const api = {
     return upload<{ message: string; collaborator: Collaborator }>(
       "/api/content/collaborators",
       form,
+    );
+  },
+
+  /**
+   * Only the keys present are written, so a logo-only edit leaves the blurb
+   * alone. Passing an empty string for `website` or `logo_url` clears it —
+   * hence the `!== undefined` checks rather than truthiness.
+   */
+  updateCollaborator: (
+    id: string,
+    input: {
+      name?: string;
+      blurb?: string;
+      website?: string;
+      tier?: CollaboratorTier;
+      sort_order?: number;
+      logoFile?: File;
+      logo_url?: string;
+    },
+  ) => {
+    const form = new FormData();
+    if (input.name !== undefined) form.append("name", input.name);
+    if (input.blurb !== undefined) form.append("blurb", input.blurb);
+    if (input.website !== undefined) form.append("website", input.website);
+    if (input.tier !== undefined) form.append("tier", input.tier);
+    if (input.sort_order !== undefined) form.append("sort_order", String(input.sort_order));
+    if (input.logoFile) form.append("logo", input.logoFile);
+    if (input.logo_url !== undefined) form.append("logo_url", input.logo_url);
+    return upload<{ message: string; collaborator: Collaborator }>(
+      `/api/content/collaborators/${id}`,
+      form,
+      "PATCH",
     );
   },
 

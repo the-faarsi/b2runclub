@@ -694,7 +694,12 @@ export function Landing() {
           {/* Right Column — Cards Grid Alignment (2 square cards on top, 1 full-width card underneath) */}
           <div className="grid gap-4">
             
-            {/* Top Row: Cards 1 & 2 side-by-side */}
+            {/* Top row: Member and Volunteer side by side. Visitor is the
+                full-width card below — it used to appear in this array too, so
+                it rendered twice on the page.
+                No `aspect-square`: forcing a square on a ~570px column left a
+                large dead gap between the heading and the bullets, and made
+                these two cards look unrelated to the wider one underneath. */}
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               {[
                 {
@@ -709,32 +714,30 @@ export function Landing() {
                   line: "You want to marshal.",
                   perks: ["Entry comped on every event", "Gold bib and the junction calls", "Post photos to the club gallery"],
                 },
-                {
-                  role: "Visitor",
-                  tint: "var(--color-ink-3)",
-                  line: "You're just looking.",
-                  perks: ["Browse the calendar and gallery", "See polls and the leaderboard", "No account needed to look around"],
-                },
               ].map((r, i) => (
                 <Reveal key={r.role} delay={i * 0.07}>
                   <Tilt max={7} lift={9} className="h-full">
-                    <Card hover className="hud edge-gold flex aspect-square flex-col justify-between p-6">
-                      <div>
-                        <span
-                          className="inline-flex items-center gap-2 rounded-full px-2.5 py-1"
-                          style={{ background: `${r.tint}1f`, color: r.tint }}
-                        >
-                          <span className="size-1.5 rounded-full" style={{ background: r.tint }} />
-                          <span className="text-[10px] font-bold uppercase tracking-[0.14em]">
-                            {r.role}
-                          </span>
+                    <Card hover className="hud edge-gold h-full p-6">
+                      <span
+                        className="inline-flex items-center gap-2 rounded-full px-2.5 py-1"
+                        /* `${r.tint}1f` produced `var(--color-paid)1f` — not a
+                           colour, so the pill background was silently dropped
+                           and only the dot and label were tinted. */
+                        style={{
+                          background: `color-mix(in oklab, ${r.tint} 14%, transparent)`,
+                          color: r.tint,
+                        }}
+                      >
+                        <span className="size-1.5 rounded-full" style={{ background: r.tint }} />
+                        <span className="text-[10px] font-bold uppercase tracking-[0.14em]">
+                          {r.role}
                         </span>
-                        <p className="display mt-4 text-[18px]">{r.line}</p>
-                      </div>
-                      <ul className="mt-3 space-y-2">
+                      </span>
+                      <p className="display mt-4 text-[20px]">{r.line}</p>
+                      <ul className="mt-4 space-y-2.5">
                         {r.perks.map((perk) => (
-                          <li key={perk} className="flex gap-2 text-[12.5px] leading-tight text-ink-2">
-                            <span className="mt-1 size-1 shrink-0 rounded-full bg-gold" aria-hidden />
+                          <li key={perk} className="flex gap-2.5 text-[13px] leading-relaxed text-ink-2">
+                            <span className="mt-1.5 size-1 shrink-0 rounded-full bg-gold" aria-hidden />
                             {perk}
                           </li>
                         ))}
@@ -751,7 +754,10 @@ export function Landing() {
                 <Card hover className="hud edge-gold p-6">
                   <span
                     className="inline-flex items-center gap-2 rounded-full px-2.5 py-1"
-                    style={{ background: `var(--color-ink-3)1f`, color: "var(--color-ink-3)" }}
+                    style={{
+                      background: "color-mix(in oklab, var(--color-ink-3) 14%, transparent)",
+                      color: "var(--color-ink-3)",
+                    }}
                   >
                     <span className="size-1.5 rounded-full" style={{ background: "var(--color-ink-3)" }} />
                     <span className="text-[10px] font-bold uppercase tracking-[0.14em]">
