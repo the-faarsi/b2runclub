@@ -6,6 +6,7 @@ import { useAuth } from "../lib/auth";
 import { cn, relativeTime, ROLE_META } from "../lib/format";
 import type { Notification } from "../lib/types";
 import { useFetch } from "../lib/useFetch";
+import { CreatorsCredit } from "./creatorsLogo";
 import { Avatar, buttonClass } from "./ui";
 
 /* ── Wordmark ─────────────────────────────────────────────── */
@@ -337,8 +338,22 @@ export function Navbar() {
   return (
     <header
       className={cn(
-        "sticky top-0 z-40 transition-all duration-300",
-        scrolled && "border-b border-white/8 bg-void/72 backdrop-blur-xl",
+        /* `pointer-events-none` on the bar itself, re-enabled on each control
+           below. The bar is a full-width 64px sticky band at z-40, so anything
+           the page scrolls underneath it stayed *visible* through the backdrop
+           but stopped being clickable — the click landed on <header>.
+           Page-header actions ("New post", "Manage polls", the dashboard's
+           buttons) sit near the top of the content and are the first things to
+           slide under it.
+
+           The background is fully opaque when scrolled, not 72%. At 72% a button
+           passing under the bar was still legible, so it read as a live control
+           that ignored clicks — and the bar's own logo, nav pill and bell/avatar
+           are necessarily click-catching, so some of that strip can never be
+           handed back to the page. Hiding what is behind the bar is what makes
+           it unambiguous. */
+        "pointer-events-none sticky top-0 z-40 transition-all duration-300",
+        scrolled && "border-b border-white/8 bg-void backdrop-blur-xl",
       )}
     >
       <div
@@ -350,7 +365,11 @@ export function Navbar() {
         {/* `layout` (not a manual x-tween) so this tracks wherever the row's
             padding change actually puts it, rather than a hard-coded offset
             that would drift out of sync if the padding values change later. */}
-        <motion.div layout transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}>
+        <motion.div
+          layout
+          transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+          className="pointer-events-auto"
+        >
           <Logo />
         </motion.div>
 
@@ -364,7 +383,11 @@ export function Navbar() {
           layout
           transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
           className={cn(
-            "hidden items-center transition-[background-color,padding,border-radius] duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] md:flex",
+            /* lg, not md. An admin sees nine items; laid out they need ~690px,
+               which does not fit a 768px tablet alongside the logo and the
+               bell/avatar — every page scrolled sideways by ~260px. Below lg the
+               hamburger panel is used instead. */
+            "pointer-events-auto hidden items-center transition-[background-color,padding,border-radius] duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] lg:flex",
             scrolled
               ? "absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 gap-0.5 rounded-[20px] bg-gold px-3 py-2"
               : "static flex-1 justify-evenly",
@@ -413,7 +436,7 @@ export function Navbar() {
         <motion.div
           layout
           transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-          className="ml-auto flex items-center gap-1.5"
+          className="pointer-events-auto ml-auto flex items-center gap-1.5"
         >
           {user ? (
             <>
@@ -439,7 +462,7 @@ export function Navbar() {
             onClick={() => setMobileOpen((o) => !o)}
             aria-label="Menu"
             aria-expanded={mobileOpen}
-            className="grid size-9 place-items-center rounded-lg text-ink-2 transition-colors hover:bg-white/6 md:hidden"
+            className="grid size-11 place-items-center rounded-lg text-ink-2 transition-colors hover:bg-white/6 lg:hidden"
           >
             <svg viewBox="0 0 24 24" className="size-5" fill="none" aria-hidden>
               <path
@@ -460,7 +483,7 @@ export function Navbar() {
             animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
             transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
-            className="overflow-hidden border-b border-white/8 bg-void/95 backdrop-blur-xl md:hidden"
+            className="pointer-events-auto overflow-hidden border-b border-white/8 bg-void/95 backdrop-blur-xl lg:hidden"
           >
             <div className="space-y-0.5 px-4 py-3">
               {/* Same active test as the desktop nav, so the two never disagree. */}
@@ -520,8 +543,16 @@ export function PageHeader({
   description?: string;
   action?: ReactNode;
 }) {
+  /*
+   * Actions sit on their own row under the heading, aligned left, rather than
+   * floating right on the title row. Right-aligned they shared the top-right
+   * corner with the navbar's bell and avatar — which have to stay clickable — so
+   * a button scrolling under the bar landed on those instead of itself. On their
+   * own row they also start lower down the page, so it takes more scrolling
+   * before they reach the bar at all.
+   */
   return (
-    <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
+    <div className="mb-8 flex flex-col items-start gap-4">
       <div className="min-w-0">
         {eyebrow && <p className="eyebrow mb-2 text-gold">{eyebrow}</p>}
         <h1 className="display text-[clamp(28px,4.5vw,40px)]">{title}</h1>
@@ -566,6 +597,17 @@ export function Footer() {
             Gallery
           </Link>
           <p className="text-xs text-ink-3">Bring water.</p>
+        </div>
+      </div>
+
+      {/* Creators' credit — distinct from the club's own mark above, so it gets
+          its own rule and a quieter position. <Footer> is mounted inside
+          <Shell>, which wraps every chrome route, so this shows for visitors,
+          members, volunteers and admins alike. */}
+      <div className="mx-auto mt-7 max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div className="hairline mb-5" />
+        <div className="flex justify-center sm:justify-start">
+          <CreatorsCredit />
         </div>
       </div>
     </footer>

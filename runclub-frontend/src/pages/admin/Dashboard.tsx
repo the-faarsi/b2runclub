@@ -453,7 +453,7 @@ export function AdminDashboard() {
               action={
                 <Link
                   to="/admin/events"
-                  className="text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-3 transition-colors hover:text-ink-2"
+                  className="tap text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-3 transition-colors hover:text-ink-2"
                 >
                   Manage all
                 </Link>

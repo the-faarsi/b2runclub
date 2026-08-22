@@ -113,7 +113,11 @@ export function PageScene({
         // Offset into the top-right rather than stretched behind the content:
         // cards are translucent (bg-surface/80 + blur), so a full-bleed scene
         // reads as bleed-through under text instead of depth.
-        "pointer-events-none absolute -top-16 right-[-8%] -z-10 hidden h-[min(78vh,680px)] w-[64%] overflow-hidden lg:block",
+        /* right-0, not right-[-8%]. Hanging the backdrop 8% past the right edge
+           widened the document by ~10px and gave every page with a scene a real
+           horizontal scrollbar. It is decorative and -z-10, so nothing is lost
+           by keeping it inside the viewport. */
+        "pointer-events-none absolute -top-16 right-0 -z-10 hidden h-[min(78vh,680px)] w-[64%] overflow-hidden lg:block",
         className,
       )}
       style={{
@@ -154,6 +158,23 @@ export function Hero3D({ className }: { className?: string }) {
       className={cn("!static !inset-auto !z-0 !block !h-full !w-full", className)}
       opacity={1}
       fallback="route"
+    />
+  );
+}
+
+/**
+ * The animated running figure for the "who it's for" section — same
+ * in-flow positioning as Hero3D (not the absolutely-positioned corner
+ * backdrop PageScene defaults to), just a different variant/fallback.
+ */
+export function RunnerScene({ className }: { className?: string }) {
+  return (
+    <PageScene
+      variant="runner"
+      unmasked
+      className={cn("!static !inset-auto !z-0 !block !h-full !w-full", className)}
+      opacity={1}
+      fallback="track"
     />
   );
 }

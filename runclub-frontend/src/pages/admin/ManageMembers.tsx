@@ -322,7 +322,7 @@ export function ManageMembers() {
                         <button
                           onClick={() => setExpanded(expanded === m.id ? null : m.id)}
                           aria-expanded={expanded === m.id}
-                          className="font-semibold text-gold transition-opacity hover:opacity-75"
+                          className="tap font-semibold text-gold transition-opacity hover:opacity-75"
                         >
                           {expanded === m.id ? "Hide details" : "Full details"}
                         </button>

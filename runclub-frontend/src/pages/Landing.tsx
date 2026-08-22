@@ -1,8 +1,29 @@
-import { motion, useScroll, useTransform, useSpring, MotionValue } from "framer-motion";
-import { useCallback, useRef } from "react";
+import { motion, useScroll, useTransform, useSpring, type MotionValue } from "framer-motion";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { gsap } from "gsap";
 import { SplitText } from "gsap/SplitText";
 import { useGSAP } from "@gsap/react";
+import { Link } from "react-router-dom";
+import { EventCard } from "../components/events";
+import { CollaboratorScroller } from "../components/collaborators";
+import { CommunityLinks } from "../components/communityLinks";
+import { Hero3D, RunnerScene } from "../components/scene3d";
+import {
+  CalendarIcon,
+  ClockIcon,
+  DisciplineIcon,
+  PinIcon,
+  SparkIcon,
+  TicketIcon,
+} from "../components/icons";
+import { AnimatedNumber, Reveal } from "../components/motion";
+import { PillarCard } from "../components/PillarCard";
+import { Tilt, TiltLayer } from "../components/tilt";
+import { Avatar, buttonClass, Card, Skeleton } from "../components/ui";
+import { api } from "../lib/api";
+import { useAuth } from "../lib/auth";
+import { cn, countdown, eventTime, fullDate, inr, isPast } from "../lib/format";
+import { useFetch } from "../lib/useFetch";
 
 gsap.registerPlugin(SplitText);
 
@@ -39,42 +60,27 @@ function attachMagneticHover(el: HTMLElement | null, strength = 0.3) {
     el.removeEventListener("pointerleave", handlePointerLeave);
   };
 }
-import { Link } from "react-router-dom";
-import { EventCard } from "../components/events";
-import { CollaboratorScroller } from "../components/collaborators";
-import { CommunityLinks } from "../components/communityLinks";
-import { Hero3D } from "../components/scene3d";
-import {
-  CalendarIcon,
-  ClockIcon,
-  DisciplineIcon,
-  PinIcon,
-  SparkIcon,
-  TicketIcon,
-} from "../components/icons";
-import { AnimatedNumber, Reveal, Spotlight } from "../components/motion";
-import { Tilt, TiltLayer } from "../components/tilt";
-import { Avatar, buttonClass, Card, Skeleton } from "../components/ui";
-import { api } from "../lib/api";
-import { useAuth } from "../lib/auth";
-import { countdown, eventTime, fullDate, inr, isPast } from "../lib/format";
-import { useFetch } from "../lib/useFetch";
 
 const PILLARS = [
   {
     Icon: CalendarIcon,
     title: "Run the calendar",
     body: "Weekly road runs, trail sessions, rides and the odd party. Register in two taps.",
+    // Drop your image at public/pillars/calendar.jpg — omit this key entirely
+    // if you don't have one yet; the card works without it.
+    image: "/pillars/calendar.jpg",
   },
   {
     Icon: TicketIcon,
     title: "Carry a QR ticket",
     body: "Every confirmed spot gets a scannable ticket. Volunteers marshal for free.",
+    image: "/pillars/ticket.jpg",
   },
   {
     Icon: SparkIcon,
     title: "Decide together",
     body: "Polls pick the routes. The forum carries the announcements and the banter.",
+    image: "/pillars/decide.jpg",
   },
 ];
 
@@ -107,27 +113,66 @@ const HOW_STEPS = [
 
 /**
  * Scroll-driven reveal for a single "How it works" card.
- *
- * Hidden state (progress === range[0]):
- *   opacity 0, perspective(1000px) rotateX(25deg) rotateZ(-3deg) scale(0.85),
- *   offset `yFrom`px below its resting spot.
- *
- * Revealed state (progress === range[1]):
- *   opacity 1, rotateX(0deg) rotateZ(0deg) scale(1), y 0 — flat and landed.
- *
- * All five properties share the same input range so they land in sync.
  */
 function useCardReveal(
   progress: MotionValue<number>,
   range: [number, number],
   yFrom: number,
+  /** Left-column cards tilt negative (-3→0), right-column tilt positive (3→0). */
+  rotateZFrom: number = -3,
 ) {
   const y = useTransform(progress, range, [yFrom, 0]);
   const opacity = useTransform(progress, range, [0, 1]);
   const rotateX = useTransform(progress, range, [25, 0]);
-  const rotateZ = useTransform(progress, range, [-3, 0]);
+  const rotateZ = useTransform(progress, range, [rotateZFrom, 0]);
   const scale = useTransform(progress, range, [0.85, 1]);
   return { y, opacity, rotateX, rotateZ, scale };
+}
+
+/**
+ * Applies a card's scroll-driven motion values, or renders the card as-is when
+ * the section is not in its pinned mode. Without the opt-out the motion values
+ * would sit at their initial `opacity: 0` on phones — where the scroll progress
+ * that drives them never advances — leaving the cards permanently invisible.
+ */
+function StepReveal({
+  motion: mv,
+  animate,
+  children,
+}: {
+  motion: ReturnType<typeof useCardReveal>;
+  animate: boolean;
+  children: ReactNode;
+}) {
+  if (!animate) return <div>{children}</div>;
+  return (
+    <motion.div
+      style={{ y: mv.y, opacity: mv.opacity, rotateX: mv.rotateX, rotateZ: mv.rotateZ, scale: mv.scale }}
+    >
+      {children}
+    </motion.div>
+  );
+}
+
+/**
+ * True at the `lg` breakpoint and up — the width at which the pinned, two-column
+ * "How it works" section has room to work. Below it the section falls back to a
+ * plain stacked list: a 180vh pinned runway and a side-by-side masonry are both
+ * wrong on a 375px phone, where the two columns overflowed the viewport by up to
+ * 96px and forced the whole page to scroll sideways.
+ */
+function useIsWide() {
+  const [wide, setWide] = useState(
+    () => typeof window !== "undefined" && window.matchMedia("(min-width: 1024px)").matches,
+  );
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 1024px)");
+    const onChange = () => setWide(mq.matches);
+    onChange();
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+  return wide;
 }
 
 export function Landing() {
@@ -156,16 +201,32 @@ export function Landing() {
 
   // ── Scroll refs for the "How it works" sticky section ──
   const stickyRef = useRef<HTMLDivElement>(null);
+  /* Below lg the section is a plain stacked list — no pin, no scroll-driven
+     reveal. See useIsWide(). */
+  const isWide = useIsWide();
 
+  /*
+   * "start end" (section top reaching the viewport *bottom*) rather than
+   * "start start" (section top reaching the viewport top). With the old offset
+   * progress was still 0 at the instant the section pinned, so it locked to an
+   * empty screen and only then began revealing. Starting a viewport earlier
+   * means the heading and the first card are already coming in as the section
+   * rises, and by the time it pins there is something on screen.
+   * Progress 0.56 ≈ the moment it pins; the card ranges below are set in this
+   * space, so keep the two in step if this offset changes.
+   */
   const { scrollYProgress } = useScroll({
     target: stickyRef,
-    offset: ["start start", "end end"],
+    offset: ["start end", "end end"],
   });
 
+  // Stiffer and lighter than before (was 60 / 20 / 0.4). The old spring lagged
+  // far enough behind the wheel that the cards felt disconnected from the
+  // scroll — part of why the section read as "blank while I'm scrolling".
   const smoothProgress = useSpring(scrollYProgress, {
-    stiffness: 60,
-    damping: 20,
-    mass: 0.4,
+    stiffness: 130,
+    damping: 26,
+    mass: 0.25,
   });
 
   // Each card has its own independent scroll-driven motion — staggered start
@@ -178,16 +239,34 @@ export function Landing() {
   //   opacity  — fully invisible (0) to fully visible (1)
   //   rotateX / rotateZ / scale — a 3D "diagonal drop" (tilted, shrunk,
   //   angled) that straightens into a flat, full-size resting position
-  const card0 = useCardReveal(smoothProgress, [0.05, 0.6], 460);
-  const card1 = useCardReveal(smoothProgress, [0.1, 0.65], 560);
-  const card2 = useCardReveal(smoothProgress, [0.15, 0.7], 500);
-  const card3 = useCardReveal(smoothProgress, [0.2, 0.75], 640);
+  //
+  // Card 0 starts at progress 0 so the first card is already rising the moment
+  // the section pins — previously nothing moved until 5–20% in, which read as a
+  // blank screen. The last card finishes at 0.9 rather than 0.75, so there is
+  // almost no dead scroll left at the end. The `yFrom` offsets are also much
+  // smaller than the original 460–640px: a card that starts 640px low is far
+  // below the fold, so most of its travel happened out of sight.
+  /*
+   * Ranges live in the "start end" progress space above, where ~0.556 is the pin
+   * point. Each start is set to roughly the progress at which that card's top
+   * crosses the viewport bottom, so every card begins fading in as it rises into
+   * view — all four are already moving before the section pins, rather than the
+   * section locking to a still screen and starting from there.
+   *
+   * Measured entry points at a 1465x800 viewport (card top → fully in view):
+   *   01  0.217 → 0.379      02  0.276 → 0.438
+   *   03  0.433 → 0.594      04  0.491 → 0.653
+   *
+   * `yFrom` stays small — a card starting 600px low (the original 460-640) does
+   * most of its travel below the fold where none of it is visible.
+   */
+  const card0 = useCardReveal(smoothProgress, [0.2, 0.52], 150);
+  const card1 = useCardReveal(smoothProgress, [0.27, 0.62], 190);
+  const card2 = useCardReveal(smoothProgress, [0.4, 0.74], 170);
+  const card3 = useCardReveal(smoothProgress, [0.48, 0.9], 210);
   const cardMotionValues = [card0, card1, card2, card3];
 
   // ── Hero entrance choreography (GSAP) ──
-  // One timeline sequences every hero element in a deliberate order —
-  // pill → headline → paragraph → buttons (staggered) → 3D graphic →
-  // next-event spotlight — instead of each piece fading in independently.
   const heroRef = useRef<HTMLElement>(null);
   const heroPillRef = useRef<HTMLSpanElement>(null);
   const heroHeadlineRef = useRef<HTMLHeadingElement>(null);
@@ -203,10 +282,6 @@ export function Landing() {
 
   useGSAP(
     () => {
-      // Split "Find your / stride." into individual word spans so each one
-      // can animate in on its own, instead of the headline moving as one
-      // block. `perspective` on the h1 (its direct parent) is what makes
-      // the per-word rotateX read as real 3D tilt rather than a flat skew.
       const headlineSplit = heroHeadlineRef.current
         ? new SplitText(heroHeadlineRef.current, { type: "words", wordsClass: "hero-word" })
         : null;
@@ -234,7 +309,9 @@ export function Landing() {
           "-=0.4",
         )
         .fromTo(
-          heroButtonsRef.current ? heroButtonsRef.current.children : [],
+          // Collect only the refs that are actually mounted (secondary button
+          // is absent when the user is already signed in).
+          [heroBtnPrimaryRef.current, heroBtnSecondaryRef.current, heroBtnGhostRef.current].filter(Boolean),
           { opacity: 0, y: 14 },
           { opacity: 1, y: 0, duration: 0.45, stagger: 0.08 },
           "-=0.3",
@@ -252,11 +329,6 @@ export function Landing() {
           "-=0.55",
         );
 
-      // ── Ambient idle float ──
-      // A slow, infinite up/down drift with a touch of rotation, so the
-      // graphic never sits perfectly still once it has landed. Runs on its
-      // own wrapper (heroGraphicFloatRef) so it never competes with the
-      // entrance tween's opacity/scale on heroGraphicRef.
       if (heroGraphicFloatRef.current) {
         gsap
           .timeline({ repeat: -1, yoyo: true, defaults: { ease: "sine.inOut" } })
@@ -264,13 +336,6 @@ export function Landing() {
           .to(heroGraphicFloatRef.current, { y: 8, rotation: -1.1, duration: 4.2 });
       }
 
-      // ── Mouse-follow parallax ──
-      // The graphic nudges gently toward the cursor and eases back when the
-      // pointer leaves. `quickTo` reuses one tween per axis instead of
-      // spawning a new tween on every mousemove — the recommended GSAP
-      // pattern for continuous, high-frequency updates. Runs on its own
-      // wrapper (heroGraphicParallaxRef) so it never fights the idle float's
-      // y/rotation on the wrapper above it.
       let handlePointerMove: ((event: PointerEvent) => void) | null = null;
       let handlePointerLeave: (() => void) | null = null;
       const sectionEl = heroRef.current;
@@ -301,9 +366,6 @@ export function Landing() {
         sectionEl.addEventListener("pointerleave", handlePointerLeave);
       }
 
-      // ── Magnetic button hover ──
-      // Skip on touch-only devices — pointermove-based magnetism has no
-      // meaning without a hovering cursor, and could misfire on tap.
       const magneticCleanups: Array<() => void> = [];
       if (typeof window !== "undefined" && window.matchMedia("(pointer: fine)").matches) {
         magneticCleanups.push(attachMagneticHover(heroBtnPrimaryRef.current, 0.3));
@@ -311,9 +373,6 @@ export function Landing() {
         magneticCleanups.push(attachMagneticHover(heroBtnGhostRef.current, 0.3));
       }
 
-      // SplitText mutates the DOM (wraps words in spans) — revert it on
-      // cleanup so re-renders/unmounts don't leave stray markup behind.
-      // Also detach the pointer listeners we added by hand above.
       return () => {
         headlineSplit?.revert();
         if (sectionEl && handlePointerMove && handlePointerLeave) {
@@ -336,11 +395,10 @@ export function Landing() {
         <div
           ref={heroGraphicRef}
           className="pointer-events-none absolute -top-10 right-[-6%] hidden h-[620px] w-[60%] lg:block"
+          style={{ opacity: 0 }}
           aria-hidden
         >
-          {/* heroGraphicFloatRef: slow, infinite ambient drift (idle loop). */}
           <div ref={heroGraphicFloatRef} className="h-full w-full">
-            {/* heroGraphicParallaxRef: nudges toward the cursor on mousemove. */}
             <div ref={heroGraphicParallaxRef} className="h-full w-full">
               <Hero3D className="h-full w-full" />
             </div>
@@ -475,25 +533,9 @@ export function Landing() {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true, margin: "-60px" }}
               transition={{ duration: 0.45, delay: i * 0.08, ease: [0.16, 1, 0.3, 1] }}
+              className="h-full"
             >
-              <Tilt className="h-full" max={9} lift={10}>
-                <Spotlight className="h-full rounded-[var(--radius-card)]">
-                  <Card hover className="group h-full p-6 edge-gold">
-                    <TiltLayer depth={34}>
-                      <span
-                        className="grid size-10 place-items-center rounded-xl border border-gold/25 bg-gold/8 text-gold transition-all duration-300 group-hover:scale-110 group-hover:border-gold/50"
-                        aria-hidden
-                      >
-                        <p.Icon className="size-[18px]" />
-                      </span>
-                    </TiltLayer>
-                    <TiltLayer depth={18}>
-                      <h3 className="mt-4 text-[15px] font-semibold text-ink">{p.title}</h3>
-                      <p className="mt-2 text-[13.5px] leading-relaxed text-ink-3">{p.body}</p>
-                    </TiltLayer>
-                  </Card>
-                </Spotlight>
-              </Tilt>
+              <PillarCard pillar={p} />
             </motion.div>
           ))}
         </div>
@@ -522,7 +564,7 @@ export function Landing() {
         </section>
       )}
 
-      {/* ── By the numbers — ORIGINAL, untouched ─────────── */}
+      {/* ── By the numbers ─────────── */}
       <Reveal>
         <section className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
           <div className="datastrip mb-10" />
@@ -550,92 +592,84 @@ export function Landing() {
 
       {/* ── How it works — scroll-driven sticky section ───── */}
       {/*
-        Outer wrapper is 300vh — gives enough scroll runway for the animation.
-        Inner sticky div locks to viewport top while the animation plays, but
-        uses min-h-screen (not a hard h-screen) with overflow-visible so that
-        once the staggered/masonry layout is taller than the viewport — e.g.
-        the pushed-down right column, or a card growing on a small screen —
-        the section expands to fit it instead of clipping the bottom cards.
-        The bottom padding matches the right column's own push-down offset so
-        card 04 always has room to fully land before the section ends.
+        Runway is 180vh, so the inner sticky div pins for 80vh of scrolling.
+        It was 300vh (2 full screens pinned), which read as an endless scroll
+        with a blank screen at the start — and because the padding and the
+        masonry push-down made the content 569px TALLER than the viewport, the
+        lower cards were animating below the fold where nobody could see them.
+        The spacing below is tuned to keep all four cards on screen at once;
+        if a card grows, shorten these rather than lengthening the runway.
       */}
-      <div ref={stickyRef} style={{ height: "300vh" }} className="relative">
-        <div className="sticky top-0 min-h-screen overflow-visible">
-          <div className="flex min-h-screen flex-col justify-start px-4 pb-[clamp(160px,18vw,240px)] pt-16 sm:px-6 lg:px-8">
+      <div
+        ref={stickyRef}
+        /* Only reserve a scroll runway on wide screens. On a phone the section
+           is a normal-height block and the cards simply stack. */
+        style={isWide ? { height: "180vh" } : undefined}
+        className="relative"
+      >
+        {/* top-16, not top-0: the navbar is a 64px sticky band, so pinning flush
+            to the viewport top put the "How it works" eyebrow underneath it.
+            min-h is the viewport *minus* that bar — min-h-screen guaranteed a
+            64px overflow at every window size. Neither applies below lg, where
+            nothing is pinned. */}
+        <div className={isWide ? "sticky top-16 min-h-[calc(100vh-4rem)] overflow-visible" : ""}>
+          <div
+            className={cn(
+              "flex flex-col justify-start px-4 pb-[clamp(12px,1.5vw,20px)] pt-8 sm:px-6 lg:px-8",
+              isWide ? "min-h-[calc(100vh-4rem)]" : "pb-14",
+            )}
+          >
             <div className="mx-auto w-full max-w-7xl">
 
-              {/* Section header — eyebrow + scroll-driven text reveal */}
               <p className="eyebrow mb-4 text-gold">How it works</p>
               <ScrollRevealText
                 text="Four steps from curious to running."
                 scrollProgress={smoothProgress}
+                animate={isWide}
               />
 
-              {/* Masonry layout — left col flush, right col pushed down 220px
-                  so the two columns genuinely overlap vertically at mid-scroll.
-                  `perspective` on this shared ancestor gives the rotateX/rotateZ
-                  tilt on each card real 3D depth instead of a flat skew.
-                  Each card fades in, un-tilts and un-scales, and rises together
-                  via its own useCardReveal() motion values. */}
-              <div className="mt-8 flex gap-5" style={{ perspective: "1000px" }}>
+              {/*
+                Two layouts rather than one that reflows, because the desktop
+                masonry puts 01/03 in the left column and 02/04 in the right —
+                collapsing that to one column reads 01, 03, 02, 04. On a phone
+                the steps have to run in order, so the narrow layout is a plain
+                sequential list.
+              */}
+              {isWide ? (
+                <div className="mt-5 flex gap-5" style={{ perspective: "1000px" }}>
+                  {/* Left column — cards 01 and 03 */}
+                  <div className="flex flex-1 flex-col gap-5">
+                    <StepReveal motion={cardMotionValues[0]} animate>
+                      <HowStepCard step={HOW_STEPS[0]} />
+                    </StepReveal>
+                    <StepReveal motion={cardMotionValues[2]} animate>
+                      <HowStepCard step={HOW_STEPS[2]} />
+                    </StepReveal>
+                  </div>
 
-                {/* Left column — cards 01 and 03 */}
-                <div className="flex flex-1 flex-col gap-5">
-                  <motion.div
-                    style={{
-                      y: cardMotionValues[0].y,
-                      opacity: cardMotionValues[0].opacity,
-                      rotateX: cardMotionValues[0].rotateX,
-                      rotateZ: cardMotionValues[0].rotateZ,
-                      scale: cardMotionValues[0].scale,
-                    }}
+                  {/* Right column — pushed down for masonry overlap. That offset
+                      is added to the section height twice over (here and as
+                      matching bottom padding), and at 240px it was what pushed
+                      the lower cards off screen. */}
+                  <div
+                    className="flex flex-1 flex-col gap-5"
+                    style={{ marginTop: "clamp(24px, 3vw, 44px)" }}
                   >
-                    <HowStepCard step={HOW_STEPS[0]} />
-                  </motion.div>
-                  <motion.div
-                    style={{
-                      y: cardMotionValues[2].y,
-                      opacity: cardMotionValues[2].opacity,
-                      rotateX: cardMotionValues[2].rotateX,
-                      rotateZ: cardMotionValues[2].rotateZ,
-                      scale: cardMotionValues[2].scale,
-                    }}
-                  >
-                    <HowStepCard step={HOW_STEPS[2]} />
-                  </motion.div>
+                    <StepReveal motion={cardMotionValues[1]} animate>
+                      <HowStepCard step={HOW_STEPS[1]} />
+                    </StepReveal>
+                    <StepReveal motion={cardMotionValues[3]} animate>
+                      <HowStepCard step={HOW_STEPS[3]} />
+                    </StepReveal>
+                  </div>
                 </div>
-
-                {/* Right column — pushed down so card 02 top aligns with
-                    card 01 bottom-third, creating genuine masonry overlap */}
-                <div
-                  className="flex flex-1 flex-col gap-5"
-                  style={{ marginTop: "clamp(160px, 18vw, 240px)" }}
-                >
-                  <motion.div
-                    style={{
-                      y: cardMotionValues[1].y,
-                      opacity: cardMotionValues[1].opacity,
-                      rotateX: cardMotionValues[1].rotateX,
-                      rotateZ: cardMotionValues[1].rotateZ,
-                      scale: cardMotionValues[1].scale,
-                    }}
-                  >
-                    <HowStepCard step={HOW_STEPS[1]} />
-                  </motion.div>
-                  <motion.div
-                    style={{
-                      y: cardMotionValues[3].y,
-                      opacity: cardMotionValues[3].opacity,
-                      rotateX: cardMotionValues[3].rotateX,
-                      rotateZ: cardMotionValues[3].rotateZ,
-                      scale: cardMotionValues[3].scale,
-                    }}
-                  >
-                    <HowStepCard step={HOW_STEPS[3]} />
-                  </motion.div>
+              ) : (
+                <div className="mt-5 flex flex-col gap-4">
+                  {HOW_STEPS.map((step) => (
+                    <HowStepCard key={step.n} step={step} />
+                  ))}
                 </div>
-
-              </div>
+              )}
             </div>
           </div>
         </div>
@@ -649,42 +683,94 @@ export function Landing() {
           <h2 className="display text-[clamp(26px,3.6vw,38px)]">Three ways to be here.</h2>
         </Reveal>
 
-        <div className="mt-10 grid gap-4 lg:grid-cols-3">
-          {[
-            {
-              role: "Member",
-              tint: "var(--color-paid)",
-              line: "You want to run.",
-              perks: ["Register for any published session", "Pay once, carry a QR ticket", "Post, comment and vote on routes"],
-            },
-            {
-              role: "Volunteer",
-              tint: "var(--color-free)",
-              line: "You want to marshal.",
-              perks: ["Entry comped on every event", "Gold bib and the junction calls", "Post photos to the club gallery"],
-            },
-            {
-              role: "Visitor",
-              tint: "var(--color-ink-3)",
-              line: "You're just looking.",
-              perks: ["Browse the calendar and gallery", "See polls and the leaderboard", "No account needed to look around"],
-            },
-          ].map((r, i) => (
-            <Reveal key={r.role} delay={i * 0.07}>
+        {/* 2-Column viewport split: left side reserved for future content, cards on the right */}
+        <div className="mt-10 grid gap-8 lg:grid-cols-2 lg:items-center">
+
+          {/* Left Column — the running figure */}
+          <div className="hidden h-full min-h-[400px] w-full items-center justify-center lg:flex">
+            <RunnerScene className="h-full w-full" />
+          </div>
+
+          {/* Right Column — Cards Grid Alignment (2 square cards on top, 1 full-width card underneath) */}
+          <div className="grid gap-4">
+            
+            {/* Top row: Member and Volunteer side by side. Visitor is the
+                full-width card below — it used to appear in this array too, so
+                it rendered twice on the page.
+                No `aspect-square`: forcing a square on a ~570px column left a
+                large dead gap between the heading and the bullets, and made
+                these two cards look unrelated to the wider one underneath. */}
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              {[
+                {
+                  role: "Member",
+                  tint: "var(--color-paid)",
+                  line: "You want to run.",
+                  perks: ["Register for any published session", "Pay once, carry a QR ticket", "Post, comment and vote on routes"],
+                },
+                {
+                  role: "Volunteer",
+                  tint: "var(--color-free)",
+                  line: "You want to marshal.",
+                  perks: ["Entry comped on every event", "Gold bib and the junction calls", "Post photos to the club gallery"],
+                },
+              ].map((r, i) => (
+                <Reveal key={r.role} delay={i * 0.07}>
+                  <Tilt max={7} lift={9} className="h-full">
+                    <Card hover className="hud edge-gold h-full p-6">
+                      <span
+                        className="inline-flex items-center gap-2 rounded-full px-2.5 py-1"
+                        /* `${r.tint}1f` produced `var(--color-paid)1f` — not a
+                           colour, so the pill background was silently dropped
+                           and only the dot and label were tinted. */
+                        style={{
+                          background: `color-mix(in oklab, ${r.tint} 14%, transparent)`,
+                          color: r.tint,
+                        }}
+                      >
+                        <span className="size-1.5 rounded-full" style={{ background: r.tint }} />
+                        <span className="text-[10px] font-bold uppercase tracking-[0.14em]">
+                          {r.role}
+                        </span>
+                      </span>
+                      <p className="display mt-4 text-[20px]">{r.line}</p>
+                      <ul className="mt-4 space-y-2.5">
+                        {r.perks.map((perk) => (
+                          <li key={perk} className="flex gap-2.5 text-[13px] leading-relaxed text-ink-2">
+                            <span className="mt-1.5 size-1 shrink-0 rounded-full bg-gold" aria-hidden />
+                            {perk}
+                          </li>
+                        ))}
+                      </ul>
+                    </Card>
+                  </Tilt>
+                </Reveal>
+              ))}
+            </div>
+
+            {/* Bottom Row: Card 3 spanning full width */}
+            <Reveal delay={0.14}>
               <Tilt max={7} lift={9}>
-                <Card hover className="hud edge-gold h-full p-6">
+                <Card hover className="hud edge-gold p-6">
                   <span
                     className="inline-flex items-center gap-2 rounded-full px-2.5 py-1"
-                    style={{ background: `${r.tint}1f`, color: r.tint }}
+                    style={{
+                      background: "color-mix(in oklab, var(--color-ink-3) 14%, transparent)",
+                      color: "var(--color-ink-3)",
+                    }}
                   >
-                    <span className="size-1.5 rounded-full" style={{ background: r.tint }} />
+                    <span className="size-1.5 rounded-full" style={{ background: "var(--color-ink-3)" }} />
                     <span className="text-[10px] font-bold uppercase tracking-[0.14em]">
-                      {r.role}
+                      Visitor
                     </span>
                   </span>
-                  <p className="display mt-4 text-[20px]">{r.line}</p>
-                  <ul className="mt-4 space-y-2.5">
-                    {r.perks.map((perk) => (
+                  <p className="display mt-4 text-[20px]">You're just looking.</p>
+                  <ul className="mt-4 grid gap-2.5 sm:grid-cols-3">
+                    {[
+                      "Browse the calendar and gallery",
+                      "See polls and the leaderboard",
+                      "No account needed to look around",
+                    ].map((perk) => (
                       <li key={perk} className="flex gap-2.5 text-[13px] leading-relaxed text-ink-2">
                         <span className="mt-1.5 size-1 shrink-0 rounded-full bg-gold" aria-hidden />
                         {perk}
@@ -694,7 +780,8 @@ export function Landing() {
                 </Card>
               </Tilt>
             </Reveal>
-          ))}
+
+          </div>
         </div>
       </section>
 
@@ -873,22 +960,34 @@ export function Landing() {
  * Each character fades from 0 → 1 (starts fully hidden) as scroll progress
  * passes its threshold, left to right across progress range 0.05 → 0.50.
  */
+
 function ScrollRevealText({
   text,
   scrollProgress,
+  animate = true,
 }: {
   text: string;
   scrollProgress: ReturnType<typeof useSpring>;
+  /** Off below `lg`, where the driving scroll progress never advances and every
+      character would otherwise stay at opacity 0. */
+  animate?: boolean;
 }) {
   const chars = text.split("");
+  if (!animate) {
+    return <h2 className="display text-[clamp(26px,7vw,48px)] leading-tight">{text}</h2>;
+  }
   return (
     <h2
       className="display text-[clamp(26px,3.6vw,48px)] leading-tight"
       aria-label={text}
     >
       {chars.map((char, i) => {
-        const start = 0.05 + (i / chars.length) * 0.38;
-        const end = start + 0.1;
+        /* Was 0.05 + (i/n) * 0.38 with a 0.1 window, so the last character did
+           not finish until 53% of the section's scroll and the heading was
+           entirely invisible at 0 — the section pinned to a blank screen. Now
+           it starts writing on immediately and is fully readable by 25%. */
+        const start = 0.06 + (i / chars.length) * 0.3;
+        const end = start + 0.08;
         return (
           <CharSpan
             key={i}
@@ -901,7 +1000,6 @@ function ScrollRevealText({
     </h2>
   );
 }
-
 /**
  * Single character — isolated so each only re-evaluates its own opacity range.
  */
@@ -945,8 +1043,12 @@ function HowStepCard({
         className="group relative overflow-hidden rounded-3xl"
         style={{
           background: "#111214",
-          padding: "clamp(24px, 3vw, 36px)",
-          minHeight: "clamp(260px, 30vw, 340px)",
+          padding: "clamp(24px, 3vw, 32px)",
+          /* Was clamp(260px, 30vw, 340px) — 340px on a desktop width, well past
+             what the number + badge + two lines of copy need. Two stacked cards
+             at that height could not fit a viewport alongside the headline, so
+             the lower row sat below the fold for most of the scroll. */
+          minHeight: "clamp(180px, 17vw, 230px)",
         }}
       >
         {/* One-pixel top-edge highlight */}
@@ -956,7 +1058,6 @@ function HowStepCard({
           style={{ background: "rgba(255,255,255,0.08)" }}
         />
 
-        {/* Large step number — dominant, high contrast */}
         <p
           className="display leading-none tnum select-none"
           style={{
@@ -968,13 +1069,11 @@ function HowStepCard({
           {step.n}
         </p>
 
-        {/* Graphic badge pill — icon + label, colour-coded per step */}
         <div className="mt-4 flex items-center gap-2">
           <span
             className="inline-flex items-center gap-1.5 rounded-full px-3 py-1"
             style={{ background: step.badge.bg }}
           >
-            {/* Emoji icon */}
             <span className="text-[13px] leading-none" aria-hidden>
               {step.badge.icon}
             </span>
@@ -986,7 +1085,6 @@ function HowStepCard({
             </span>
           </span>
 
-          {/* Step counter pill — faint, right-aligned */}
           <span
             className="ml-auto rounded-full px-2.5 py-0.5 text-[10px] font-bold tracking-widest"
             style={{
@@ -998,7 +1096,6 @@ function HowStepCard({
           </span>
         </div>
 
-        {/* Title — bold, large */}
         <h3
           className="mt-5 font-semibold leading-tight text-white"
           style={{ fontSize: "clamp(17px, 2vw, 21px)" }}
@@ -1006,7 +1103,6 @@ function HowStepCard({
           {step.t}
         </h3>
 
-        {/* Body — small, recessive */}
         <p
           className="mt-2.5 text-[13px] leading-relaxed"
           style={{ color: "rgba(255,255,255,0.38)" }}
@@ -1014,7 +1110,6 @@ function HowStepCard({
           {step.b}
         </p>
 
-        {/* Bottom colour wash on hover — matches badge colour */}
         <span
           aria-hidden
           className="pointer-events-none absolute inset-x-0 bottom-0 h-24 rounded-b-3xl opacity-0 transition-opacity duration-500 group-hover:opacity-100"
