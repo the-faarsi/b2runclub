@@ -15,6 +15,10 @@
     {
       "source": "/health",
       "destination": "https://b2runclub-backend-rho.vercel.app/health"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
     }
   ]
 }
