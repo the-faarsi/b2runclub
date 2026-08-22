@@ -19,6 +19,7 @@ import {
   Textarea,
   useToast,
 } from "../components/ui";
+import { ShareAnnouncementModal } from "../components/whatsappShare";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { cn, relativeTime, ROLE_META } from "../lib/format";
@@ -38,6 +39,16 @@ export function Forum() {
   const [composeOpen, setComposeOpen] = useState(false);
   const [params, setParams] = useSearchParams();
   const [highlight, setHighlight] = useState<string | null>(null);
+  /** Announcement queued for the WhatsApp hand-off, or null. */
+  const [sharing, setSharing] = useState<Post | null>(null);
+
+  // Only organisers ever open the share dialog, and the only field used is the
+  // WhatsApp invite link — so skip the request entirely for everyone else.
+  const loadClub = useCallback(
+    () => (isAdmin ? api.clubInfo() : Promise.resolve(null)),
+    [isAdmin],
+  );
+  const { data: club } = useFetch(loadClub);
 
   const posts = data ?? [];
 
@@ -72,15 +83,17 @@ export function Forum() {
       <PageHeader
         eyebrow="Community"
         title="Forum"
-        description="Announcements from organisers, route chat and post-run debriefs. Announcements are pinned to the top."
+        description="Organisers post here — route changes, session notes and club news. Anyone signed in can reply. Announcements are pinned to the top."
         action={
-          user ? (
+          /* Broadcast channel: only organisers can start a thread. Everyone
+             else replies, so there is no "sign in to post" prompt for them. */
+          isAdmin ? (
             <Button onClick={() => setComposeOpen(true)}>New post</Button>
-          ) : (
+          ) : !user ? (
             <Link to="/login" className={buttonClass("outline", "md")}>
-              Sign in to post
+              Sign in to reply
             </Link>
-          )
+          ) : null
         }
       />
 
@@ -122,11 +135,17 @@ export function Forum() {
             icon={<span aria-hidden>◉</span>}
             title="Nothing posted yet"
             body={
-              user
-                ? "Start the conversation — ask about a route or share a race report."
-                : "Sign in to start the conversation."
+              isAdmin
+                ? "Publish the first one — a route change, a session note, or club news."
+                : "The organisers haven't posted yet. When they do, it lands here and you can reply."
             }
-            action={user && <Button size="sm" onClick={() => setComposeOpen(true)}>Write a post</Button>}
+            action={
+              isAdmin && (
+                <Button size="sm" onClick={() => setComposeOpen(true)}>
+                  Write a post
+                </Button>
+              )
+            }
           />
         </Card>
       ) : (
@@ -137,6 +156,7 @@ export function Forum() {
               post={post}
               index={i}
               highlighted={highlight === post.id}
+              onShare={setSharing}
               onCommented={(comment) =>
                 setData((prev) =>
                   (prev ?? []).map((p) =>
@@ -177,7 +197,17 @@ export function Forum() {
             });
           });
           toast(post.is_announcement ? "Announcement broadcast to the club." : "Post published.", "ok");
+          // Every organiser post is a broadcast, so every one offers the
+          // WhatsApp hand-off — not just the pinned announcements.
+          setSharing({ ...post, comments: post.comments ?? [] });
         }}
+      />
+
+      <ShareAnnouncementModal
+        post={sharing}
+        open={sharing !== null}
+        onClose={() => setSharing(null)}
+        communityUrl={club?.whatsapp ?? null}
       />
     </Page>
   );
@@ -192,6 +222,7 @@ function PostCard({
   onCommented,
   onDeleted,
   onCommentDeleted,
+  onShare,
 }: {
   post: Post;
   index: number;
@@ -199,6 +230,7 @@ function PostCard({
   onCommented: (comment: Post["comments"][number]) => void;
   onDeleted: (postId: string) => void;
   onCommentDeleted: (postId: string, commentId: string) => void;
+  onShare: (post: Post) => void;
 }) {
   const { user } = useAuth();
   const toast = useToast();
@@ -328,11 +360,26 @@ function PostCard({
                 : `${comments.length} ${comments.length === 1 ? "reply" : "replies"}`}
             </button>
 
+            {/* Organisers can push any post to WhatsApp at any time — the
+                prompt shown at publish is skippable, and an older post may be
+                worth re-sharing. */}
+            {user?.role === "ADMIN" && (
+              <button
+                onClick={() => onShare(post)}
+                className="ml-auto text-[12px] font-medium text-ink-3 transition-colors hover:text-[#25d366]"
+              >
+                Share to WhatsApp
+              </button>
+            )}
+
             {/* Authors may remove their own post; organisers may remove anyone's. */}
             {canDeletePost && (
               <button
                 onClick={() => setConfirmDelete(true)}
-                className="ml-auto text-[12px] font-medium text-ink-3 transition-colors hover:text-[color:var(--color-failed)]"
+                className={cn(
+                  "text-[12px] font-medium text-ink-3 transition-colors hover:text-[color:var(--color-failed)]",
+                  user?.role !== "ADMIN" && "ml-auto",
+                )}
               >
                 Delete
               </button>
