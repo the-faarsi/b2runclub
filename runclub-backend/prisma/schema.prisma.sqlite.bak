@@ -5,7 +5,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "sqlite"
 }
 
 // User role representation: "ADMIN", "MEMBER", "VOLUNTEER", "VISITOR"

@@ -14,12 +14,12 @@ import forumRouter from "./routes/forum.router";
 import pollsRouter from "./routes/polls.router";
 import adminRouter from "./routes/admin.router";
 import stravaRouter from "./routes/strava.router";
-import contentRouter from "./routes/content.router";
+import contentRouter, { UPLOAD_DIR } from "./routes/content.router";
 import racedayRouter from "./routes/raceday.router";
 import resultsRouter from "./routes/results.router";
 import healthRouter from "./routes/health.router";
 import dbRouter from "./routes/db.router";
-import { startReminderScheduler } from "./utils/reminders";
+import { startReminderScheduler, sweepReminders } from "./utils/reminders";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -35,6 +35,41 @@ app.use(
         },
     })
 );
+
+/**
+ * Reminder sweep as an HTTP endpoint, for schedulers that cannot rely on an
+ * in-process timer. On serverless the function is frozen the moment it responds,
+ * so `setInterval` never fires again — a platform cron calling this is the only
+ * thing that works there.
+ *
+ * Mounted ABOVE authenticateJWT deliberately. Vercel Cron authenticates with
+ * `Authorization: Bearer $CRON_SECRET`, and the JWT parser would reject that as
+ * a malformed token before this handler ever ran.
+ *
+ * Disabled rather than left open when CRON_SECRET is unset, since it sends real
+ * email. `?key=` is accepted too, for schedulers that cannot set a header.
+ */
+app.all("/api/cron/reminders", async (req, res) => {
+    const secret = process.env.CRON_SECRET?.trim();
+    if (!secret) {
+        res.status(503).json({ error: "CRON_SECRET is not configured" });
+        return;
+    }
+    const supplied =
+        req.header("authorization")?.replace(/^Bearer\s+/i, "").trim() ||
+        (typeof req.query.key === "string" ? req.query.key : "");
+    if (supplied !== secret) {
+        res.status(401).json({ error: "Unauthorized" });
+        return;
+    }
+    try {
+        const summary = await sweepReminders();
+        res.json({ ok: true, ...summary });
+    } catch (error: any) {
+        console.error("[cron] sweep failed:", error?.message || error);
+        res.status(500).json({ error: error?.message || "Sweep failed" });
+    }
+});
 
 // Apply JWT authentication parser globally
 app.use(authenticateJWT);
@@ -55,10 +90,12 @@ app.use("/api/db", dbRouter);
 
 // Serve uploaded gallery/logo images. Static and public by design — the files
 // are club photos, and the URLs are unguessable (random filenames).
-import path from "path";
+// UPLOAD_DIR is imported rather than recomputed here: the writer and the reader
+// must agree, and this copy used to hard-code process.cwd()/uploads while the
+// router honoured the env override.
 app.use(
     "/uploads",
-    express.static(path.resolve(process.cwd(), "uploads"), {
+    express.static(UPLOAD_DIR, {
         maxAge: "7d",
         // Never execute anything out of the upload directory.
         setHeaders: (res) => res.setHeader("X-Content-Type-Options", "nosniff"),
@@ -168,8 +205,15 @@ app.use((err: any, req: any, res: any, next: any) => {
     res.status(500).json({ error: "Internal server error" });
 });
 
-// Port listener
-if (process.env.NODE_ENV !== "test") {
+/**
+ * Only a long-lived process listens on a port and runs the timer. Under a
+ * serverless runtime the platform imports `app` and invokes it per request, so
+ * calling listen() there would bind a port nothing routes to, and the interval
+ * would be killed after the first response anyway.
+ */
+const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
+
+if (process.env.NODE_ENV !== "test" && !isServerless) {
     app.listen(PORT, () => {
         console.log(`[Server] Run Club backend is running on http://localhost:${PORT}`);
         // Sweeps for due event reminders. Guarded out of the test env so the

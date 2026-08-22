@@ -1,26 +1,23 @@
 import { Router, Response } from "express";
-import crypto from "crypto";
-import fs from "fs";
-import path from "path";
 import multer from "multer";
 import prisma from "../utils/prisma";
 import { AuthRequest, requireRole } from "../middleware/auth";
 import { parseGpx, summariseRoute } from "../utils/gpx";
+import { deleteObject, putObject, readObjectText, safeFilename } from "../utils/storage";
 
 const router = Router();
 
 /* ── Uploads ──────────────────────────────────────────────────
- * Images land on local disk and are served by the static /uploads
- * route registered in server.ts. For anything beyond a single box
- * this should move to object storage (S3/R2) — the stored value is
- * just a URL, so swapping the destination needs no schema change.
+ * Bytes go through utils/storage, which writes to local disk or to Vercel Blob
+ * depending on the environment. The stored value is just a URL either way, so
+ * nothing downstream cares which driver ran.
+ *
+ * multer uses memoryStorage rather than diskStorage: the file has to be a Buffer
+ * we can hand to whichever driver is active, and on serverless there is nowhere
+ * on disk to put it.
  */
 
-export const UPLOAD_DIR = path.resolve(process.cwd(), "uploads");
-
-if (!fs.existsSync(UPLOAD_DIR)) {
-    fs.mkdirSync(UPLOAD_DIR, { recursive: true });
-}
+export { UPLOAD_DIR } from "../utils/storage";
 
 const ALLOWED_MIME: Record<string, string> = {
     "image/jpeg": ".jpg",
@@ -31,21 +28,22 @@ const ALLOWED_MIME: Record<string, string> = {
 };
 
 const upload = multer({
-    storage: multer.diskStorage({
-        destination: (_req, _file, cb) => cb(null, UPLOAD_DIR),
-        // Never trust the client filename: generate our own to avoid path
-        // traversal and collisions.
-        filename: (_req, file, cb) => {
-            const ext = ALLOWED_MIME[file.mimetype] ?? ".bin";
-            cb(null, `${Date.now()}-${crypto.randomBytes(8).toString("hex")}${ext}`);
-        },
-    }),
+    storage: multer.memoryStorage(),
     limits: { fileSize: 8 * 1024 * 1024, files: 1 }, // 8MB per image
     fileFilter: (_req, file, cb) => {
         if (ALLOWED_MIME[file.mimetype]) return cb(null, true);
         cb(new Error("Only JPEG, PNG, WebP, GIF or AVIF images are allowed"));
     },
 });
+
+/** multer's in-memory file shape, narrowed to what these handlers use. */
+type MemFile = { buffer: Buffer; mimetype: string; originalname: string };
+
+/** Stores an uploaded image and returns the URL to persist. */
+async function storeImage(file: MemFile): Promise<string> {
+    const ext = ALLOWED_MIME[file.mimetype] ?? ".bin";
+    return putObject(safeFilename(ext), file.buffer, file.mimetype);
+}
 
 /* ── Gallery ──────────────────────────────────────────────── */
 
@@ -98,10 +96,10 @@ router.post(
                     return;
                 }
 
-                const file = (req as any).file as { filename: string } | undefined;
+                const file = (req as any).file as MemFile | undefined;
                 const { caption, event_id, url: externalUrl } = req.body ?? {};
 
-                const url = file ? `/uploads/${file.filename}` : externalUrl;
+                const url = file ? await storeImage(file) : externalUrl;
                 if (!url) {
                     res.status(400).json({ error: "Attach an image file or provide a url" });
                     return;
@@ -167,16 +165,10 @@ router.delete(
 
             await prisma.photo.delete({ where: { id: photo.id } });
 
-            // Remove the file too, but only for our own uploads and only after
-            // the row is gone — a stale file is harmless, a missing row is not.
-            if (photo.url.startsWith("/uploads/")) {
-                const filename = path.basename(photo.url);
-                const full = path.join(UPLOAD_DIR, filename);
-                // Guard against traversal via a crafted stored path.
-                if (full.startsWith(UPLOAD_DIR + path.sep)) {
-                    fs.promises.unlink(full).catch(() => undefined);
-                }
-            }
+            // Remove the file too, but only after the row is gone — a stale file
+            // is harmless, a missing row is not. deleteObject ignores anything it
+            // did not store (an externally linked URL) and never throws.
+            void deleteObject(photo.url);
 
             res.json({ message: "Photo removed" });
         } catch (error: any) {
@@ -355,7 +347,7 @@ router.post(
                     return;
                 }
 
-                const file = (req as any).file as { filename: string } | undefined;
+                const file = (req as any).file as MemFile | undefined;
                 const { name, blurb, website, tier, sort_order, logo_url } = req.body ?? {};
 
                 if (!name?.trim()) {
@@ -376,7 +368,7 @@ router.post(
                         website: website?.trim() || null,
                         tier: finalTier,
                         sort_order: Number.parseInt(sort_order, 10) || 0,
-                        logo_url: file ? `/uploads/${file.filename}` : logo_url?.trim() || null,
+                        logo_url: file ? await storeImage(file) : logo_url?.trim() || null,
                     },
                 });
 
@@ -411,7 +403,7 @@ router.patch(
                     return;
                 }
 
-                const file = (req as any).file as { filename: string } | undefined;
+                const file = (req as any).file as MemFile | undefined;
                 const { name, blurb, website, tier, sort_order, logo_url } = req.body ?? {};
 
                 // Present-but-empty is a real instruction to clear a field, so
@@ -443,7 +435,7 @@ router.patch(
 
                 // A newly uploaded file wins over a pasted URL.
                 const replacedLogo = existing.logo_url;
-                if (file) data.logo_url = `/uploads/${file.filename}`;
+                if (file) data.logo_url = await storeImage(file);
                 else if (logo_url !== undefined) data.logo_url = String(logo_url).trim() || null;
 
                 const collaborator = await prisma.collaborator.update({
@@ -452,14 +444,8 @@ router.patch(
                 });
 
                 // Only bin the previous upload once the row actually points elsewhere.
-                if (
-                    replacedLogo?.startsWith("/uploads/") &&
-                    collaborator.logo_url !== replacedLogo
-                ) {
-                    const full = path.join(UPLOAD_DIR, path.basename(replacedLogo));
-                    if (full.startsWith(UPLOAD_DIR + path.sep)) {
-                        fs.promises.unlink(full).catch(() => undefined);
-                    }
+                if (replacedLogo && collaborator.logo_url !== replacedLogo) {
+                    void deleteObject(replacedLogo);
                 }
 
                 res.json({ message: `${collaborator.name} updated`, collaborator });
@@ -486,12 +472,7 @@ router.delete(
 
             await prisma.collaborator.delete({ where: { id: row.id } });
 
-            if (row.logo_url?.startsWith("/uploads/")) {
-                const full = path.join(UPLOAD_DIR, path.basename(row.logo_url));
-                if (full.startsWith(UPLOAD_DIR + path.sep)) {
-                    fs.promises.unlink(full).catch(() => undefined);
-                }
-            }
+            void deleteObject(row.logo_url);
 
             res.json({ message: `${row.name} removed` });
         } catch (error: any) {
@@ -506,14 +487,8 @@ router.delete(
  * haversine formula — enough for a route summary, and no new dependency.
  */
 
-const GPX_DIR = UPLOAD_DIR;
-
 const gpxUpload = multer({
-    storage: multer.diskStorage({
-        destination: (_req, _file, cb) => cb(null, GPX_DIR),
-        filename: (_req, _file, cb) =>
-            cb(null, `${Date.now()}-${crypto.randomBytes(6).toString("hex")}.gpx`),
-    }),
+    storage: multer.memoryStorage(),
     limits: { fileSize: 5 * 1024 * 1024, files: 1 },
     fileFilter: (_req, file, cb) => {
         const ok =
@@ -534,28 +509,33 @@ router.post("/events/:id/route", requireRole(["ADMIN"]), (req: AuthRequest, res:
                 res.status(400).json({ error: err.message || "Upload rejected" });
                 return;
             }
-            const file = (req as any).file as { filename: string; path: string } | undefined;
+            const file = (req as any).file as MemFile | undefined;
             if (!file) {
                 res.status(400).json({ error: "Attach a .gpx file" });
                 return;
             }
 
-            const xml = await fs.promises.readFile(file.path, "utf8");
+            // Parsed before storing, so a file with no usable track never gets
+            // written at all — previously it was saved and then deleted again.
+            const xml = file.buffer.toString("utf8");
             const points = parseGpx(xml);
 
             if (points.length < 2) {
-                // Remove the useless file rather than leaving it on disk.
-                await fs.promises.unlink(file.path).catch(() => undefined);
                 res.status(400).json({ error: "No track points found in that GPX file" });
                 return;
             }
 
             const summary = summariseRoute(points);
+            const storedUrl = await putObject(
+                safeFilename(".gpx"),
+                file.buffer,
+                "application/gpx+xml",
+            );
 
             const event = await prisma.event.update({
                 where: { id: req.params.id as string },
                 data: {
-                    route_gpx_url: `/uploads/${file.filename}`,
+                    route_gpx_url: storedUrl,
                     route_distance_km: summary.distance_km,
                     route_elevation_m: summary.elevation_m,
                 },
@@ -584,14 +564,9 @@ router.get("/events/:id/route", async (req: AuthRequest, res: Response): Promise
             return;
         }
 
-        const filename = path.basename(event.route_gpx_url);
-        const full = path.join(UPLOAD_DIR, filename);
-        if (!full.startsWith(UPLOAD_DIR + path.sep)) {
-            res.status(400).json({ error: "Invalid route path" });
-            return;
-        }
-
-        const xml = await fs.promises.readFile(full, "utf8");
+        // Reads from disk or over HTTP depending on which driver stored it, so
+        // routes attached before a storage switch still render.
+        const xml = await readObjectText(event.route_gpx_url);
         const points = parseGpx(xml);
         if (points.length < 2) {
             res.status(400).json({ error: "Route file has no usable track" });
