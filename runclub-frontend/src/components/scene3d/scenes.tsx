@@ -21,6 +21,7 @@ const GOLD_DIM = "#7a5f1a";
 
 export type SceneVariant =
   | "ribbon" // landing — the running route
+  | "runner" // "who it's for" — carousel of runner/cycling/swimming/trekking GLBs
   | "lattice" // events admin — floating date tiles
   | "towers" // dashboard — extruded bars
   | "orb" // about / profile — a slowly turning wireframe solid
@@ -841,6 +842,7 @@ function Shards({ calm }: { calm: boolean }) {
 
 const CAMERA: Record<SceneVariant, [number, number, number]> = {
   ribbon: [0, 0.8, 8.2],
+  runner: [0, 0.6, 7.4],
   lattice: [0, 0, 7.6],
   towers: [0, 0.4, 7.2],
   orb: [0, 0, 6.4],
@@ -875,6 +877,8 @@ function Contents({ variant, calm }: { variant: SceneVariant; calm: boolean }) {
       return <Pulse calm={calm} />;
     case "shards":
       return <Shards calm={calm} />;
+    case "runner":
+      return <Runner calm={calm} />;
     case "ribbon":
     default:
       return <Ribbon calm={calm} />;
