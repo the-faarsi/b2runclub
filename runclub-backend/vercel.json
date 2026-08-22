@@ -2,11 +2,6 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "buildCommand": "npm run build && npx prisma migrate deploy && node dist/seed.js",
   "installCommand": "npm install",
-  "functions": {
-    "api/index.ts": {
-      "maxDuration": 30
-    }
-  },
   "rewrites": [{ "source": "/(.*)", "destination": "/api" }],
   "crons": [
     {
