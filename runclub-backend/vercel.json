@@ -9,7 +9,6 @@
     }
   },
   "rewrites": [{ "source": "/(.*)", "destination": "/api" }],
-  "_comment_crons": "Vercel Hobby allows one run per day, so this is 01:30 UTC = 07:00 IST. Reminders configured in hours_before will therefore only be accurate to within a day. For hourly precision on the free plan, point an external scheduler (cron-job.org, UptimeRobot) at https://<backend>/api/cron/reminders?key=$CRON_SECRET every 15 minutes and delete the crons block below.",
   "crons": [
     {
       "path": "/api/cron/reminders",
