@@ -36,9 +36,31 @@ const SECRET_COLUMNS = new Set([
 const REDACTED = "••••••••";
 /** Prisma's own bookkeeping is not the club's data. */
 const HIDDEN_TABLES = new Set(["_prisma_migrations"]);
+/**
+ * Which engine is behind Prisma. `sqlite_master` and `PRAGMA` are SQLite-only,
+ * and `information_schema` is not available in SQLite, so the two introspection
+ * queries below have to branch. Derived from the connection string rather than a
+ * build flag so one build serves both.
+ */
+const IS_POSTGRES = /^(postgres|postgresql|prisma\+postgres):/i.test(process.env.DATABASE_URL ?? "");
+/**
+ * Bound-parameter marker. SQLite takes positional `?`; Postgres needs `$1`,
+ * `$2`, … numbered in the order they are bound. Callers pass the 1-based index.
+ */
+const ph = (i) => (IS_POSTGRES ? `$${i}` : "?");
+/**
+ * Case-insensitive substring match. SQLite's LIKE already ignores case for
+ * ASCII; Postgres's does not, so the search box would silently stop matching
+ * capitals there.
+ */
+const LIKE = () => (IS_POSTGRES ? "ILIKE" : "LIKE");
 /** Live table list, straight from the database rather than a hardcoded list. */
 async function listTables() {
-    const rows = await prisma_1.default.$queryRawUnsafe("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name");
+    const rows = IS_POSTGRES
+        ? await prisma_1.default.$queryRawUnsafe(`SELECT table_name AS name FROM information_schema.tables
+               WHERE table_schema = current_schema() AND table_type = 'BASE TABLE'
+               ORDER BY table_name`)
+        : await prisma_1.default.$queryRawUnsafe("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name");
     return rows.map((r) => r.name).filter((n) => !HIDDEN_TABLES.has(n));
 }
 /**
@@ -53,6 +75,28 @@ async function resolveTable(input) {
 }
 async function columnsOf(table) {
     // `table` is already a schema-verified identifier at every call site.
+    if (IS_POSTGRES) {
+        // Postgres keeps the primary key in a separate catalog to the column
+        // list, so the key columns are fetched and matched by name.
+        const [cols, keys] = await Promise.all([
+            prisma_1.default.$queryRawUnsafe(`SELECT column_name, data_type, is_nullable, column_default
+                 FROM information_schema.columns
+                 WHERE table_schema = current_schema() AND table_name = $1
+                 ORDER BY ordinal_position`, table),
+            prisma_1.default.$queryRawUnsafe(`SELECT a.attname AS column_name
+                 FROM pg_index i
+                 JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
+                 WHERE i.indrelid = to_regclass($1) AND i.indisprimary`, table),
+        ]);
+        const pks = new Set(keys.map((k) => k.column_name));
+        return cols.map((c) => ({
+            name: c.column_name,
+            type: String(c.data_type || "text").toUpperCase(),
+            notnull: c.is_nullable === "NO",
+            pk: pks.has(c.column_name),
+            dflt: c.column_default ?? null,
+        }));
+    }
     const rows = await prisma_1.default.$queryRawUnsafe(`PRAGMA table_info("${table}")`);
     return rows.map((c) => ({
         name: c.name,
@@ -152,14 +196,22 @@ router.get("/tables/:table", (0, auth_1.requireRole)(["ADMIN"]), async (req, res
             // substring produces confusing hits.
             const searchable = cols.filter((c) => !SECRET_COLUMNS.has(c.name) && !["INTEGER", "REAL", "BOOLEAN"].includes(c.type));
             if (searchable.length > 0) {
+                // The ::text cast is Postgres-only, and needed there because
+                // ILIKE refuses non-text columns. SQLite coerces on its own.
                 where =
-                    "WHERE " + searchable.map((c) => `"${c.name}" LIKE ?`).join(" OR ");
+                    "WHERE " +
+                        searchable
+                            .map((c, i) => `"${c.name}"${IS_POSTGRES ? "::text" : ""} ${LIKE()} ${ph(i + 1)}`)
+                            .join(" OR ");
                 for (let i = 0; i < searchable.length; i++)
                     params.push(`%${q}%`);
             }
         }
         const [{ n }] = await prisma_1.default.$queryRawUnsafe(`SELECT COUNT(*) as n FROM "${table}" ${where}`, ...params);
-        const rows = await prisma_1.default.$queryRawUnsafe(`SELECT * FROM "${table}" ${where} ORDER BY "${sortCol}" ${dir} LIMIT ? OFFSET ?`, ...params, limit, offset);
+        // LIMIT/OFFSET are bound after the search terms, so they continue the
+        // same 1-based numbering Postgres expects.
+        const rows = await prisma_1.default.$queryRawUnsafe(`SELECT * FROM "${table}" ${where} ORDER BY "${sortCol}" ${dir} ` +
+            `LIMIT ${ph(params.length + 1)} OFFSET ${ph(params.length + 2)}`, ...params, limit, offset);
         res.json({
             table,
             primary_key: pk,
@@ -267,7 +319,7 @@ router.post("/tables/:table", (0, auth_1.requireRole)(["ADMIN"]), async (req, re
             });
             return;
         }
-        const placeholders = prepared.names.map(() => "?").join(", ");
+        const placeholders = prepared.names.map((_, i) => ph(i + 1)).join(", ");
         const columnList = prepared.names.map((n) => `"${n}"`).join(", ");
         await prisma_1.default.$executeRawUnsafe(`INSERT INTO "${table}" (${columnList}) VALUES (${placeholders})`, ...prepared.values);
         console.log(`[db-panel] ${req.user.email} inserted into ${table}`);
@@ -298,8 +350,9 @@ router.patch("/tables/:table/:id", (0, auth_1.requireRole)(["ADMIN"]), async (re
             res.status(400).json({ error: prepared.error });
             return;
         }
-        const setClause = prepared.names.map((n) => `"${n}" = ?`).join(", ");
-        const affected = await prisma_1.default.$executeRawUnsafe(`UPDATE "${table}" SET ${setClause} WHERE "${pk}" = ?`, ...prepared.values, req.params.id);
+        const setClause = prepared.names.map((n, i) => `"${n}" = ${ph(i + 1)}`).join(", ");
+        // The key is bound last, so it continues the SET clause's numbering.
+        const affected = await prisma_1.default.$executeRawUnsafe(`UPDATE "${table}" SET ${setClause} WHERE "${pk}" = ${ph(prepared.names.length + 1)}`, ...prepared.values, req.params.id);
         if (affected === 0) {
             res.status(404).json({ error: "No row with that key" });
             return;
@@ -334,7 +387,7 @@ router.delete("/tables/:table/:id", (0, auth_1.requireRole)(["ADMIN"]), async (r
             res.status(400).json({ error: "That's your own account — you can't delete it from here." });
             return;
         }
-        const affected = await prisma_1.default.$executeRawUnsafe(`DELETE FROM "${table}" WHERE "${pk}" = ?`, req.params.id);
+        const affected = await prisma_1.default.$executeRawUnsafe(`DELETE FROM "${table}" WHERE "${pk}" = ${ph(1)}`, req.params.id);
         if (affected === 0) {
             res.status(404).json({ error: "No row with that key" });
             return;

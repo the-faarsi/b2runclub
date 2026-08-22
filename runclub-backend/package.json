@@ -18,6 +18,7 @@
   "dependencies": {
     "@libsql/client": "^0.17.4",
     "@prisma/adapter-libsql": "^7.9.1",
+    "@prisma/adapter-pg": "^7.9.1",
     "@prisma/client": "^7.9.1",
     "@vercel/blob": "^2.8.0",
     "cors": "^2.8.6",
