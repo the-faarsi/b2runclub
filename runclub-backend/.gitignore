@@ -8,3 +8,11 @@ dev.db
 *.db
 .DS_Store
 .claude/
+
+# Any stray copy of the environment file. The bare ".env" rule missed
+# "env file" (with a space), which is how real credentials reached a public
+# repo. Match the variants rather than one exact name.
+.env*
+env file
+env*.txt
+*.env
