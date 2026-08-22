@@ -17,10 +17,10 @@
   "description": "",
   "dependencies": {
     "@libsql/client": "^0.17.4",
-    "@prisma/adapter-better-sqlite3": "^7.9.1",
     "@prisma/adapter-libsql": "^7.9.1",
+    "@prisma/adapter-pg": "^7.9.1",
     "@prisma/client": "^7.9.1",
-    "better-sqlite3": "^13.0.3",
+    "@vercel/blob": "^2.8.0",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
@@ -33,7 +33,6 @@
     "razorpay": "^2.9.8"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^9.6.0",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/jsonwebtoken": "^9.0.10",
