@@ -5,32 +5,23 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.UPLOAD_DIR = void 0;
 const express_1 = require("express");
-const crypto_1 = __importDefault(require("crypto"));
-const fs_1 = __importDefault(require("fs"));
-const path_1 = __importDefault(require("path"));
 const multer_1 = __importDefault(require("multer"));
 const prisma_1 = __importDefault(require("../utils/prisma"));
 const auth_1 = require("../middleware/auth");
 const gpx_1 = require("../utils/gpx");
+const storage_1 = require("../utils/storage");
 const router = (0, express_1.Router)();
 /* ── Uploads ──────────────────────────────────────────────────
- * Images land on local disk and are served by the static /uploads
- * route registered in server.ts. For anything beyond a single box
- * this should move to object storage (S3/R2) — the stored value is
- * just a URL, so swapping the destination needs no schema change.
+ * Bytes go through utils/storage, which writes to local disk or to Vercel Blob
+ * depending on the environment. The stored value is just a URL either way, so
+ * nothing downstream cares which driver ran.
+ *
+ * multer uses memoryStorage rather than diskStorage: the file has to be a Buffer
+ * we can hand to whichever driver is active, and on serverless there is nowhere
+ * on disk to put it.
  */
-/**
- * Overridable so uploads can live on a mounted disk rather than the app
- * directory. On a host like Render the working directory is rebuilt on every
- * deploy, which silently destroys every uploaded photo and logo; pointing
- * UPLOAD_DIR at the disk mount (e.g. /data/uploads) keeps them.
- */
-exports.UPLOAD_DIR = process.env.UPLOAD_DIR
-    ? path_1.default.resolve(process.env.UPLOAD_DIR)
-    : path_1.default.resolve(process.cwd(), "uploads");
-if (!fs_1.default.existsSync(exports.UPLOAD_DIR)) {
-    fs_1.default.mkdirSync(exports.UPLOAD_DIR, { recursive: true });
-}
+var storage_2 = require("../utils/storage");
+Object.defineProperty(exports, "UPLOAD_DIR", { enumerable: true, get: function () { return storage_2.UPLOAD_DIR; } });
 const ALLOWED_MIME = {
     "image/jpeg": ".jpg",
     "image/png": ".png",
@@ -39,15 +30,7 @@ const ALLOWED_MIME = {
     "image/avif": ".avif",
 };
 const upload = (0, multer_1.default)({
-    storage: multer_1.default.diskStorage({
-        destination: (_req, _file, cb) => cb(null, exports.UPLOAD_DIR),
-        // Never trust the client filename: generate our own to avoid path
-        // traversal and collisions.
-        filename: (_req, file, cb) => {
-            const ext = ALLOWED_MIME[file.mimetype] ?? ".bin";
-            cb(null, `${Date.now()}-${crypto_1.default.randomBytes(8).toString("hex")}${ext}`);
-        },
-    }),
+    storage: multer_1.default.memoryStorage(),
     limits: { fileSize: 8 * 1024 * 1024, files: 1 }, // 8MB per image
     fileFilter: (_req, file, cb) => {
         if (ALLOWED_MIME[file.mimetype])
@@ -55,6 +38,11 @@ const upload = (0, multer_1.default)({
         cb(new Error("Only JPEG, PNG, WebP, GIF or AVIF images are allowed"));
     },
 });
+/** Stores an uploaded image and returns the URL to persist. */
+async function storeImage(file) {
+    const ext = ALLOWED_MIME[file.mimetype] ?? ".bin";
+    return (0, storage_1.putObject)((0, storage_1.safeFilename)(ext), file.buffer, file.mimetype);
+}
 /* ── Gallery ──────────────────────────────────────────────── */
 // 1. List photos — open to everyone, including visitors (view-only page).
 // `?event_id=` filters to one session, which is what the event page uses.
@@ -100,7 +88,7 @@ router.post("/gallery", (0, auth_1.requireRole)(["ADMIN", "VOLUNTEER"]), (req, r
             }
             const file = req.file;
             const { caption, event_id, url: externalUrl } = req.body ?? {};
-            const url = file ? `/uploads/${file.filename}` : externalUrl;
+            const url = file ? await storeImage(file) : externalUrl;
             if (!url) {
                 res.status(400).json({ error: "Attach an image file or provide a url" });
                 return;
@@ -156,16 +144,10 @@ router.delete("/gallery/:id", (0, auth_1.requireRole)(["ADMIN", "VOLUNTEER"]), a
             return;
         }
         await prisma_1.default.photo.delete({ where: { id: photo.id } });
-        // Remove the file too, but only for our own uploads and only after
-        // the row is gone — a stale file is harmless, a missing row is not.
-        if (photo.url.startsWith("/uploads/")) {
-            const filename = path_1.default.basename(photo.url);
-            const full = path_1.default.join(exports.UPLOAD_DIR, filename);
-            // Guard against traversal via a crafted stored path.
-            if (full.startsWith(exports.UPLOAD_DIR + path_1.default.sep)) {
-                fs_1.default.promises.unlink(full).catch(() => undefined);
-            }
-        }
+        // Remove the file too, but only after the row is gone — a stale file
+        // is harmless, a missing row is not. deleteObject ignores anything it
+        // did not store (an externally linked URL) and never throws.
+        void (0, storage_1.deleteObject)(photo.url);
         res.json({ message: "Photo removed" });
     }
     catch (error) {
@@ -347,7 +329,7 @@ router.post("/collaborators", (0, auth_1.requireRole)(["ADMIN"]), (req, res) => 
                     website: website?.trim() || null,
                     tier: finalTier,
                     sort_order: Number.parseInt(sort_order, 10) || 0,
-                    logo_url: file ? `/uploads/${file.filename}` : logo_url?.trim() || null,
+                    logo_url: file ? await storeImage(file) : logo_url?.trim() || null,
                 },
             });
             res.status(211).json({ message: `${collaborator.name} added`, collaborator });
@@ -405,7 +387,7 @@ router.patch("/collaborators/:id", (0, auth_1.requireRole)(["ADMIN"]), (req, res
             // A newly uploaded file wins over a pasted URL.
             const replacedLogo = existing.logo_url;
             if (file)
-                data.logo_url = `/uploads/${file.filename}`;
+                data.logo_url = await storeImage(file);
             else if (logo_url !== undefined)
                 data.logo_url = String(logo_url).trim() || null;
             const collaborator = await prisma_1.default.collaborator.update({
@@ -413,12 +395,8 @@ router.patch("/collaborators/:id", (0, auth_1.requireRole)(["ADMIN"]), (req, res
                 data,
             });
             // Only bin the previous upload once the row actually points elsewhere.
-            if (replacedLogo?.startsWith("/uploads/") &&
-                collaborator.logo_url !== replacedLogo) {
-                const full = path_1.default.join(exports.UPLOAD_DIR, path_1.default.basename(replacedLogo));
-                if (full.startsWith(exports.UPLOAD_DIR + path_1.default.sep)) {
-                    fs_1.default.promises.unlink(full).catch(() => undefined);
-                }
+            if (replacedLogo && collaborator.logo_url !== replacedLogo) {
+                void (0, storage_1.deleteObject)(replacedLogo);
             }
             res.json({ message: `${collaborator.name} updated`, collaborator });
         }
@@ -438,12 +416,7 @@ router.delete("/collaborators/:id", (0, auth_1.requireRole)(["ADMIN"]), async (r
             return;
         }
         await prisma_1.default.collaborator.delete({ where: { id: row.id } });
-        if (row.logo_url?.startsWith("/uploads/")) {
-            const full = path_1.default.join(exports.UPLOAD_DIR, path_1.default.basename(row.logo_url));
-            if (full.startsWith(exports.UPLOAD_DIR + path_1.default.sep)) {
-                fs_1.default.promises.unlink(full).catch(() => undefined);
-            }
-        }
+        void (0, storage_1.deleteObject)(row.logo_url);
         res.json({ message: `${row.name} removed` });
     }
     catch (error) {
@@ -455,12 +428,8 @@ router.delete("/collaborators/:id", (0, auth_1.requireRole)(["ADMIN"]), async (r
  * the points are extracted with a regex and the distance computed with the
  * haversine formula — enough for a route summary, and no new dependency.
  */
-const GPX_DIR = exports.UPLOAD_DIR;
 const gpxUpload = (0, multer_1.default)({
-    storage: multer_1.default.diskStorage({
-        destination: (_req, _file, cb) => cb(null, GPX_DIR),
-        filename: (_req, _file, cb) => cb(null, `${Date.now()}-${crypto_1.default.randomBytes(6).toString("hex")}.gpx`),
-    }),
+    storage: multer_1.default.memoryStorage(),
     limits: { fileSize: 5 * 1024 * 1024, files: 1 },
     fileFilter: (_req, file, cb) => {
         const ok = file.mimetype.includes("gpx") ||
@@ -485,19 +454,20 @@ router.post("/events/:id/route", (0, auth_1.requireRole)(["ADMIN"]), (req, res) 
                 res.status(400).json({ error: "Attach a .gpx file" });
                 return;
             }
-            const xml = await fs_1.default.promises.readFile(file.path, "utf8");
+            // Parsed before storing, so a file with no usable track never gets
+            // written at all — previously it was saved and then deleted again.
+            const xml = file.buffer.toString("utf8");
             const points = (0, gpx_1.parseGpx)(xml);
             if (points.length < 2) {
-                // Remove the useless file rather than leaving it on disk.
-                await fs_1.default.promises.unlink(file.path).catch(() => undefined);
                 res.status(400).json({ error: "No track points found in that GPX file" });
                 return;
             }
             const summary = (0, gpx_1.summariseRoute)(points);
+            const storedUrl = await (0, storage_1.putObject)((0, storage_1.safeFilename)(".gpx"), file.buffer, "application/gpx+xml");
             const event = await prisma_1.default.event.update({
                 where: { id: req.params.id },
                 data: {
-                    route_gpx_url: `/uploads/${file.filename}`,
+                    route_gpx_url: storedUrl,
                     route_distance_km: summary.distance_km,
                     route_elevation_m: summary.elevation_m,
                 },
@@ -524,13 +494,9 @@ router.get("/events/:id/route", async (req, res) => {
             res.status(404).json({ error: "No route attached to this event" });
             return;
         }
-        const filename = path_1.default.basename(event.route_gpx_url);
-        const full = path_1.default.join(exports.UPLOAD_DIR, filename);
-        if (!full.startsWith(exports.UPLOAD_DIR + path_1.default.sep)) {
-            res.status(400).json({ error: "Invalid route path" });
-            return;
-        }
-        const xml = await fs_1.default.promises.readFile(full, "utf8");
+        // Reads from disk or over HTTP depending on which driver stored it, so
+        // routes attached before a storage switch still render.
+        const xml = await (0, storage_1.readObjectText)(event.route_gpx_url);
         const points = (0, gpx_1.parseGpx)(xml);
         if (points.length < 2) {
             res.status(400).json({ error: "Route file has no usable track" });
