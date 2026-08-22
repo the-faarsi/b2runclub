@@ -60,6 +60,7 @@ function attachMagneticHover(el: HTMLElement | null, strength = 0.3) {
     el.removeEventListener("pointerleave", handlePointerLeave);
   };
 }
+
 const PILLARS = [
   {
     Icon: CalendarIcon,
@@ -1030,10 +1031,8 @@ function HowStepCard({
     badge: { label: string; color: string; bg: string; icon: string };
   };
 }) {
-  // No <Tilt> here — the parent motion.div already drives rotateX/rotateZ/scale
-  // from the scroll animation. A second Tilt layer would fight those transforms
-  // and cause visible jitter.
   return (
+    <Tilt max={4} lift={10}>
       <div
         className="group relative overflow-hidden rounded-3xl"
         style={{
@@ -1053,65 +1052,66 @@ function HowStepCard({
           style={{ background: "rgba(255,255,255,0.08)" }}
         />
 
-      <p
-        className="display leading-none tnum select-none"
-        style={{
-          fontSize: "clamp(56px, 8vw, 88px)",
-          color: "rgba(255,255,255,0.08)",
-          letterSpacing: "-0.03em",
-        }}
-      >
-        {step.n}
-      </p>
-
-      <div className="mt-4 flex items-center gap-2">
-        <span
-          className="inline-flex items-center gap-1.5 rounded-full px-3 py-1"
-          style={{ background: step.badge.bg }}
-        >
-          <span className="text-[13px] leading-none" aria-hidden>
-            {step.badge.icon}
-          </span>
-          <span
-            className="text-[11px] font-bold uppercase tracking-[0.1em]"
-            style={{ color: step.badge.color }}
-          >
-            {step.badge.label}
-          </span>
-        </span>
-
-        <span
-          className="ml-auto rounded-full px-2.5 py-0.5 text-[10px] font-bold tracking-widest"
+        <p
+          className="display leading-none tnum select-none"
           style={{
-            background: "rgba(255,255,255,0.06)",
-            color: "rgba(255,255,255,0.3)",
+            fontSize: "clamp(56px, 8vw, 88px)",
+            color: "rgba(255,255,255,0.08)",
+            letterSpacing: "-0.03em",
           }}
         >
-          STEP {step.n}
-        </span>
+          {step.n}
+        </p>
+
+        <div className="mt-4 flex items-center gap-2">
+          <span
+            className="inline-flex items-center gap-1.5 rounded-full px-3 py-1"
+            style={{ background: step.badge.bg }}
+          >
+            <span className="text-[13px] leading-none" aria-hidden>
+              {step.badge.icon}
+            </span>
+            <span
+              className="text-[11px] font-bold uppercase tracking-[0.1em]"
+              style={{ color: step.badge.color }}
+            >
+              {step.badge.label}
+            </span>
+          </span>
+
+          <span
+            className="ml-auto rounded-full px-2.5 py-0.5 text-[10px] font-bold tracking-widest"
+            style={{
+              background: "rgba(255,255,255,0.06)",
+              color: "rgba(255,255,255,0.3)",
+            }}
+          >
+            STEP {step.n}
+          </span>
+        </div>
+
+        <h3
+          className="mt-5 font-semibold leading-tight text-white"
+          style={{ fontSize: "clamp(17px, 2vw, 21px)" }}
+        >
+          {step.t}
+        </h3>
+
+        <p
+          className="mt-2.5 text-[13px] leading-relaxed"
+          style={{ color: "rgba(255,255,255,0.38)" }}
+        >
+          {step.b}
+        </p>
+
+        <span
+          aria-hidden
+          className="pointer-events-none absolute inset-x-0 bottom-0 h-24 rounded-b-3xl opacity-0 transition-opacity duration-500 group-hover:opacity-100"
+          style={{
+            background: `linear-gradient(to top, ${step.badge.bg}, transparent)`,
+          }}
+        />
       </div>
-
-      <h3
-        className="mt-5 font-semibold leading-tight text-white"
-        style={{ fontSize: "clamp(17px, 2vw, 21px)" }}
-      >
-        {step.t}
-      </h3>
-
-      <p
-        className="mt-2.5 text-[13px] leading-relaxed"
-        style={{ color: "rgba(255,255,255,0.38)" }}
-      >
-        {step.b}
-      </p>
-
-      <span
-        aria-hidden
-        className="pointer-events-none absolute inset-x-0 bottom-0 h-24 rounded-b-3xl opacity-0 transition-opacity duration-500 group-hover:opacity-100"
-        style={{
-          background: `linear-gradient(to top, ${step.badge.bg}, transparent)`,
-        }}
-      />
-    </div>
+    </Tilt>
   );
 }

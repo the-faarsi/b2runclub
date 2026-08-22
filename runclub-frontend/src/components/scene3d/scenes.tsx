@@ -21,6 +21,7 @@ const GOLD_DIM = "#7a5f1a";
 
 export type SceneVariant =
   | "ribbon" // landing — the running route
+  | "runner" // "who it's for" — carousel of runner/cycling/swimming/trekking GLBs
   | "lattice" // events admin — floating date tiles
   | "towers" // dashboard — extruded bars
   | "orb" // about / profile — a slowly turning wireframe solid
@@ -30,8 +31,7 @@ export type SceneVariant =
   | "helix" // leaderboard — twin climbing spirals
   | "constellation" // forum / members — a network of linked nodes
   | "pulse" // polls / race day — concentric start-line rings
-  | "shards" // tickets / collaborators — scattered angled planes
-  | "runner"; // landing "who it's for" — the animated glTF figure carousel
+  | "shards"; // tickets / collaborators — scattered angled planes
 
 /* ── Shared rig ───────────────────────────────────────────── */
 
@@ -842,6 +842,7 @@ function Shards({ calm }: { calm: boolean }) {
 
 const CAMERA: Record<SceneVariant, [number, number, number]> = {
   ribbon: [0, 0.8, 8.2],
+  runner: [0, 0.6, 7.4],
   lattice: [0, 0, 7.6],
   towers: [0, 0.4, 7.2],
   orb: [0, 0, 6.4],
@@ -852,7 +853,6 @@ const CAMERA: Record<SceneVariant, [number, number, number]> = {
   constellation: [0, 0, 8.0],
   pulse: [0, 0.6, 7.4],
   shards: [0, 0, 7.8],
-  runner: [0, 0.6, 7.0],
 };
 
 function Contents({ variant, calm }: { variant: SceneVariant; calm: boolean }) {
