@@ -3,12 +3,25 @@
 import "dotenv/config";
 import { defineConfig } from "prisma/config";
 
+/**
+ * Migrations connect with DIRECT_URL when it is set, falling back to
+ * DATABASE_URL.
+ *
+ * This matters on Supabase. The app should query through the connection pooler
+ * (port 6543), because serverless opens a fresh connection per request and a
+ * direct Postgres connection limit is exhausted almost immediately. But that
+ * pooler runs in transaction mode, which does not support the prepared
+ * statements and session state `prisma migrate` relies on — so schema changes
+ * have to go over the direct connection (port 5432) instead.
+ *
+ * On SQLite neither distinction exists and DIRECT_URL is simply absent.
+ */
 export default defineConfig({
   schema: "prisma/schema.prisma",
   migrations: {
     path: "prisma/migrations",
   },
   datasource: {
-    url: process.env["DATABASE_URL"],
+    url: process.env["DIRECT_URL"] || process.env["DATABASE_URL"],
   },
 });
