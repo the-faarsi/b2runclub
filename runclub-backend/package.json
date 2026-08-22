@@ -6,7 +6,8 @@
     "build": "prisma generate && tsc",
     "postinstall": "prisma generate",
     "dev": "tsx src/server.ts",
-    "start": "node dist/server.js",
+    "//start": "Migrations run at start, not build: on Render the persistent disk holding the database is only mounted at runtime, so a build-time migrate would target a throwaway filesystem.",
+    "start": "prisma migrate deploy && node dist/seed.js && node dist/server.js",
     "test:api": "node dist/test-api.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
