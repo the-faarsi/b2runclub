@@ -158,6 +158,23 @@ export function Hero3D({ className }: { className?: string }) {
   );
 }
 
+/**
+ * The animated running figure for the "who it's for" section — same
+ * in-flow positioning as Hero3D (not the absolutely-positioned corner
+ * backdrop PageScene defaults to), just a different variant/fallback.
+ */
+export function RunnerScene({ className }: { className?: string }) {
+  return (
+    <PageScene
+      variant="runner"
+      unmasked
+      className={cn("!static !inset-auto !z-0 !block !h-full !w-full", className)}
+      opacity={1}
+      fallback="track"
+    />
+  );
+}
+
 /* A WebGL context can fail at runtime (driver, blocklist, lost context), and
  * only a class component can catch that. */
 class SceneBoundary extends Component<
