@@ -2,11 +2,13 @@ import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   CalendarIcon,
+  InstagramIcon,
   PinIcon,
   RouteGraphic,
   SparkIcon,
   TicketIcon,
   UsersIcon,
+  WhatsAppIcon,
 } from "../components/icons";
 import { Page, PageHeader } from "../components/layout";
 import { PageScene } from "../components/scene3d";
@@ -208,23 +210,35 @@ export function About() {
           </div>
 
           {/* Find us */}
-          {(info?.instagram || info?.strava_club || info?.contact_email) && (
+          {(info?.instagram || info?.strava_club || info?.whatsapp || info?.contact_email) && (
             <Reveal>
               <Card className="mt-5 p-7">
                 <p className="eyebrow">Find us</p>
                 <div className="mt-4 flex flex-wrap gap-2.5">
+                  {/* Gold rather than outline: joining the community is the one
+                      action on this card, the rest are just links. */}
+                  {info?.whatsapp && (
+                    <a
+                      href={info.whatsapp}
+                      target="_blank"
+                      rel="noreferrer"
+                      className={buttonClass("gold", "sm")}
+                    >
+                      <WhatsAppIcon className="size-4" />
+                      Join the WhatsApp community
+                    </a>
+                  )}
+                  {/* The backend normalises this to a bare handle, whether a URL or
+                      an @handle was pasted, so only one shape needs handling. */}
                   {info?.instagram && (
                     <a
-                      href={
-                        info.instagram.startsWith("http")
-                          ? info.instagram
-                          : `https://instagram.com/${info.instagram.replace(/^@/, "")}`
-                      }
+                      href={`https://instagram.com/${info.instagram}`}
                       target="_blank"
                       rel="noreferrer"
                       className={buttonClass("outline", "sm")}
                     >
-                      Instagram
+                      <InstagramIcon className="size-4" />
+                      Follow @{info.instagram}
                     </a>
                   )}
                   {info?.strava_club && (
@@ -294,6 +308,7 @@ function EditClubModal({
     contact_email: "",
     instagram: "",
     strava_club: "",
+    whatsapp: "",
   });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -310,6 +325,7 @@ function EditClubModal({
       contact_email: info?.contact_email ?? "",
       instagram: info?.instagram ?? "",
       strava_club: info?.strava_club ?? "",
+      whatsapp: info?.whatsapp ?? "",
     });
   }, [open, info]);
 
@@ -399,7 +415,11 @@ function EditClubModal({
               placeholder="hello@bsquared.run"
             />
           </Field>
-          <Field label="Instagram" htmlFor="ci-ig" hint="Handle or full URL.">
+          <Field
+            label="Instagram"
+            htmlFor="ci-ig"
+            hint="Handle or full profile URL — either is saved as the handle."
+          >
             <Input
               id="ci-ig"
               value={form.instagram}
@@ -415,6 +435,20 @@ function EditClubModal({
             value={form.strava_club}
             onChange={set("strava_club")}
             placeholder="1234567"
+          />
+        </Field>
+
+        <Field
+          label="WhatsApp community"
+          htmlFor="ci-whatsapp"
+          hint="The group's 'Invite via link'. Paste a new one here if you ever reset the link — the old one stops working."
+        >
+          <Input
+            id="ci-whatsapp"
+            value={form.whatsapp}
+            onChange={set("whatsapp")}
+            placeholder="https://chat.whatsapp.com/…"
+            inputMode="url"
           />
         </Field>
 

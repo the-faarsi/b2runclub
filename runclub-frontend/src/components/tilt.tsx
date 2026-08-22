@@ -1,109 +1,55 @@
-import { useCallback, useRef, type CSSProperties, type ReactNode } from "react";
+import { type CSSProperties, type ReactNode } from "react";
 import { cn } from "../lib/format";
 import { useCalmMotion } from "../lib/motion";
 
 /**
- * Cursor-driven 3D tilt.
+ * Layout wrapper. The cursor-driven 3D tilt it used to apply has been removed.
  *
- * Rotation is written straight to CSS custom properties on the element rather
- * than through React state, so a pointer move never triggers a render. The
- * transform lives in CSS (see `.tilt` in index.css) which keeps it on the
- * compositor.
+ * The rotation moved a card — and every control inside it — while the pointer
+ * travelled across it. Aiming at a button meant the button shifting out from under
+ * the cursor as you arrived, so clicks landed on the card instead. On dense pages
+ * like the member directory, where each row carries Promote / Restrict, that made
+ * the buttons feel broken.
  *
- * Children can opt into depth with `.tilt-layer` + `--depth`, which lifts them
- * along Z so the card has genuine parallax rather than a flat skew.
+ * Deliberately kept as a component rather than deleted from ~20 call sites: it
+ * still carries `className` (several callers rely on `h-full` for equal-height grid
+ * cells), so removing the motion is a one-line change here instead of a risky
+ * sweep. Hover feedback now comes from `Card`'s own border and background shift,
+ * which changes no geometry.
  */
 export function Tilt({
   children,
   className,
-  /** Max rotation in degrees. Kept small — big angles hurt readability. */
-  max = 7,
-  /** Lift the whole card toward the viewer on hover. */
-  lift = 6,
-  /** Adds a moving specular sheen across the surface. */
-  glare = true,
   style,
 }: {
   children: ReactNode;
   className?: string;
+  /** Accepted and ignored — kept so existing call sites still typecheck. */
   max?: number;
   lift?: number;
   glare?: boolean;
   style?: CSSProperties;
 }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const raf = useRef<number>();
-  const calm = useCalmMotion();
-
-  const onMove = useCallback(
-    (e: React.PointerEvent<HTMLDivElement>) => {
-      if (calm) return;
-      const el = ref.current;
-      if (!el) return;
-
-      // Coalesce to one write per frame; pointermove can fire far faster.
-      if (raf.current) return;
-      const { clientX, clientY } = e;
-
-      raf.current = requestAnimationFrame(() => {
-        raf.current = undefined;
-        const r = el.getBoundingClientRect();
-        const px = (clientX - r.left) / r.width;
-        const py = (clientY - r.top) / r.height;
-
-        el.style.setProperty("--ry", `${(px - 0.5) * 2 * max}deg`);
-        el.style.setProperty("--rx", `${(0.5 - py) * 2 * max}deg`);
-        el.style.setProperty("--lift", `${lift}px`);
-        el.style.setProperty("--gx", `${px * 100}%`);
-        el.style.setProperty("--gy", `${py * 100}%`);
-        el.style.setProperty("--glare", "1");
-      });
-    },
-    [calm, max, lift],
-  );
-
-  const reset = useCallback(() => {
-    const el = ref.current;
-    if (!el) return;
-    if (raf.current) {
-      cancelAnimationFrame(raf.current);
-      raf.current = undefined;
-    }
-    el.style.setProperty("--rx", "0deg");
-    el.style.setProperty("--ry", "0deg");
-    el.style.setProperty("--lift", "0px");
-    el.style.setProperty("--glare", "0");
-  }, []);
-
   return (
-    <div
-      ref={ref}
-      onPointerMove={onMove}
-      onPointerLeave={reset}
-      className={cn("tilt", glare && "tilt-glare", className)}
-      style={style}
-    >
+    <div className={className} style={style}>
       {children}
     </div>
   );
 }
 
-/** Lifts its children toward the viewer inside a <Tilt>. */
+/**
+ * Was a Z-offset layer inside <Tilt>. Now a passthrough, since without the 3D
+ * parent a translateZ has nothing to project against.
+ */
 export function TiltLayer({
   children,
-  depth = 24,
   className,
 }: {
   children: ReactNode;
-  /** Z offset in px. Larger = floats further above the card. */
   depth?: number;
   className?: string;
 }) {
-  return (
-    <div className={cn("tilt-layer", className)} style={{ "--depth": `${depth}px` } as CSSProperties}>
-      {children}
-    </div>
-  );
+  return <div className={className}>{children}</div>;
 }
 
 /**

@@ -326,7 +326,7 @@ export function TableToggle({
   return (
     <button
       onClick={onToggle}
-      className="text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-3 transition-colors hover:text-ink-2"
+      className="tap text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-3 transition-colors hover:text-ink-2"
       aria-pressed={showing}
     >
       {showing ? "Chart view" : "Table view"}

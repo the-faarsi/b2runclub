@@ -4,25 +4,24 @@ import { AuthRequest, requireRole } from "../middleware/auth";
 
 const router = Router();
 
-// 1. Create Forum Post (Authenticated members, volunteers, and admins)
-router.post("/posts", requireRole(["MEMBER", "VOLUNTEER", "ADMIN"]), async (req: AuthRequest, res: Response): Promise<void> => {
+// 1. Create Forum Post (organisers only)
+//
+// The forum runs as a broadcast channel: organisers publish, everyone else
+// replies. Comments stay open to MEMBER and VOLUNTEER on POST /posts/:id/comments,
+// so members still have a voice — they just cannot start a thread.
+router.post("/posts", requireRole(["ADMIN"]), async (req: AuthRequest, res: Response): Promise<void> => {
     try {
-        const { title, content, is_announcement } = req.body;
+        const { title, content, is_announcement } = req.body ?? {};
         const authorId = req.user!.id;
-        const authorRole = req.user!.role;
 
         if (!title || !content) {
             res.status(400).json({ error: "Title and content are required fields" });
             return;
         }
 
+        // Only organisers reach this route, so the flag needs no role check of
+        // its own — it now only controls whether the post pins to the top.
         const isAnnouncement = is_announcement === true;
-
-        // Security check: only admins can post announcements
-        if (isAnnouncement && authorRole !== "ADMIN") {
-            res.status(403).json({ error: "Only admins can publish announcements" });
-            return;
-        }
 
         // Create the post
         const post = await prisma.post.create({
@@ -48,27 +47,28 @@ router.post("/posts", requireRole(["MEMBER", "VOLUNTEER", "ADMIN"]), async (req:
             },
         });
 
-        // If it's an admin announcement, broadcast notification alerts to all members and volunteers
-        if (isAnnouncement) {
-            const users = await prisma.user.findMany({
-                where: {
-                    role: { in: ["MEMBER", "VOLUNTEER"] },
-                },
-                select: { id: true },
+        // Every post here is an organiser broadcast, so every post notifies the
+        // club — not just the pinned ones. Previously this fired only when
+        // `is_announcement` was set, which left ordinary organiser posts silent.
+        const users = await prisma.user.findMany({
+            where: {
+                role: { in: ["MEMBER", "VOLUNTEER"] },
+            },
+            select: { id: true },
+        });
+
+        const notificationData = users.map((user) => ({
+            user_id: user.id,
+            message: isAnnouncement
+                ? `New announcement: "${title}"`
+                : `New post from the organisers: "${title}"`,
+            link: `/api/forum/posts/${post.id}`,
+        }));
+
+        if (notificationData.length > 0) {
+            await prisma.notification.createMany({
+                data: notificationData,
             });
-
-            // Create notification for each user
-            const notificationData = users.map((user) => ({
-                user_id: user.id,
-                message: `New Announcement: "${title}" posted by Admin.`,
-                link: `/api/forum/posts/${post.id}`,
-            }));
-
-            if (notificationData.length > 0) {
-                await prisma.notification.createMany({
-                    data: notificationData,
-                });
-            }
         }
 
         res.status(211).json({ message: "Post created successfully", post });
@@ -189,6 +189,67 @@ router.put("/notifications/:id/read", requireRole(["MEMBER", "VOLUNTEER", "ADMIN
         res.json({ message: "Notification marked as read", notification: updatedNotification });
     } catch (error: any) {
         res.status(500).json({ error: error.message || "Failed to update notification" });
+    }
+});
+
+/**
+ * 6. Moderation (Admin only).
+ *
+ * There was previously no way to remove anything from the forum. An author may
+ * also delete their own contribution — the usual expectation — but only an admin
+ * can remove someone else's.
+ */
+router.delete("/posts/:id", requireRole(["MEMBER", "VOLUNTEER", "ADMIN"]), async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const post = await prisma.post.findUnique({ where: { id: req.params.id as string } });
+        if (!post) {
+            res.status(404).json({ error: "Post not found" });
+            return;
+        }
+
+        const isAdmin = req.user!.role === "ADMIN";
+        if (post.author_id !== req.user!.id && !isAdmin) {
+            res.status(403).json({ error: "You can only delete your own posts" });
+            return;
+        }
+
+        // Comments have no cascade in the schema, so clear them first or the
+        // delete fails on the foreign key.
+        await prisma.comment.deleteMany({ where: { post_id: post.id } });
+        await prisma.post.delete({ where: { id: post.id } });
+
+        // Tell the author when a moderator removed their post.
+        if (isAdmin && post.author_id !== req.user!.id) {
+            await prisma.notification.create({
+                data: {
+                    user_id: post.author_id,
+                    message: `An organiser removed your post "${post.title}".`,
+                },
+            });
+        }
+
+        res.json({ message: "Post removed" });
+    } catch (error: any) {
+        res.status(500).json({ error: error.message || "Failed to remove the post" });
+    }
+});
+
+router.delete("/comments/:id", requireRole(["MEMBER", "VOLUNTEER", "ADMIN"]), async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const comment = await prisma.comment.findUnique({ where: { id: req.params.id as string } });
+        if (!comment) {
+            res.status(404).json({ error: "Comment not found" });
+            return;
+        }
+        if (comment.user_id !== req.user!.id && req.user!.role !== "ADMIN") {
+            res.status(403).json({ error: "You can only delete your own comments" });
+            return;
+        }
+
+        await prisma.comment.delete({ where: { id: comment.id } });
+        res.json({ message: "Comment removed" });
+    } catch (error: any) {
+        res.status(500).json({ error: error.message || "Failed to remove the comment" });
     }
 });
 

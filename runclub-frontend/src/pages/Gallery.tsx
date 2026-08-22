@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { DownloadIcon, SparkIcon, UsersIcon } from "../components/icons";
 import { Page, PageHeader } from "../components/layout";
@@ -15,12 +15,13 @@ import {
   Field,
   Input,
   Modal,
+  Select,
   Skeleton,
   useToast,
 } from "../components/ui";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
-import { cn, relativeTime, ROLE_META } from "../lib/format";
+import { cn, eventDate, relativeTime, ROLE_META } from "../lib/format";
 import { DUR, EASE } from "../lib/motion";
 import type { Photo } from "../lib/types";
 import { useFetch } from "../lib/useFetch";
@@ -43,8 +44,30 @@ export function Gallery() {
   const [uploadOpen, setUploadOpen] = useState(false);
   const [lightbox, setLightbox] = useState<Photo | null>(null);
   const [removing, setRemoving] = useState<string | null>(null);
+  const [eventFilter, setEventFilter] = useState<string>("all");
 
-  const photos = data ?? [];
+  const all = data ?? [];
+
+  /**
+   * Events that actually have photos, so the filter never offers a session with
+   * nothing behind it. Ordered by how recently a photo was posted.
+   */
+  const taggedEvents = useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const p of all) {
+      if (p.event_id && !seen.has(p.event_id)) {
+        seen.set(p.event_id, p.event_title ?? "Untitled session");
+      }
+    }
+    return [...seen.entries()].map(([id, title]) => ({ id, title }));
+  }, [all]);
+
+  const photos =
+    eventFilter === "all"
+      ? all
+      : eventFilter === "untagged"
+        ? all.filter((p) => !p.event_id)
+        : all.filter((p) => p.event_id === eventFilter);
 
   const canDelete = (p: Photo) => isAdmin || p.uploader.id === user?.id;
 
@@ -86,6 +109,34 @@ export function Gallery() {
           )
         }
       />
+
+      {/* Filter by session — only worth showing once something is tagged. */}
+      {taggedEvents.length > 0 && (
+        <div className="no-scrollbar mb-6 flex gap-2 overflow-x-auto pb-1">
+          {[
+            { id: "all", title: `Everything (${all.length})` },
+            ...taggedEvents,
+            ...(all.some((p) => !p.event_id) ? [{ id: "untagged", title: "Untagged" }] : []),
+          ].map((opt) => {
+            const active = eventFilter === opt.id;
+            return (
+              <button
+                key={opt.id}
+                onClick={() => setEventFilter(opt.id)}
+                aria-pressed={active}
+                className={cn(
+                  "shrink-0 rounded-full border px-3.5 py-1.5 text-[12.5px] font-medium transition-colors",
+                  active
+                    ? "border-gold bg-gold text-[color:var(--color-gold-ink)]"
+                    : "border-white/10 text-ink-3 hover:border-gold/40 hover:text-ink-2",
+                )}
+              >
+                {opt.title}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {/* View-only notice for members and visitors, so the absence of an
           upload button is explained rather than just missing. */}
@@ -265,16 +316,30 @@ function UploadModal({
   const [preview, setPreview] = useState<string | null>(null);
   const [caption, setCaption] = useState("");
   const [linkUrl, setLinkUrl] = useState("");
+  const [eventId, setEventId] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Sessions to tag against. Past events first — a photo is nearly always of one
+  // that has already happened.
+  const loadEvents = useCallback(() => api.events(), []);
+  const { data: events } = useFetch(loadEvents);
+  const taggable = useMemo(
+    () =>
+      [...(events ?? [])].sort(
+        (a, b) => +new Date(b.date_time) - +new Date(a.date_time),
+      ),
+    [events],
+  );
 
   useEffect(() => {
     if (open) {
       setFile(null);
       setCaption("");
       setLinkUrl("");
+      setEventId("");
       setError(null);
       setDragging(false);
     }
@@ -320,6 +385,7 @@ function UploadModal({
         file: file ?? undefined,
         url: file ? undefined : linkUrl.trim(),
         caption: caption.trim() || undefined,
+        event_id: eventId || undefined,
       });
       onAdded(res.photo);
       onClose();
@@ -396,6 +462,21 @@ function UploadModal({
             placeholder="Sunrise at the river loop"
             maxLength={160}
           />
+        </Field>
+
+        <Field
+          label="From which session?"
+          htmlFor="ph-event"
+          hint="Optional. Tagged photos also appear on that event's page."
+        >
+          <Select id="ph-event" value={eventId} onChange={(e) => setEventId(e.target.value)}>
+            <option value="">Not tied to an event</option>
+            {taggable.map((ev) => (
+              <option key={ev.id} value={ev.id}>
+                {ev.title} — {eventDate(ev.date_time)}
+              </option>
+            ))}
+          </Select>
         </Field>
 
         {!file && (

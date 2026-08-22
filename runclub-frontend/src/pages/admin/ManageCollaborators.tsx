@@ -39,6 +39,7 @@ export function ManageCollaborators() {
   const { data, loading, error, reload, setData } = useFetch(load);
 
   const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<Collaborator | null>(null);
   const [confirm, setConfirm] = useState<Collaborator | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -61,7 +62,7 @@ export function ManageCollaborators() {
 
   return (
     <Page>
-      <PageScene variant="frames" opacity={0.22} />
+      <PageScene variant="shards" opacity={0.22} />
       <PageHeader
         eyebrow="Organiser"
         title="Collaborators"
@@ -168,11 +169,16 @@ export function ManageCollaborators() {
                       {c.blurb || "No shout-out written yet — hover will show a fallback."}
                     </p>
 
-                    <div className="mt-4 flex items-center justify-between border-t border-white/6 pt-3">
+                    <div className="mt-4 flex items-center justify-between gap-2 border-t border-white/6 pt-3">
                       <span className="tnum text-[11px] text-ink-3">order {c.sort_order}</span>
-                      <Button size="sm" variant="danger" onClick={() => setConfirm(c)}>
-                        Remove
-                      </Button>
+                      <div className="flex items-center gap-2">
+                        <Button size="sm" variant="outline" onClick={() => setEditing(c)}>
+                          Edit
+                        </Button>
+                        <Button size="sm" variant="danger" onClick={() => setConfirm(c)}>
+                          Remove
+                        </Button>
+                      </div>
                     </div>
                   </Card>
                 </Tilt>
@@ -182,17 +188,29 @@ export function ManageCollaborators() {
         </div>
       )}
 
-      <AddModal
-        open={adding}
+      <CollaboratorModal
+        open={adding || editing !== null}
+        editing={editing}
         nextOrder={rows.length}
-        onClose={() => setAdding(false)}
-        onAdded={(c) => {
-          setData((prev) =>
-            [...(prev ?? []), c].sort(
+        onClose={() => {
+          setAdding(false);
+          setEditing(null);
+        }}
+        onSaved={(c, mode) => {
+          setData((prev) => {
+            const list = prev ?? [];
+            const next =
+              mode === "updated" ? list.map((x) => (x.id === c.id ? c : x)) : [...list, c];
+            // Re-sorted here because editing the order has to move the card, not
+            // just relabel it.
+            return [...next].sort(
               (a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name),
-            ),
+            );
+          });
+          toast(
+            mode === "updated" ? `${c.name} updated.` : `${c.name} added to the scroller.`,
+            "ok",
           );
-          toast(`${c.name} added to the scroller.`, "ok");
         }}
       />
 
@@ -219,25 +237,38 @@ export function ManageCollaborators() {
   );
 }
 
-/* ── Add ──────────────────────────────────────────────────── */
+/* ── Add / edit ───────────────────────────────────────────── */
 
-function AddModal({
+/**
+ * One form for both create and edit — passing `editing` switches it. Keeping a
+ * single component means the two can't drift apart as fields are added.
+ *
+ * On edit only the changed fields are sent, so a logo-only change leaves the
+ * blurb alone. `website` and `logo_url` are sent even when blank, because an
+ * emptied field is a deliberate instruction to clear it.
+ */
+function CollaboratorModal({
   open,
+  editing,
   nextOrder,
   onClose,
-  onAdded,
+  onSaved,
 }: {
   open: boolean;
+  /** null = creating a new one. */
+  editing: Collaborator | null;
   nextOrder: number;
   onClose: () => void;
-  onAdded: (c: Collaborator) => void;
+  onSaved: (c: Collaborator, mode: "added" | "updated") => void;
 }) {
+  const isEdit = editing !== null;
   const [form, setForm] = useState({
     name: "",
     blurb: "",
     website: "",
     tier: "PARTNER" as CollaboratorTier,
     logo_url: "",
+    sort_order: "0",
   });
   const [logo, setLogo] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
@@ -247,10 +278,28 @@ function AddModal({
 
   useEffect(() => {
     if (!open) return;
-    setForm({ name: "", blurb: "", website: "", tier: "PARTNER", logo_url: "" });
+    setForm(
+      editing
+        ? {
+            name: editing.name,
+            blurb: editing.blurb ?? "",
+            website: editing.website ?? "",
+            tier: editing.tier as CollaboratorTier,
+            logo_url: editing.logo_url ?? "",
+            sort_order: String(editing.sort_order),
+          }
+        : {
+            name: "",
+            blurb: "",
+            website: "",
+            tier: "PARTNER",
+            logo_url: "",
+            sort_order: String(nextOrder),
+          },
+    );
     setLogo(null);
     setError(null);
-  }, [open]);
+  }, [open, editing, nextOrder]);
 
   useEffect(() => {
     if (!logo) {
@@ -272,21 +321,37 @@ function AddModal({
       setError("Give the collaborator a name.");
       return;
     }
+    const order = Number.parseInt(form.sort_order, 10);
     setBusy(true);
     try {
-      const res = await api.addCollaborator({
-        name: form.name.trim(),
-        blurb: form.blurb.trim() || undefined,
-        website: form.website.trim() || undefined,
-        tier: form.tier,
-        sort_order: nextOrder,
-        logoFile: logo ?? undefined,
-        logo_url: logo ? undefined : form.logo_url.trim() || undefined,
-      });
-      onAdded(res.collaborator);
+      if (editing) {
+        const res = await api.updateCollaborator(editing.id, {
+          name: form.name.trim(),
+          blurb: form.blurb.trim(),
+          website: form.website.trim(),
+          tier: form.tier,
+          sort_order: Number.isFinite(order) ? order : 0,
+          logoFile: logo ?? undefined,
+          // Skipped when a new file is uploaded — the file wins server-side,
+          // and sending the old URL alongside it would be ambiguous.
+          logo_url: logo ? undefined : form.logo_url.trim(),
+        });
+        onSaved(res.collaborator, "updated");
+      } else {
+        const res = await api.addCollaborator({
+          name: form.name.trim(),
+          blurb: form.blurb.trim() || undefined,
+          website: form.website.trim() || undefined,
+          tier: form.tier,
+          sort_order: Number.isFinite(order) ? order : nextOrder,
+          logoFile: logo ?? undefined,
+          logo_url: logo ? undefined : form.logo_url.trim() || undefined,
+        });
+        onSaved(res.collaborator, "added");
+      }
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not add");
+      setError(err instanceof Error ? err.message : isEdit ? "Could not save" : "Could not add");
     } finally {
       setBusy(false);
     }
@@ -296,8 +361,12 @@ function AddModal({
     <Modal
       open={open}
       onClose={onClose}
-      title="Add a collaborator"
-      subtitle="Shown in the home page scroller. Everything here is public."
+      title={isEdit ? "Edit collaborator" : "Add a collaborator"}
+      subtitle={
+        isEdit
+          ? `${editing.name} · changes show on the home page straight away`
+          : "Shown in the home page scroller. Everything here is public."
+      }
       size="lg"
     >
       <form onSubmit={submit} className="space-y-5">
@@ -347,6 +416,20 @@ function AddModal({
           </Field>
         </div>
 
+        <Field
+          label="Sort order"
+          htmlFor="co-order"
+          hint="Lowest first in the scroller. Ties fall back to alphabetical."
+        >
+          <Input
+            id="co-order"
+            type="number"
+            value={form.sort_order}
+            onChange={set("sort_order")}
+            inputMode="numeric"
+          />
+        </Field>
+
         {/* Logo */}
         <div>
           <span className="eyebrow mb-1.5 block text-ink-2">Logo</span>
@@ -355,14 +438,24 @@ function AddModal({
             className="flex cursor-pointer items-center gap-4 rounded-xl border border-dashed border-white/14 p-4 transition-colors hover:border-gold/45"
           >
             <span className="grid h-12 w-24 shrink-0 place-items-center rounded-lg border border-white/8 bg-surface-2/60">
-              {preview ? (
-                <img src={preview} alt="" className="max-h-10 max-w-20 object-contain" />
+              {/* Falls back to whatever the row already has, so an edit shows the
+                  current logo rather than an empty slot. */}
+              {preview || form.logo_url ? (
+                <img
+                  src={preview ?? form.logo_url}
+                  alt=""
+                  className="max-h-10 max-w-20 object-contain"
+                />
               ) : (
                 <SparkIcon className="size-4 text-ink-3" />
               )}
             </span>
             <span className="text-[13px] text-ink-3">
-              {logo ? `${logo.name} · click to change` : "Click to upload a logo (optional)"}
+              {logo
+                ? `${logo.name} · click to change`
+                : form.logo_url
+                  ? "Click to replace the logo"
+                  : "Click to upload a logo (optional)"}
             </span>
             <input
               ref={fileRef}
@@ -410,7 +503,7 @@ function AddModal({
             Cancel
           </Button>
           <Button type="submit" loading={busy} className="flex-1">
-            Add collaborator
+            {isEdit ? "Save changes" : "Add collaborator"}
           </Button>
         </div>
       </form>

@@ -25,16 +25,36 @@ import { useFetch } from "../../lib/useFetch";
 export function ManagePolls() {
   const toast = useToast();
   const load = useCallback(() => api.polls(), []);
-  const { data, loading, error, reload } = useFetch(load);
+  const { data, loading, error, reload, setData } = useFetch(load);
 
   const [creating, setCreating] = useState(false);
   const [analyticsFor, setAnalyticsFor] = useState<Poll | null>(null);
+  const [toggling, setToggling] = useState<string | null>(null);
 
   const polls = data ?? [];
 
+  /**
+   * Closing a poll freezes the result — the backend refuses further votes. It is
+   * reversible, so this needs no confirmation step.
+   */
+  const toggleActive = async (poll: Poll) => {
+    setToggling(poll.id);
+    try {
+      const res = await api.setPollActive(poll.id, !poll.active);
+      setData((prev) =>
+        (prev ?? []).map((p) => (p.id === poll.id ? { ...p, active: !poll.active } : p)),
+      );
+      toast(res.message, "ok");
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Could not update the poll", "err");
+    } finally {
+      setToggling(null);
+    }
+  };
+
   return (
     <Page>
-      <PageScene variant="towers" opacity={0.2} />
+      <PageScene variant="pulse" opacity={0.2} />
       <PageHeader
         eyebrow="Organiser"
         title="Manage polls"
@@ -107,16 +127,26 @@ export function ManagePolls() {
                     }))}
                     emptyLabel="No votes cast yet"
                   />
-                  <div className="mt-5 flex items-center justify-between border-t border-white/6 pt-4">
+                  <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-white/6 pt-4">
                     <span className="text-[12px] text-ink-3">
                       {poll.has_voted ? "You've voted in this poll" : "You haven't voted"}
                     </span>
-                    <button
-                      onClick={() => setAnalyticsFor(poll)}
-                      className="text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-3 transition-colors hover:text-gold"
-                    >
-                      Full analytics
-                    </button>
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => setAnalyticsFor(poll)}
+                        className="tap text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-3 transition-colors hover:text-gold"
+                      >
+                        Full analytics
+                      </button>
+                      <Button
+                        size="sm"
+                        variant={poll.active ? "outline" : "gold"}
+                        loading={toggling === poll.id}
+                        onClick={() => void toggleActive(poll)}
+                      >
+                        {poll.active ? "Close voting" : "Reopen"}
+                      </Button>
+                    </div>
                   </div>
                 </ChartCard>
               </motion.div>

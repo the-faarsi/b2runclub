@@ -6,10 +6,11 @@ import { Spinner } from "./components/ui";
 import { useAuth } from "./lib/auth";
 import type { Role } from "./lib/types";
 
-import { Login, Signup } from "./pages/Auth";
+import { ForgotPassword, Login, ResetPassword, Signup } from "./pages/Auth";
 import { AdminDashboard } from "./pages/admin/Dashboard";
 import { ManageEvents } from "./pages/admin/ManageEvents";
 import { ManageCollaborators } from "./pages/admin/ManageCollaborators";
+import { DatabaseAdmin } from "./pages/admin/Database";
 import { ManageMembers } from "./pages/admin/ManageMembers";
 import { ManagePolls } from "./pages/admin/ManagePolls";
 import { Calendar } from "./pages/Calendar";
@@ -24,6 +25,7 @@ import { MyTickets } from "./pages/MyTickets";
 import { NotFound } from "./pages/NotFound";
 import { Polls } from "./pages/Polls";
 import { Profile } from "./pages/Profile";
+import { RaceDay } from "./pages/RaceDay";
 
 /** Chrome-wrapped routes. */
 function Shell() {
@@ -67,6 +69,9 @@ export default function App() {
       {/* Bare pages */}
       <Route path="/login" element={<Login />} />
       <Route path="/signup" element={<Signup />} />
+      {/* Both are reachable while signed out — that is the whole point. */}
+      <Route path="/forgot-password" element={<ForgotPassword />} />
+      <Route path="/reset-password" element={<ResetPassword />} />
 
       {/* Chrome pages */}
       <Route element={<Shell />}>
@@ -103,6 +108,17 @@ export default function App() {
           element={
             <Guard>
               <Profile />
+            </Guard>
+          }
+        />
+
+        {/* Event-day console. Volunteers are the ones actually scanning at the
+            start line, so they get in alongside organisers. */}
+        <Route
+          path="/raceday/:id"
+          element={
+            <Guard roles={["ADMIN", "VOLUNTEER"]}>
+              <RaceDay />
             </Guard>
           }
         />
@@ -144,6 +160,16 @@ export default function App() {
           element={
             <Guard roles={["ADMIN"]}>
               <ManageMembers />
+            </Guard>
+          }
+        />
+
+        {/* Direct database access. Admin-only here and independently on the API. */}
+        <Route
+          path="/admin/database"
+          element={
+            <Guard roles={["ADMIN"]}>
+              <DatabaseAdmin />
             </Guard>
           }
         />

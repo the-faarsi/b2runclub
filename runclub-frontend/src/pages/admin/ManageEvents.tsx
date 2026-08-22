@@ -193,16 +193,28 @@ export function ManageEvents() {
                         </span>
                         <Link
                           to={`/events/${ev.id}`}
-                          className="text-[15px] font-semibold text-ink transition-colors hover:text-gold"
+                          className="tap text-[15px] font-semibold text-ink transition-colors hover:text-gold"
                         >
                           {ev.title}
                         </Link>
                         <Badge color={STATUS_TINT[ev.status]}>{ev.status}</Badge>
                         {isPast(ev.date_time) && <Badge>Past</Badge>}
+                        {ev.full && <Badge color="var(--color-failed)">Full</Badge>}
                       </div>
                       <p className="mt-1.5 text-[13px] text-ink-3">
                         {fullDate(ev.date_time)} · {eventTime(ev.date_time)} · {ev.location} ·{" "}
                         {ev.price === 0 ? "Free" : inr(ev.price)}
+                        {/* Organisers scanning the list need to see how full each
+                            event is without opening it. */}
+                        {ev.capacity != null && (
+                          <>
+                            {" · "}
+                            <span className="tnum">
+                              {ev.taken ?? 0}/{ev.capacity}
+                            </span>{" "}
+                            places
+                          </>
+                        )}
                       </p>
                     </div>
 

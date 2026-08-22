@@ -1,10 +1,13 @@
 import { Router, Request, Response } from "express";
 import jwt from "jsonwebtoken";
 import prisma from "../utils/prisma";
+import crypto from "crypto";
+import { AuthRequest, requireAccount } from "../middleware/auth";
 import { hashPassword, verifyPassword } from "../utils/crypto";
+import { passwordResetEmail, sendMail } from "../utils/mailer";
+import { JWT_SECRET } from "../utils/secrets";
 
 const router = Router();
-const JWT_SECRET = process.env.JWT_SECRET || "YourSuperSecretJWTString";
 
 // Registration Endpoint
 router.post("/register", async (req: Request, res: Response): Promise<void> => {
@@ -23,10 +26,36 @@ router.post("/register", async (req: Request, res: Response): Promise<void> => {
             return;
         }
 
-        // Set role (default: MEMBER)
+        /**
+         * Roles a stranger may choose for themselves.
+         *
+         * This list used to include ADMIN and VOLUNTEER, which meant anyone who
+         * could reach the endpoint could POST {"role":"ADMIN"} and immediately read
+         * every member's emergency contact and the club's finances — no invitation,
+         * no approval. VOLUNTEER was nearly as bad: it grants free entry to every
+         * event, so it was a self-service discount.
+         *
+         * Both are now assigned only by an organiser, via
+         * PUT /api/admin/members/:id/role.
+         */
+        const SELF_ASSIGNABLE = ["MEMBER", "VISITOR"];
+
         const userRole = role || "MEMBER";
-        if (!["ADMIN", "MEMBER", "VOLUNTEER", "VISITOR"].includes(userRole)) {
-            res.status(400).json({ error: "Invalid role specified" });
+        if (!SELF_ASSIGNABLE.includes(userRole)) {
+            // Named explicitly rather than a generic "invalid": a legitimate client
+            // sending VOLUNTEER deserves to know why, and naming it leaks nothing an
+            // attacker couldn't infer from the signup form.
+            const privileged = ["ADMIN", "VOLUNTEER"].includes(userRole);
+            if (privileged) {
+                console.warn(
+                    `[register] refused self-assignment of ${userRole} for ${String(email).slice(0, 60)}`,
+                );
+            }
+            res.status(400).json({
+                error: privileged
+                    ? `You can't sign up as ${userRole.toLowerCase()} — an organiser assigns that role.`
+                    : "Invalid role specified",
+            });
             return;
         }
 
@@ -98,6 +127,384 @@ router.post("/login", async (req: Request, res: Response): Promise<void> => {
         });
     } catch (error: any) {
         res.status(500).json({ error: error.message || "Login failed" });
+    }
+});
+
+/* ── Password reset ───────────────────────────────────────────
+ * Two steps: request a link, then redeem it.
+ *
+ * Only a SHA-256 hash of the token is stored, so a database leak cannot be used
+ * to reset anyone's password — the raw token exists only in the emailed link.
+ */
+
+const RESET_TTL_MINUTES = 45;
+const APP_URL = process.env.APP_URL || "http://localhost:5173";
+
+const hashToken = (raw: string) => crypto.createHash("sha256").update(raw).digest("hex");
+
+// 1. Request a reset link.
+router.post("/forgot-password", async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { email } = req.body;
+        if (!email) {
+            res.status(400).json({ error: "An email address is required" });
+            return;
+        }
+
+        const user = await prisma.user.findUnique({ where: { email: String(email).trim() } });
+
+        // Always answer the same way. Diverging here would turn this into an
+        // account-enumeration oracle: "no such user" tells an attacker which
+        // addresses are registered.
+        const genericResponse = {
+            message: "If that address has an account, a reset link is on its way.",
+        };
+
+        if (!user) {
+            res.json(genericResponse);
+            return;
+        }
+
+        // Retire any outstanding tokens so only the newest link works.
+        await prisma.passwordResetToken.updateMany({
+            where: { user_id: user.id, used_at: null },
+            data: { used_at: new Date() },
+        });
+
+        const raw = crypto.randomBytes(32).toString("hex");
+        await prisma.passwordResetToken.create({
+            data: {
+                user_id: user.id,
+                token_hash: hashToken(raw),
+                expires_at: new Date(Date.now() + RESET_TTL_MINUTES * 60_000),
+            },
+        });
+
+        const link = `${APP_URL}/reset-password?token=${raw}`;
+        const mail = passwordResetEmail({
+            name: user.name.split(" ")[0],
+            link,
+            minutes: RESET_TTL_MINUTES,
+        });
+        const sent = await sendMail({ ...mail, to: user.email });
+
+        /**
+         * Development affordance, mirroring /api/payments/simulate.
+         *
+         * With no SMTP configured the email is only written to the server log, so
+         * the link is unreachable from the browser and the whole flow is
+         * untestable. Returning it directly makes it usable locally.
+         *
+         * This deliberately breaks the identical-response property above, so it is
+         * double-gated: the mailer must be unconfigured AND we must not be in
+         * production. Configure SMTP (or set NODE_ENV=production) and the link
+         * stops being returned, restoring the anti-enumeration behaviour.
+         */
+        if (sent.simulated && process.env.NODE_ENV !== "production") {
+            res.json({ ...genericResponse, reset_link: link, simulated: true });
+            return;
+        }
+
+        res.json(genericResponse);
+    } catch (error: any) {
+        res.status(500).json({ error: error.message || "Could not start the reset" });
+    }
+});
+
+// 2. Check a token before showing the form, so a dead link fails early.
+router.get("/reset-password/:token", async (req: Request, res: Response): Promise<void> => {
+    try {
+        const record = await prisma.passwordResetToken.findUnique({
+            where: { token_hash: hashToken(req.params.token as string) },
+            include: { user: { select: { email: true, name: true } } },
+        });
+
+        const valid = Boolean(record && !record.used_at && record.expires_at > new Date());
+        res.json({
+            valid,
+            // Safe to echo: the caller already holds the secret token.
+            email: valid ? record!.user.email : null,
+        });
+    } catch (error: any) {
+        res.status(500).json({ error: error.message || "Could not check the link" });
+    }
+});
+
+// 3. Redeem the token and set the new password.
+router.post("/reset-password", async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { token, password } = req.body;
+        if (!token || !password) {
+            res.status(400).json({ error: "A token and a new password are required" });
+            return;
+        }
+        if (String(password).length < 8) {
+            res.status(400).json({ error: "Use at least 8 characters for your password" });
+            return;
+        }
+
+        const record = await prisma.passwordResetToken.findUnique({
+            where: { token_hash: hashToken(String(token)) },
+        });
+
+        if (!record || record.used_at || record.expires_at <= new Date()) {
+            res.status(400).json({ error: "That reset link is invalid or has expired" });
+            return;
+        }
+
+        // Mark used before changing the password, so a double-submit cannot
+        // redeem the same token twice.
+        await prisma.passwordResetToken.update({
+            where: { id: record.id },
+            data: { used_at: new Date() },
+        });
+
+        await prisma.user.update({
+            where: { id: record.user_id },
+            data: { password_hash: hashPassword(String(password)) },
+        });
+
+        await prisma.notification.create({
+            data: {
+                user_id: record.user_id,
+                message: "Your password was changed. If that wasn't you, contact an organiser.",
+            },
+        });
+
+        res.json({ message: "Password updated — you can sign in now." });
+    } catch (error: any) {
+        res.status(500).json({ error: error.message || "Could not reset the password" });
+    }
+});
+
+/* ── The signed-in user's own account ─────────────────────────
+ *
+ * Before this existed there was no way to change your own name or email at all,
+ * and an emergency contact could only be updated as a side effect of registering
+ * for an event. Everything here is scoped to `req.user.id` — the id comes from the
+ * verified token, never from the request body, so one member can never edit
+ * another's account by passing an id.
+ *
+ * `role` is deliberately not editable here. Promotion stays an organiser action
+ * on /api/admin/members/:id/role; accepting it from this body would let anyone
+ * make themselves an admin.
+ */
+
+/** Shape used by login, so a client can swap one for the other. */
+const publicUser = (u: {
+    id: string;
+    email: string;
+    name: string;
+    role: string;
+    emergency_contact: string | null;
+    strava_id: string | null;
+    created_at: Date;
+}) => ({
+    id: u.id,
+    email: u.email,
+    name: u.name,
+    role: u.role,
+    emergency_contact: u.emergency_contact,
+    strava_id: u.strava_id,
+    created_at: u.created_at,
+});
+
+/**
+ * 1. Read your own account.
+ *
+ * The JWT carries a snapshot from sign-in time, so it goes stale the moment a
+ * detail changes — or when an organiser changes your role. This is the
+ * authoritative read.
+ */
+router.get("/me", requireAccount, async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const user = await prisma.user.findUnique({ where: { id: req.user!.id } });
+        if (!user) {
+            // The account was deleted while a valid token was still in hand.
+            res.status(404).json({ error: "Account not found" });
+            return;
+        }
+        res.json({ user: publicUser(user) });
+    } catch (error: any) {
+        res.status(500).json({ error: error.message || "Could not load your account" });
+    }
+});
+
+/** 2. Edit the details that carry no security weight. */
+router.patch("/me", requireAccount, async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const { name, emergency_contact } = req.body ?? {};
+        const data: { name?: string; emergency_contact?: string | null } = {};
+
+        if (name !== undefined) {
+            const trimmed = String(name).trim();
+            if (trimmed.length < 2) {
+                res.status(400).json({ error: "Your name needs at least 2 characters" });
+                return;
+            }
+            if (trimmed.length > 80) {
+                res.status(400).json({ error: "That name is too long (80 characters max)" });
+                return;
+            }
+            data.name = trimmed;
+        }
+
+        if (emergency_contact !== undefined) {
+            const trimmed = String(emergency_contact).trim();
+            // Explicitly clearable — someone may want it removed.
+            if (trimmed === "") {
+                data.emergency_contact = null;
+            } else if (trimmed.length < 6) {
+                res.status(400).json({ error: "That doesn't look like a contact number" });
+                return;
+            } else {
+                data.emergency_contact = trimmed;
+            }
+        }
+
+        if (Object.keys(data).length === 0) {
+            res.status(400).json({ error: "Nothing to update" });
+            return;
+        }
+
+        const updated = await prisma.user.update({ where: { id: req.user!.id }, data });
+        res.json({ message: "Profile updated", user: publicUser(updated) });
+    } catch (error: any) {
+        res.status(500).json({ error: error.message || "Could not save your profile" });
+    }
+});
+
+/**
+ * 3. Change your email.
+ *
+ * Separate from PATCH /me and gated on the current password: the email *is* the
+ * login identity, so letting it change on a merely-valid token would turn a
+ * borrowed session into a full account takeover.
+ */
+router.patch("/me/email", requireAccount, async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const { email, current_password } = req.body ?? {};
+
+        if (!email || !current_password) {
+            res.status(400).json({ error: "Both the new email and your current password are required" });
+            return;
+        }
+
+        const next = String(email).trim().toLowerCase();
+        // Deliberately loose: a stricter pattern rejects valid addresses, and the
+        // real proof of ownership would be a confirmation email.
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(next)) {
+            res.status(400).json({ error: "That doesn't look like a valid email address" });
+            return;
+        }
+
+        const user = await prisma.user.findUnique({ where: { id: req.user!.id } });
+        if (!user) {
+            res.status(404).json({ error: "Account not found" });
+            return;
+        }
+
+        if (!verifyPassword(String(current_password), user.password_hash)) {
+            res.status(403).json({ error: "That password isn't right" });
+            return;
+        }
+
+        if (next === user.email.toLowerCase()) {
+            res.json({ message: "That's already your email", user: publicUser(user), changed: false });
+            return;
+        }
+
+        const taken = await prisma.user.findUnique({ where: { email: next } });
+        if (taken) {
+            res.status(409).json({ error: "Another account already uses that email" });
+            return;
+        }
+
+        const updated = await prisma.user.update({
+            where: { id: user.id },
+            data: { email: next },
+        });
+
+        await prisma.notification.create({
+            data: {
+                user_id: user.id,
+                message: `Your sign-in email was changed to ${next}. If that wasn't you, contact an organiser.`,
+            },
+        });
+
+        /**
+         * The old token still carries the previous email in its payload. Nothing
+         * authorises off that field — `requireRole` reads the role and every query
+         * keys on the id — but the client should replace its cached user, and the
+         * member must use the new address next time they sign in.
+         */
+        res.json({
+            message: "Email updated — use it next time you sign in",
+            user: publicUser(updated),
+            changed: true,
+        });
+    } catch (error: any) {
+        res.status(500).json({ error: error.message || "Could not change your email" });
+    }
+});
+
+/** 4. Change your password while signed in, without the email round-trip. */
+router.post("/me/password", requireAccount, async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const { current_password, password } = req.body ?? {};
+
+        if (!current_password || !password) {
+            res.status(400).json({ error: "Both your current and new password are required" });
+            return;
+        }
+        if (String(password).length < 8) {
+            res.status(400).json({ error: "Use at least 8 characters for the new password" });
+            return;
+        }
+
+        const user = await prisma.user.findUnique({ where: { id: req.user!.id } });
+        if (!user) {
+            res.status(404).json({ error: "Account not found" });
+            return;
+        }
+
+        if (!verifyPassword(String(current_password), user.password_hash)) {
+            res.status(403).json({ error: "Your current password isn't right" });
+            return;
+        }
+
+        if (verifyPassword(String(password), user.password_hash)) {
+            res.status(400).json({ error: "That's already your password — pick a different one" });
+            return;
+        }
+
+        await prisma.user.update({
+            where: { id: user.id },
+            data: { password_hash: hashPassword(String(password)) },
+        });
+
+        // Retire any outstanding reset links: a password change should make an
+        // email someone requested earlier useless.
+        await prisma.passwordResetToken.updateMany({
+            where: { user_id: user.id, used_at: null },
+            data: { used_at: new Date() },
+        });
+
+        await prisma.notification.create({
+            data: {
+                user_id: user.id,
+                message: "Your password was changed. If that wasn't you, contact an organiser.",
+            },
+        });
+
+        /**
+         * Tokens are stateless, so sessions on other devices stay valid until they
+         * expire (24h). Revoking them would need a token version on the user or a
+         * server-side session store.
+         */
+        res.json({ message: "Password changed" });
+    } catch (error: any) {
+        res.status(500).json({ error: error.message || "Could not change your password" });
     }
 });
 

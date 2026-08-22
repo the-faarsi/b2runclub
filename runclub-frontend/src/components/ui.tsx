@@ -1,3 +1,4 @@
+import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   createContext,
@@ -52,7 +53,7 @@ export function Button({
       {...rest}
       disabled={disabled || loading}
       className={cn(
-        "press-3d inline-flex shrink-0 items-center justify-center whitespace-nowrap transition-all duration-200",
+        "btn-3d inline-flex shrink-0 items-center justify-center whitespace-nowrap",
         "disabled:pointer-events-none disabled:opacity-45",
         BUTTON_SIZES[size],
         BUTTON_VARIANTS[variant],
@@ -81,7 +82,7 @@ export function LinkButton({
     <a
       {...rest}
       className={cn(
-        "press-3d inline-flex shrink-0 items-center justify-center whitespace-nowrap transition-all duration-200",
+        "btn-3d inline-flex shrink-0 items-center justify-center whitespace-nowrap",
         BUTTON_SIZES[size ?? "md"],
         BUTTON_VARIANTS[variant ?? "gold"],
         className,
@@ -99,7 +100,7 @@ export function buttonClass(
   extra?: string,
 ) {
   return cn(
-    "press-3d inline-flex shrink-0 items-center justify-center whitespace-nowrap transition-all duration-200",
+    "btn-3d inline-flex shrink-0 items-center justify-center whitespace-nowrap",
     BUTTON_SIZES[size],
     BUTTON_VARIANTS[variant],
     extra,
@@ -298,6 +299,7 @@ export function Modal({
   subtitle,
   children,
   size = "md",
+  footer,
 }: {
   open: boolean;
   onClose: () => void;
@@ -305,6 +307,15 @@ export function Modal({
   subtitle?: string;
   children: ReactNode;
   size?: "md" | "lg";
+  /**
+   * Pinned below the scrolling body, so a long form's buttons stay reachable.
+   *
+   * A `position: sticky` row inside `children` cannot work: as the last child it
+   * has no room to move within its parent's box, so it renders exactly where it
+   * already was. The footer has to sit outside the scroll container. A submit
+   * button placed here needs `form="<id>"` to stay wired to the form above it.
+   */
+  footer?: ReactNode;
 }) {
   useEffect(() => {
     if (!open) return;
@@ -319,7 +330,17 @@ export function Modal({
     };
   }, [open, onClose]);
 
-  return (
+  /**
+   * Rendered through a portal to <body>.
+   *
+   * `Page` sets `perspective: 1400px` for the 3D page transition, and any
+   * transform/perspective makes an element a containing block for
+   * `position: fixed` descendants. Inside it this dialog sized itself against
+   * <main> rather than the viewport, so `max-h-[88vh]` overflowed the screen and
+   * the footer landed below the fold — the event form's Create button was
+   * unreachable at every viewport size. The portal escapes that ancestor.
+   */
+  return createPortal(
     <AnimatePresence>
       {open && (
         <div className="fixed inset-0 z-50 grid place-items-center p-4 sm:p-6">
@@ -340,11 +361,11 @@ export function Modal({
             exit={{ opacity: 0, y: 8, scale: 0.99 }}
             transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
             className={cn(
-              "card relative max-h-[88vh] w-full overflow-y-auto p-6 sm:p-7",
+              "card relative flex max-h-[88vh] w-full flex-col overflow-hidden p-0",
               size === "lg" ? "max-w-2xl" : "max-w-md",
             )}
           >
-            <div className="mb-5 pr-8">
+            <div className="shrink-0 px-6 pb-4 pr-8 pt-6 sm:px-7 sm:pt-7">
               <h2 className="display text-xl">{title}</h2>
               {subtitle && <p className="mt-1.5 text-sm text-ink-3">{subtitle}</p>}
             </div>
@@ -362,11 +383,21 @@ export function Modal({
                 />
               </svg>
             </button>
-            {children}
+            {/* min-h-0 lets this shrink inside the flex column so it can scroll. */}
+            <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6 sm:px-7 sm:pb-7">
+              {children}
+            </div>
+
+            {footer && (
+              <div className="shrink-0 border-t border-white/8 bg-surface px-6 py-4 sm:px-7">
+                {footer}
+              </div>
+            )}
           </motion.div>
         </div>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body,
   );
 }
 

@@ -2,24 +2,125 @@ import { Router, Response } from "express";
 import prisma from "../utils/prisma";
 import { AuthRequest, requireRole } from "../middleware/auth";
 import Razorpay from "razorpay";
+import { ALLOWED_OFFSETS } from "../utils/reminders";
+import {
+    RAZORPAY_KEY_ID,
+    RAZORPAY_KEY_SECRET,
+    RAZORPAY_MOCK_MODE,
+} from "../utils/secrets";
 
 const router = Router();
 
-// Razorpay SDK setup
-const razorpayKeyId = process.env.RAZORPAY_KEY_ID || "rzp_test_YourTestKeyId";
-const razorpayKeySecret = process.env.RAZORPAY_KEY_SECRET || "YourTestKeySecret";
+// Razorpay SDK setup. Both values are validated at startup; the placeholders are
+// only here to satisfy the constructor when Razorpay is deliberately unconfigured,
+// in which case isRazorpayMock short-circuits every call.
+const razorpayKeyId = RAZORPAY_KEY_ID ?? "unconfigured";
 const razorpay = new Razorpay({
     key_id: razorpayKeyId,
-    key_secret: razorpayKeySecret,
+    key_secret: RAZORPAY_KEY_SECRET ?? "unconfigured",
 });
 
-// Helper: check if we should mock Razorpay API calls
-const isRazorpayMock = !process.env.RAZORPAY_KEY_ID || process.env.RAZORPAY_KEY_ID === "rzp_test_YourTestKeyId";
+const isRazorpayMock = RAZORPAY_MOCK_MODE;
+
+/** Sentinel distinguishing "the caller sent something invalid" from "unlimited". */
+export const INVALID = Symbol("invalid-capacity");
+
+/**
+ * Normalises a capacity value from a request body.
+ *
+ * Returns `undefined` when the field was omitted (leave it alone), `null` for an
+ * explicit blank meaning unlimited, a positive integer, or INVALID.
+ */
+export function parseCapacity(raw: unknown): number | null | undefined | typeof INVALID {
+    if (raw === undefined) return undefined;
+    if (raw === null || raw === "") return null;
+
+    const n = Number(raw);
+    if (!Number.isInteger(n) || n < 1) return INVALID;
+    return n;
+}
+
+/**
+ * Filter defining which registrations consume a place. Shared by the single-event
+ * count and the grouped count used for lists, so the two can never disagree.
+ *
+ *  - A blocked entry frees its place: an organiser barring someone should open the
+ *    spot back up.
+ *  - FAILED covers failed and refunded payments, which likewise release it.
+ *  - PENDING *does* hold a place, so a rush of half-finished checkouts cannot
+ *    oversell the event.
+ *  - Volunteers are excluded entirely. They are crew rather than participants and
+ *    are exempt from the cap on registration, so counting them would let a marshal
+ *    consume a runner's place — inconsistent with letting them past the check.
+ */
+// Not `as const`: Prisma's generated filter types take a mutable string[], so a
+// readonly tuple is rejected.
+export const SEAT_FILTER = {
+    blocked_at: null,
+    status: { in: ["PAID", "FREE", "PENDING"] },
+    role_at_event: { not: "VOLUNTEER" },
+};
+
+/** How many participant places an event has given away. */
+export async function seatsTaken(eventId: string): Promise<number> {
+    return prisma.eventRegistration.count({
+        where: { event_id: eventId, ...SEAT_FILTER },
+    });
+}
+
+/** Capacity view for an event, safe to expose publicly. */
+export async function capacityOf(event: { id: string; capacity: number | null }) {
+    if (event.capacity === null) {
+        return { capacity: null, taken: await seatsTaken(event.id), spots_left: null, full: false };
+    }
+    const taken = await seatsTaken(event.id);
+    return {
+        capacity: event.capacity,
+        taken,
+        spots_left: Math.max(0, event.capacity - taken),
+        full: taken >= event.capacity,
+    };
+}
+
+/**
+ * Normalises a `reminder_offsets` payload into a validated, de-duplicated,
+ * descending list of hours. Returns null when the caller omitted the field, so
+ * an update can distinguish "leave alone" from "set to none".
+ */
+function parseOffsets(raw: any): number[] | null {
+    if (raw === undefined) return null;
+    if (!Array.isArray(raw)) return [];
+    const cleaned = raw
+        .map((v: any) => Number.parseInt(String(v), 10))
+        .filter((n: number) => Number.isFinite(n) && ALLOWED_OFFSETS.includes(n));
+    return [...new Set(cleaned)].sort((a, b) => b - a);
+}
+
+/** Replaces an event's reminders with exactly `offsets`. */
+async function syncReminders(eventId: string, offsets: number[]) {
+    const existing = await prisma.eventReminder.findMany({ where: { event_id: eventId } });
+    const keep = new Set(offsets);
+
+    // Removing a reminder drops its delivery log too (cascade), which is fine:
+    // the reminder no longer exists, so there is nothing to be idempotent about.
+    const toDelete = existing.filter((r: any) => !keep.has(r.hours_before));
+    if (toDelete.length) {
+        await prisma.eventReminder.deleteMany({
+            where: { id: { in: toDelete.map((r: any) => r.id) } },
+        });
+    }
+
+    const have = new Set(existing.map((r: any) => r.hours_before));
+    const toCreate = offsets.filter((h) => !have.has(h));
+    for (const hours_before of toCreate) {
+        await prisma.eventReminder.create({ data: { event_id: eventId, hours_before } });
+    }
+}
 
 // 1. Create Event (Admin only)
 router.post("/", requireRole(["ADMIN"]), async (req: AuthRequest, res: Response): Promise<void> => {
     try {
-        const { title, type, date_time, location, price, status } = req.body;
+        const { title, type, date_time, location, price, status, description, capacity } = req.body;
         const adminId = req.user!.id;
 
         if (!title || !type || !date_time || !location || price === undefined) {
@@ -30,6 +131,12 @@ router.post("/", requireRole(["ADMIN"]), async (req: AuthRequest, res: Response)
         const eventPrice = parseFloat(price);
         if (isNaN(eventPrice) || eventPrice < 0) {
             res.status(400).json({ error: "Invalid price value" });
+            return;
+        }
+
+        const eventCapacity = parseCapacity(capacity);
+        if (eventCapacity === INVALID) {
+            res.status(400).json({ error: "Capacity must be a whole number of 1 or more, or blank for unlimited" });
             return;
         }
 
@@ -48,10 +155,19 @@ router.post("/", requireRole(["ADMIN"]), async (req: AuthRequest, res: Response)
                 price: eventPrice,
                 status: eventStatus,
                 admin_id: adminId,
+                description: description?.trim() || null,
+                capacity: eventCapacity,
             },
         });
 
-        res.status(211).json({ message: "Event created successfully", event });
+        const offsets = parseOffsets(req.body.reminder_offsets);
+        if (offsets?.length) await syncReminders(event.id, offsets);
+
+        res.status(211).json({
+            message: "Event created successfully",
+            event,
+            reminder_offsets: offsets ?? [],
+        });
     } catch (error: any) {
         res.status(500).json({ error: error.message || "Failed to create event" });
     }
@@ -76,7 +192,37 @@ router.get("/", async (req: AuthRequest, res: Response): Promise<void> => {
             });
         }
 
-        res.json(events);
+        /**
+         * Attach capacity to every row so a list can show "3 spots left" or grey
+         * out a full event without a request per card. One grouped count covers the
+         * whole page rather than N queries.
+         */
+        const capped = events.filter((e) => e.capacity !== null);
+        const counts = new Map<string, number>();
+
+        if (capped.length > 0) {
+            const grouped = await prisma.eventRegistration.groupBy({
+                by: ["event_id"],
+                where: { event_id: { in: capped.map((e) => e.id) }, ...SEAT_FILTER },
+                _count: { _all: true },
+            });
+            for (const row of grouped) counts.set(row.event_id, row._count._all);
+        }
+
+        res.json(
+            events.map((e) => {
+                if (e.capacity === null) {
+                    return { ...e, taken: null, spots_left: null, full: false };
+                }
+                const taken = counts.get(e.id) ?? 0;
+                return {
+                    ...e,
+                    taken,
+                    spots_left: Math.max(0, e.capacity - taken),
+                    full: taken >= e.capacity,
+                };
+            }),
+        );
     } catch (error: any) {
         res.status(500).json({ error: error.message || "Failed to fetch events" });
     }
@@ -203,7 +349,7 @@ router.get("/:id", async (req: AuthRequest, res: Response): Promise<void> => {
             return;
         }
 
-        res.json(event);
+        res.json({ ...event, ...(await capacityOf(event)) });
     } catch (error: any) {
         res.status(500).json({ error: error.message || "Failed to fetch event" });
     }
@@ -213,7 +359,7 @@ router.get("/:id", async (req: AuthRequest, res: Response): Promise<void> => {
 router.put("/:id", requireRole(["ADMIN"]), async (req: AuthRequest, res: Response): Promise<void> => {
     try {
         const id = req.params.id as string;
-        const { title, type, date_time, location, price, status } = req.body;
+        const { title, type, date_time, location, price, status, description, capacity } = req.body;
 
         const event = await prisma.event.findUnique({ where: { id } });
         if (!event) {
@@ -241,13 +387,55 @@ router.put("/:id", requireRole(["ADMIN"]), async (req: AuthRequest, res: Respons
             }
             dataToUpdate.status = status;
         }
+        if (description !== undefined) {
+            dataToUpdate.description = description?.trim() || null;
+        }
+        if (capacity !== undefined) {
+            const parsed = parseCapacity(capacity);
+            if (parsed === INVALID) {
+                res.status(400).json({
+                    error: "Capacity must be a whole number of 1 or more, or blank for unlimited",
+                });
+                return;
+            }
+
+            /**
+             * Refuse to set a cap below the number of places already given away.
+             * Silently accepting it would leave the event over its own limit with
+             * no way to reconcile — the organiser has to cancel entries first.
+             */
+            if (typeof parsed === "number") {
+                const taken = await seatsTaken(id);
+                if (parsed < taken) {
+                    res.status(400).json({
+                        error: `${taken} people already hold a place, so the cap can't be set to ${parsed}. Cancel some registrations first.`,
+                        taken,
+                    });
+                    return;
+                }
+            }
+
+            dataToUpdate.capacity = parsed;
+        }
 
         const updatedEvent = await prisma.event.update({
             where: { id },
             data: dataToUpdate,
         });
 
-        res.json({ message: "Event updated successfully", event: updatedEvent });
+        const offsets = parseOffsets(req.body.reminder_offsets);
+        if (offsets !== null) await syncReminders(id, offsets);
+
+        const reminders = await prisma.eventReminder.findMany({
+            where: { event_id: id },
+            orderBy: { hours_before: "desc" },
+        });
+
+        res.json({
+            message: "Event updated successfully",
+            event: updatedEvent,
+            reminder_offsets: reminders.map((r: any) => r.hours_before),
+        });
     } catch (error: any) {
         res.status(500).json({ error: error.message || "Failed to update event" });
     }
@@ -281,7 +469,10 @@ router.post("/:id/register", requireRole(["MEMBER", "VOLUNTEER"]), async (req: A
         const eventId = req.params.id as string;
         const userId = req.user!.id;
         const userRole = req.user!.role;
-        const { waiver_signed, emergency_contact } = req.body;
+        // `req.body` is undefined when a client posts with no JSON body at all;
+        // destructuring it directly turned that into a 500 instead of the 400 the
+        // waiver check below is meant to give.
+        const { waiver_signed, emergency_contact } = req.body ?? {};
 
         // Check emergency contact is provided (from request or check database)
         const user = await prisma.user.findUnique({ where: { id: userId } });
@@ -330,6 +521,27 @@ router.post("/:id/register", requireRole(["MEMBER", "VOLUNTEER"]), async (req: A
                 registration: existingRegistration,
             });
             return;
+        }
+
+        /**
+         * Capacity check, after the already-registered check so somebody who is
+         * already on the list is never told the event is full.
+         *
+         * Volunteers are exempt: they are crew rather than participants, and a
+         * full event still needs marshals. Blocking a marshal because the runner
+         * places sold out would be the wrong outcome.
+         */
+        if (event.capacity !== null && userRole !== "VOLUNTEER") {
+            const taken = await seatsTaken(eventId);
+            if (taken >= event.capacity) {
+                res.status(409).json({
+                    error: "This event is full.",
+                    full: true,
+                    capacity: event.capacity,
+                    taken,
+                });
+                return;
+            }
         }
 
         // Update emergency contact on User model if provided in this request

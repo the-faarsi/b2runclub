@@ -157,9 +157,74 @@ duplicate hidden, and the strip becomes a normal horizontal scroller.
 Managed at `/admin/collaborators` (admin only): name, shout-out, tier, website,
 and an uploaded or linked logo. No logo falls back to a gold monogram.
 
+### Event email reminders
+
+An organiser ticks any of **1 week / 3 days / 2 days / 1 day / 12h / 4h / 2h / 1h**
+in the event form. Every registrant gets one email per ticked offset. The event
+page carries a status panel showing each reminder as *scheduled*, *due* or
+*sent*, with a **Run sweep** button for pushing a due one immediately.
+
+A sweeper runs in-process every 60 seconds (`utils/reminders.ts`). Rules, chosen
+for predictability:
+
+- only **PUBLISHED** events that have not started
+- a reminder is due once `now >= start − offset` and **stays** due until the event
+  begins, so a server that was offline delivers late rather than skipping
+- **blocked** registrations are excluded; **PENDING** are included, since the
+  nudge is partly the point
+- **FAILED** payments are excluded
+
+**Send-once is enforced by the database**, not by application logic: a unique
+`(reminder_id, user_id)` row is written per send, so a restart, an overlapping
+sweep or a repeatedly-pressed manual run cannot double-send. Failures are
+recorded with `status: "FAILED"` rather than retried forever. Each email is
+mirrored as an in-app notification so the bell agrees with the inbox.
+
+#### Turning on real delivery
+
+Transport is plain SMTP via nodemailer, so the provider is a config choice rather
+than a code dependency — Resend, SES, Postmark, Mailtrap and Gmail all work:
+
+```bash
+# runclub-backend/.env
+SMTP_HOST=smtp.resend.com
+SMTP_PORT=587
+SMTP_USER=resend
+SMTP_PASS=<your key>
+MAIL_FROM="B Squared Run Club <hello@yourdomain>"
+APP_URL=http://localhost:5173     # used for links in the email
+```
+
+**With SMTP unset the mailer logs the full email to the server console instead of
+sending.** That is deliberate: scheduling, recipient selection and idempotency
+are all exercisable before any credentials exist, and a missing config can never
+crash a sweep. `GET /api/admin/mailer` reports whether SMTP is configured and
+reachable, and the status panel says plainly which mode you are in.
+
+> The scheduler is a single in-process timer, which is right for one server. A
+> multi-instance deployment would want a shared lock or a real job queue — the
+> unique constraint would keep it *correct*, just noisy.
+
 ### Roles & promotion
 
-`/admin/members` is the club directory. An organiser can move anyone between
+`/admin/members` is the club directory — **admin-only**, both by route guard and
+by `requireRole(["ADMIN"])` on `GET /api/admin/members`. Each row expands to a
+full detail panel:
+
+| Shown | Notes |
+|---|---|
+| Email, club role, joined date | |
+| **Emergency contact** | the actual number, not a yes/no — organisers need it on the day |
+| Registration count | |
+| **Strava athlete ID** | plus a filter tab for members who have linked one |
+| **Strava this week** | club rank, distance, runs, average pace, moving time |
+
+The Strava figures come from `utils/strava.ts`, which the leaderboard also uses,
+so the two can never disagree about the same person. It currently generates
+deterministic sample stats — swapping in the real Strava API means changing that
+one file, since both callers consume the same `AthleteStats` shape.
+
+An organiser can move anyone between
 **member**, **volunteer** and **visitor**; promoting to volunteer is the one that
 matters, because the backend comps a volunteer's entry on every registration.
 
@@ -311,6 +376,38 @@ and `FlipCard` for the QR ticket. Plus a 3D podium on the leaderboard and a
 `press-3d` push on every button. `Tilt` writes rotation to CSS custom properties
 inside a `requestAnimationFrame`, so a pointer move never triggers a React render
 and the transform stays on the compositor. Text inputs are left untilted.
+
+### Futuristic chrome
+
+Applied through the shared classes so it is consistent rather than per-component:
+
+- **`btn-3d`** — every button gets a bevelled top edge, inner shadow, a light
+  sweep on hover, and presses *into* the page on click. Applied inside
+  `BUTTON_VARIANTS`/`buttonClass`, so nothing has to opt in.
+- **`hud`** — corner brackets that widen on hover, like a targeting reticle.
+- **`datastrip`** — a gold rule with a travelling pulse, used as a section break.
+- **`scanlines`**, **`grain`**, **`foil`** — film and gold-foil treatments.
+
+All of it is `::before`/`::after` with transform/opacity only, so none of it
+costs layout. The looping ones are switched off under reduced motion.
+
+> Buttons deliberately use **CSS 3D, not WebGL**. Browsers cap concurrent WebGL
+> contexts at roughly 16 — a canvas per button would exhaust that on any page.
+
+### Collaborator ring
+
+The home page strip is a **rotating 3D cylinder**: each card is pushed out along
+Z and rotated to face outward, and the radius is computed from the card count so
+faces never overlap. Hovering pulls a card toward the viewer, dims the rest and
+raises its shout-out; the ring pauses while the pointer is over the stage.
+
+Two things that make it work, both non-obvious:
+
+- **CSS animation, not framer-motion** — `animation-play-state: paused` is what
+  allows hover-to-pause, and a JS-driven transform cannot be paused that way.
+- **`backface-visibility: hidden`** — cards on the far side of the cylinder face
+  away from the viewer and render their text *mirrored*. Hiding backfaces drops
+  them, which is what makes it read as a coverflow rather than a jumble.
 
 ### Motion
 

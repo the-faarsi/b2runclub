@@ -32,7 +32,7 @@ export function Polls() {
 
   return (
     <Page>
-      <PageScene variant="towers" opacity={0.26} />
+      <PageScene variant="pulse" opacity={0.26} />
       <PageHeader
         eyebrow="Have your say"
         title="Polls"

@@ -23,6 +23,7 @@ import {
   Skeleton,
   useToast,
 } from "../../components/ui";
+import { MailerPanel } from "../../components/mailerPanel";
 import { api, downloadText } from "../../lib/api";
 import { compact, eventDate, inr, isPast } from "../../lib/format";
 import { useFetch } from "../../lib/useFetch";
@@ -452,7 +453,7 @@ export function AdminDashboard() {
               action={
                 <Link
                   to="/admin/events"
-                  className="text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-3 transition-colors hover:text-ink-2"
+                  className="tap text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-3 transition-colors hover:text-ink-2"
                 >
                   Manage all
                 </Link>
@@ -484,6 +485,11 @@ export function AdminDashboard() {
                 />
               )}
             </ChartCard>
+          </div>
+
+          {/* Email settings — reminders and reset links depend on this being live */}
+          <div className="mt-5">
+            <MailerPanel />
           </div>
         </>
       ) : null}

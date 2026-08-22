@@ -2,7 +2,12 @@ import { useCallback, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { CancelRegistrationDialog } from "../components/cancelDialog";
 import { RegisterDialog, TicketModal } from "../components/events";
+import { EventFeedbackCard, FeedbackSummaryCard } from "../components/eventFeedback";
+import { EventPhotoStrip } from "../components/eventPhotos";
+import { EventReminders } from "../components/eventReminders";
+import { EventResultsSheet, ResultsEditor } from "../components/eventResults";
 import { EventRoster } from "../components/eventRoster";
+import { RouteCard } from "../components/routeMap";
 import { CalendarIcon, DisciplineIcon, ShareIcon, SparkIcon } from "../components/icons";
 import { Page } from "../components/layout";
 import { PageScene } from "../components/scene3d";
@@ -62,11 +67,13 @@ export function EventDetail() {
   const remaining = useCountdown(event?.date_time ?? new Date(0).toISOString());
   /** Volunteers pay nothing; the backend sets their registration to FREE. */
   const comped = role === "VOLUNTEER";
+  /** Who may open the event-day console — matches the backend's CREW list. */
+  const isCrew = role === "ADMIN" || role === "VOLUNTEER";
 
   if (loading) {
     return (
       <Page>
-      <PageScene variant="knot" opacity={0.24} />
+      <PageScene variant="terrain" opacity={0.24} />
         <Skeleton className="h-4 w-24" />
         <Skeleton className="mt-5 h-12 w-2/3" />
         <Skeleton className="mt-4 h-4 w-1/2" />
@@ -96,10 +103,23 @@ export function EventDetail() {
     { label: "Location", value: event.location },
     { label: "Discipline", value: event.type },
     { label: "Entry", value: event.price === 0 ? "Free" : inr(event.price) },
+    ...(event.capacity != null
+      ? [
+          {
+            label: "Places",
+            value: event.full
+              ? `Full — ${event.capacity} taken`
+              : `${event.spots_left} of ${event.capacity} left`,
+          },
+        ]
+      : []),
   ];
 
   return (
     <Page>
+      {/* Was only present in the loading skeleton, so the loaded page had no
+          backdrop at all. Terrain suits this page — it is the route view. */}
+      <PageScene variant="terrain" opacity={0.24} />
       <Link
         to="/events"
         className="mb-6 inline-flex items-center gap-1.5 text-[13px] text-ink-3 transition-colors hover:text-gold"
@@ -148,6 +168,13 @@ export function EventDetail() {
               ? " Free to enter."
               : ` Entry is ${inr(event.price)}, paid at registration.`}
           </p>
+
+          {/* The organiser's brief. Newlines are preserved — people write lists. */}
+          {event.description && (
+            <p className="mt-4 max-w-2xl whitespace-pre-wrap text-[15px] leading-relaxed text-ink-2">
+              {event.description}
+            </p>
+          )}
 
           {/* Live countdown — ticks every second */}
           {!past && !remaining.done && (
@@ -208,8 +235,26 @@ export function EventDetail() {
             ))}
           </div>
 
+          {/* The course, from the attached GPX. Organisers can upload one here. */}
+          <RouteCard event={event} isAdmin={isAdmin} />
+
+          {/* Published results, once an organiser has entered times */}
+          {past && <EventResultsSheet event={event} />}
+
+          {/* Photos tagged to this event */}
+          <EventPhotoStrip event={event} />
+
+          {/*
+            Feedback is only meaningful after the fact, and only from someone who
+            was on the roster — the backend enforces both.
+          */}
+          {past && registration && <EventFeedbackCard event={event} />}
+
           {/* Organisers see who is coming, and can bar someone */}
           {isAdmin && <EventRoster event={event} />}
+          {isAdmin && past && <ResultsEditor event={event} />}
+          {isAdmin && past && <FeedbackSummaryCard event={event} />}
+          {isAdmin && <EventReminders event={event} />}
 
           <Card className="mt-6 p-5">
             <h2 className="text-[15px] font-semibold text-ink">On the day</h2>
@@ -333,11 +378,31 @@ export function EventDetail() {
                   Create an account
                 </Link>
               </div>
+            ) : /*
+                 A full event says so up front instead of letting someone fill in
+                 the waiver and then be refused. Volunteers are exempt from the cap
+                 on the backend, so they still get the register button.
+               */
+            event.full && role !== "VOLUNTEER" ? (
+              <div className="space-y-3">
+                <Button className="w-full" disabled>
+                  Fully booked
+                </Button>
+                <p className="text-center text-[11.5px] leading-relaxed text-ink-3">
+                  All {event.capacity} places are taken. Registrations sometimes free up —
+                  check back, or ask an organiser in the forum about a waiting list.
+                </p>
+              </div>
             ) : canRegister ? (
               <div className="space-y-3">
                 <Button className="w-full" onClick={() => setDialogOpen(true)}>
                   Register
                 </Button>
+                {event.spots_left != null && event.spots_left <= 5 && (
+                  <p className="text-center text-[12px] font-medium text-[color:var(--color-pending)]">
+                    Only {event.spots_left} {event.spots_left === 1 ? "place" : "places"} left
+                  </p>
+                )}
                 <p className="text-center text-[11px] leading-relaxed text-ink-3">
                   Waiver and emergency contact required.
                 </p>
@@ -349,6 +414,22 @@ export function EventDetail() {
                   ? "Organiser accounts can't register — you're running this one."
                   : "Visitor accounts can't register. Ask an organiser to upgrade you to member."}
               </p>
+            )}
+
+            {/* Crew console. Volunteers scan at the start line, so they get it too. */}
+            {isCrew && (
+              <>
+                <div className="hairline my-5" />
+                <Link
+                  to={`/raceday/${event.id}`}
+                  className={buttonClass("outline", "md", "w-full")}
+                >
+                  Open event-day console
+                </Link>
+                <p className="mt-2 text-center text-[11px] leading-relaxed text-ink-3">
+                  Ticket scanning, marshal posts and checkpoint tracking.
+                </p>
+              </>
             )}
 
             {isAdmin && (

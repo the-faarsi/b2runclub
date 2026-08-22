@@ -115,6 +115,43 @@
   ::-webkit-scrollbar-thumb:hover {
     background: #3a3e47;
   }
+
+  /*
+   * Anchors and images are natively draggable. Press one, move the pointer a few
+   * pixels — which most trackpad clicks do — and the browser fires `dragstart`
+   * and then never emits `click`, so the control silently does nothing. This is
+   * an application UI rather than a document, so dragging is disabled outright.
+   *
+   * An <img> inside a control also stops taking pointer events, so the button or
+   * link itself receives the mousedown/mouseup pair. Without this, clicking a
+   * gallery tile targets the <img>, which starts an image drag instead.
+   */
+  a,
+  button {
+    -webkit-user-drag: none;
+  }
+
+  /*
+   * Touch-target expander for small inline text controls ("Table view",
+   * "Full details", an event title). They render 17-23px tall, well under the
+   * ~44px a finger needs, but padding them out would change the text layout.
+   * The pseudo-element grows only the hit area, and only on touch devices.
+   */
+  @media (pointer: coarse) {
+    .tap {
+      position: relative;
+    }
+    .tap::after {
+      content: "";
+      position: absolute;
+      inset: -13px -10px;
+    }
+  }
+  button img,
+  a img {
+    -webkit-user-drag: none;
+    pointer-events: none;
+  }
 }
 
 @layer components {
@@ -273,19 +310,304 @@
     transform: rotateY(180deg);
   }
 
-  /* Buttons press *into* the page rather than just scaling. */
+  /* Buttons press *into* the page rather than just scaling.
+     Currently unused. Kept shadow-based rather than transform-based for the same
+     reason as .btn-3d above: moving an element on :active loses the mouseup and
+     the click never fires. */
   .press-3d {
-    transform-style: preserve-3d;
-    transition: transform 0.16s var(--ease-out-expo);
+    transition:
+      box-shadow 0.16s var(--ease-out-expo),
+      filter 0.16s var(--ease-out-expo);
   }
   .press-3d:active {
-    transform: perspective(500px) translateZ(-6px) rotateX(4deg);
+    filter: brightness(0.94);
+    box-shadow: 0 2px 6px 0 rgb(0 0 0 / 0.45) inset;
   }
 
   /* A podium step for the leaderboard top three. */
   .podium {
     transform-style: preserve-3d;
     transform: perspective(800px) rotateX(14deg);
+  }
+
+  /* ── Futuristic chrome ──────────────────────────────────
+     HUD-style decoration. All of it is ::before/::after and
+     transform/opacity only, so nothing costs layout. */
+
+  /* Corner brackets, like a targeting reticle. */
+  .hud {
+    position: relative;
+  }
+  .hud::before,
+  .hud::after {
+    content: "";
+    position: absolute;
+    width: 14px;
+    height: 14px;
+    pointer-events: none;
+    border-color: rgb(233 185 73 / 0.55);
+    transition: all 0.4s var(--ease-out-expo);
+  }
+  .hud::before {
+    top: 8px;
+    left: 8px;
+    border-top: 1.5px solid;
+    border-left: 1.5px solid;
+    border-top-left-radius: 4px;
+  }
+  .hud::after {
+    right: 8px;
+    bottom: 8px;
+    border-bottom: 1.5px solid;
+    border-right: 1.5px solid;
+    border-bottom-right-radius: 4px;
+  }
+  .hud:hover::before,
+  .hud:hover::after {
+    width: 22px;
+    height: 22px;
+    border-color: rgb(233 185 73 / 0.9);
+  }
+
+  /* Buttons: bevelled top edge, inner glow, and a light sweep on hover.
+     Applied through the shared button classes so every button inherits it. */
+  /*
+   * Depth here is shadow and brightness only — never `transform`.
+   *
+   * This class is on every Button and button-styled link in the app. It used to
+   * lift on :hover with `perspective(600px) translateZ(4px) translateY(-1px)`
+   * and press in on :active with `translateZ(-5px) rotateX(5deg)`. Because those
+   * are two *different* transforms, the button physically moved the instant the
+   * mouse went down, so the mouseup landed on whatever was underneath and the
+   * browser never synthesised a `click` — the handler simply never ran. The
+   * effect only showed once the 0.18s hover transition had settled, i.e. exactly
+   * when a person clicks, and never when a script clicks instantly. Nested inside
+   * <Page>'s `perspective: 1400px; transform-style: preserve-3d` the displacement
+   * was worse still.
+   *
+   * Any geometry change between :hover and :active reintroduces the bug. Keep
+   * hover/active feedback to box-shadow, filter and colour.
+   */
+  .btn-3d {
+    position: relative;
+    overflow: hidden;
+    /*
+     * The class is also applied to <Link>/<a> styled as buttons. An anchor is
+     * natively draggable, so moving the pointer ~4px while held fires `dragstart`
+     * and the browser never emits `click` — the link looked dead on any click
+     * with a little wobble, which is most trackpad clicks. `user-select: none`
+     * alone does not prevent it; the drag has to be disabled.
+     */
+    user-select: none;
+    -webkit-user-drag: none;
+    box-shadow:
+      0 1px 0 0 rgb(255 255 255 / 0.22) inset,
+      0 -1px 0 0 rgb(0 0 0 / 0.35) inset,
+      0 6px 16px -8px rgb(0 0 0 / 0.7);
+    transition:
+      box-shadow 0.28s var(--ease-out-expo),
+      filter 0.28s var(--ease-out-expo);
+  }
+  .btn-3d::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: linear-gradient(
+      100deg,
+      transparent 20%,
+      rgb(255 255 255 / 0.22) 48%,
+      transparent 76%
+    );
+    transform: translateX(-130%);
+    transition: transform 0.55s var(--ease-out-expo);
+  }
+  .btn-3d:hover::after {
+    transform: translateX(130%);
+  }
+  /* Lift: brighter face, deeper and softer cast shadow. */
+  .btn-3d:hover {
+    filter: brightness(1.06);
+    box-shadow:
+      0 1px 0 0 rgb(255 255 255 / 0.3) inset,
+      0 -1px 0 0 rgb(0 0 0 / 0.35) inset,
+      0 12px 24px -10px rgb(0 0 0 / 0.85);
+  }
+  /* Press: face darkens and the cast shadow collapses to an inner one. */
+  .btn-3d:active {
+    filter: brightness(0.96);
+    box-shadow:
+      0 2px 5px 0 rgb(0 0 0 / 0.4) inset,
+      0 1px 0 0 rgb(255 255 255 / 0.05) inset;
+  }
+
+  /* Scanline film, for hero surfaces. */
+  .scanlines::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.5;
+    background: repeating-linear-gradient(
+      0deg,
+      rgb(233 185 73 / 0.035) 0 1px,
+      transparent 1px 4px
+    );
+  }
+
+  /* A gold data-strip divider with travelling pulse. */
+  .datastrip {
+    position: relative;
+    height: 2px;
+    overflow: hidden;
+    background: linear-gradient(90deg, transparent, rgb(233 185 73 / 0.28), transparent);
+  }
+  .datastrip::after {
+    content: "";
+    position: absolute;
+    inset-block: 0;
+    width: 22%;
+    background: linear-gradient(90deg, transparent, var(--color-gold), transparent);
+    animation: strip 3.6s linear infinite;
+  }
+  @keyframes strip {
+    from {
+      transform: translateX(-120%);
+    }
+    to {
+      transform: translateX(560%);
+    }
+  }
+
+  /* 3D carousel for the collaborator strip: items sit on a cylinder. */
+  .stage3d {
+    perspective: 1200px;
+    perspective-origin: 50% 45%;
+  }
+  .stage3d-track {
+    transform-style: preserve-3d;
+  }
+  .coin {
+    transform-style: preserve-3d;
+    /* Cards on the far side of the cylinder face away from the viewer, so their
+       text renders mirrored. Hiding backfaces drops them entirely, which is what
+       makes the ring read as a coverflow rather than a jumble. */
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+    transition:
+      transform 0.5s var(--ease-out-expo),
+      filter 0.5s var(--ease-out-expo),
+      opacity 0.4s var(--ease-out-expo);
+  }
+  .coin:hover {
+    transform: translateZ(70px) rotateY(0deg) scale(1.06) !important;
+    filter: brightness(1.15);
+    z-index: 5;
+  }
+
+  /* ── Creators' mark ──────────────────────────────────────
+     The "WTF · With Thariq & faarsi" credit. Tilts toward the cursor in 3D,
+     with a sheen that follows it and a glow that lifts behind the artwork.
+     --rx/--ry/--mx/--my/--lift are written by <CreatorsLogo> on pointermove.
+     Nothing here is interactive, so the moving transform cannot swallow a
+     click the way a hover transform on a button would. */
+  .creator-stage {
+    display: inline-block;
+    perspective: 700px;
+  }
+  .creator-tilt {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    transform-style: preserve-3d;
+    transform: rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg))
+      scale(calc(1 + var(--lift, 0) * 0.06));
+    transition: transform 0.45s var(--ease-out-expo);
+    will-change: transform;
+  }
+  .creator-img {
+    position: relative;
+    z-index: 2;
+    width: auto;
+    max-width: min(240px, 62vw);
+    object-fit: contain;
+    /* Sits on a near-black footer, so a cool rim keeps the white strokes from
+       melting into the background. */
+    filter: drop-shadow(0 2px 6px rgb(0 0 0 / 0.65))
+      drop-shadow(0 0 calc(var(--lift, 0) * 14px) rgb(56 152 255 / 0.55));
+    transition: filter 0.45s var(--ease-out-expo);
+  }
+  /* Glow pad behind the mark. */
+  .creator-glow {
+    position: absolute;
+    /* Generous inset so the gradient reaches transparent well before the box
+       edge — clipped at the edge it reads as a soft rectangle rather than a
+       glow. */
+    inset: -60% -30%;
+    z-index: 1;
+    pointer-events: none;
+    opacity: var(--lift, 0);
+    transform: translateZ(-24px);
+    background: radial-gradient(
+      42% 46% at var(--mx, 50%) var(--my, 50%),
+      rgb(56 152 255 / 0.45),
+      rgb(56 152 255 / 0.1) 42%,
+      transparent 62%
+    );
+    filter: blur(18px);
+    transition: opacity 0.45s var(--ease-out-expo);
+  }
+  /* Specular sweep riding above the artwork. */
+  .creator-sheen {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    pointer-events: none;
+    opacity: calc(var(--lift, 0) * 0.6);
+    transform: translateZ(34px);
+    background: radial-gradient(
+      26% 44% at var(--mx, 50%) var(--my, 50%),
+      rgb(255 255 255 / 0.34),
+      transparent 58%
+    );
+    /* Feathered at its own bounds. Screen-blended over a near-black footer, a
+       gradient cut square at the edge reads as a pale rectangle rather than a
+       highlight. */
+    -webkit-mask-image: radial-gradient(closest-side, #000 55%, transparent 100%);
+    mask-image: radial-gradient(closest-side, #000 55%, transparent 100%);
+    mix-blend-mode: screen;
+    transition: opacity 0.45s var(--ease-out-expo);
+  }
+  /* Shown only when the artwork is missing, so the credit still reads. */
+  .creator-fallback {
+    position: relative;
+    z-index: 2;
+    display: inline-flex;
+    flex-direction: column;
+    line-height: 1;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    font-size: 17px;
+    color: #eaf3ff;
+    text-shadow: 0 0 10px rgb(56 152 255 / 0.55);
+  }
+  .creator-fallback-sub {
+    margin-top: 2px;
+    font-size: 8.5px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: #4a9bff;
+    text-shadow: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .creator-tilt,
+    .creator-img,
+    .creator-glow,
+    .creator-sheen {
+      transition: none;
+    }
   }
 
   /* Thin gold rule with a soft falloff, for section breaks. */
@@ -381,31 +703,29 @@
     animation: draw 1.8s var(--ease-out-expo) forwards;
   }
 
-  /* Marquee for the collaborator strip. Kept in CSS so hovering can pause it
-     with animation-play-state — a JS-driven transform cannot be paused. */
-  @keyframes marquee {
+  /* Rotating 3D collaborator ring. CSS animation so hovering the stage can
+     pause it — a JS-driven transform cannot be paused. translateZ keeps the
+     ring pushed back so cards orbit toward the viewer. */
+  @keyframes ring-spin {
+    from {
+      transform: translate(-50%, -50%) translateZ(calc(var(--ring-radius, 520px) * -1))
+        rotateY(0deg);
+    }
     to {
-      transform: translateX(-50%);
+      transform: translate(-50%, -50%) translateZ(calc(var(--ring-radius, 520px) * -1))
+        rotateY(-360deg);
     }
   }
-  .marquee-track {
-    animation: marquee var(--marquee-duration, 30s) linear infinite;
-    will-change: transform;
+  .ring-spin {
+    animation: ring-spin var(--ring-duration, 32s) linear infinite;
   }
-  .marquee:hover .marquee-track,
-  .marquee:focus-within .marquee-track {
+  .stage3d:hover .ring-spin,
+  .stage3d:focus-within .ring-spin {
     animation-play-state: paused;
   }
   @media (prefers-reduced-motion: reduce) {
-    .marquee-track {
+    .ring-spin {
       animation: none;
-    }
-    /* Without the scroll the duplicate row is dead weight, so hide it. */
-    .marquee-track > div[aria-hidden="true"] {
-      display: none;
-    }
-    .marquee {
-      overflow-x: auto;
     }
   }
 
@@ -420,6 +740,10 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
+    .datastrip::after {
+      animation: none;
+      display: none;
+    }
     *,
     *::before,
     *::after {

@@ -1,48 +1,20 @@
-import { useState } from "react";
 import { Link } from "react-router-dom";
 import { SparkIcon } from "../components/icons";
 import { Page, PageHeader } from "../components/layout";
 import { PageScene } from "../components/scene3d";
-import {
-  Avatar,
-  Badge,
-  Button,
-  buttonClass,
-  Card,
-  Field,
-  Input,
-  useToast,
-} from "../components/ui";
-import { api } from "../lib/api";
+import { Avatar, Badge, Button, buttonClass, Card } from "../components/ui";
+import { AccountSettings } from "../components/accountSettings";
+import { HealthSyncCard } from "../components/healthSync";
+import { StravaPanel } from "../components/stravaPanel";
+import { MyResultsCard, StreakCard } from "../components/streaks";
 import { useAuth } from "../lib/auth";
 import { fullDate, ROLE_META } from "../lib/format";
 
 export function Profile() {
-  const { user, patchUser, logout } = useAuth();
-  const toast = useToast();
-
-  const [strava, setStrava] = useState(user?.strava_id ?? "");
-  const [busy, setBusy] = useState(false);
+  const { user, logout, canRegister } = useAuth();
 
   if (!user) return null;
   const meta = ROLE_META[user.role] ?? ROLE_META.MEMBER;
-
-  const linkStrava = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const id = strava.trim();
-    if (!id) return;
-
-    setBusy(true);
-    try {
-      const res = await api.linkStrava(id);
-      patchUser({ strava_id: res.user.strava_id });
-      toast("Strava linked — you'll show on the board after your next run.", "ok");
-    } catch (err) {
-      toast(err instanceof Error ? err.message : "Could not link Strava", "err");
-    } finally {
-      setBusy(false);
-    }
-  };
 
   return (
     <Page className="max-w-3xl">
@@ -74,6 +46,26 @@ export function Profile() {
           </>
         )}
       </Card>
+
+      {/* Everything editable, in one place */}
+      <Card className="mt-5 p-6">
+        <h3 className="text-[15px] font-semibold text-ink">Your details</h3>
+        <p className="mt-1.5 text-[13px] leading-relaxed text-ink-3">
+          Edit any of these yourself. Changes take effect straight away.
+        </p>
+        <div className="mt-5">
+          <AccountSettings />
+        </div>
+      </Card>
+
+      {/* Attendance record and badges — only meaningful for people who run */}
+      {canRegister && (
+        <>
+          <StreakCard />
+          <MyResultsCard />
+          <HealthSyncCard />
+        </>
+      )}
 
       {/* Volunteer perks — the one benefit worth stating outright */}
       {user.role === "VOLUNTEER" && (
@@ -130,68 +122,7 @@ export function Profile() {
         </Card>
       )}
 
-      {/* Emergency contact — read-only reflection of what the API stores */}
-      <Card className="mt-5 p-6">
-        <h3 className="text-[15px] font-semibold text-ink">Emergency contact</h3>
-        <p className="mt-1.5 text-[13px] leading-relaxed text-ink-3">
-          Shared with organisers on event day. It's saved the first time you register, and you can
-          update it from any registration form.
-        </p>
-
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/8 bg-surface-2/50 px-4 py-3">
-          <span className="text-[14px] text-ink">
-            {user.emergency_contact ? (
-              user.emergency_contact
-            ) : (
-              <span className="text-ink-3">Not set yet</span>
-            )}
-          </span>
-          <Link to="/events" className={buttonClass("outline", "sm")}>
-            {user.emergency_contact ? "Update at next registration" : "Add on registration"}
-          </Link>
-        </div>
-      </Card>
-
-      {/* Strava */}
-      <Card className="mt-5 p-6">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h3 className="text-[15px] font-semibold text-ink">Strava</h3>
-            <p className="mt-1.5 text-[13px] leading-relaxed text-ink-3">
-              Link your athlete ID to appear on the club leaderboard.
-            </p>
-          </div>
-          {user.strava_id && (
-            <Link
-              to="/leaderboard"
-              className="shrink-0 text-[12px] font-medium text-gold hover:underline"
-            >
-              See the board →
-            </Link>
-          )}
-        </div>
-
-        <form onSubmit={linkStrava} className="mt-4 flex flex-wrap items-end gap-3">
-          <div className="min-w-[200px] flex-1">
-            <Field
-              label="Strava athlete ID"
-              htmlFor="strava"
-              hint="The number in your Strava profile URL, e.g. strava.com/athletes/12345678"
-            >
-              <Input
-                id="strava"
-                value={strava}
-                onChange={(e) => setStrava(e.target.value)}
-                placeholder="12345678"
-                inputMode="numeric"
-              />
-            </Field>
-          </div>
-          <Button type="submit" loading={busy} disabled={!strava.trim()}>
-            {user.strava_id ? "Update link" : "Link account"}
-          </Button>
-        </form>
-      </Card>
+      <StravaPanel />
 
       {/* Session */}
       <Card className="mt-5 p-6">
