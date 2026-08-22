@@ -1,6 +1,8 @@
-import { Canvas, useFrame, useThree } from "@react-three/fiber";
+import { Canvas, useFrame, useLoader, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import * as THREE from "three";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import * as SkeletonUtils from "three/examples/jsm/utils/SkeletonUtils.js";
 import { useCalmMotion } from "../../lib/motion";
 
 /**
@@ -28,7 +30,8 @@ export type SceneVariant =
   | "helix" // leaderboard — twin climbing spirals
   | "constellation" // forum / members — a network of linked nodes
   | "pulse" // polls / race day — concentric start-line rings
-  | "shards"; // tickets / collaborators — scattered angled planes
+  | "shards" // tickets / collaborators — scattered angled planes
+  | "runner"; // landing "who it's for" — the animated glTF figure carousel
 
 /* ── Shared rig ───────────────────────────────────────────── */
 
@@ -439,6 +442,155 @@ function Knot({ calm }: { calm: boolean }) {
   );
 }
 
+/* ── 7. Runner — animated GLB figure ("who it's for") ──────
+ * The one variant here that loads real assets instead of procedural
+ * geometry, so it's the one scene that pays a network cost beyond the
+ * shared three.js chunk. `useLoader` suspends, which is why it's safe to
+ * call directly — PageScene already wraps <Scene> in a <Suspense> that
+ * shows the flat fallback while the files download.
+ *
+ * Carousel notes:
+ *  - All four GLBs are requested together via useLoader's array form, so
+ *    the component only suspends once — swapping between them afterwards
+ *    is instant, not a re-fetch/re-suspend per model.
+ *  - A plain setInterval advances the active index every ROTATE_MS. This
+ *    is a hard cut, not a crossfade — simplest thing that satisfies "cycle
+ *    through the four models automatically."
+ *  - Each model gets its own recentre/rescale (source units/pivots differ
+ *    per file) and its own AnimationMixer, torn down when the index
+ *    changes so a previous model's clips don't keep ticking in the
+ *    background.
+ *
+ * Animation notes:
+ *  - We play ALL clips in the active GLB so the figure animates regardless
+ *    of which clip index or name the authoring tool chose.
+ *  - mixer.update(delta) runs even when `calm` is true — reduced motion
+ *    only suppresses the slow rotation, not the skeletal animation itself,
+ *    because a motionless figure in the bind pose looks broken rather than
+ *    calm. The canvas frameloop stays "always" for the runner variant so
+ *    the mixer actually ticks every frame.
+ *  - The group is NOT inside ParallaxRig (see dispatcher below) — parallax
+ *    pointer tracking fights the slow y-rotation and makes the figure
+ *    appear to jitter. Runner gets its own gentle idle sway instead.
+ */
+
+const RUNNER_MODEL_URLS = [
+  "/models/runner.glb",
+  "/models/cycling.glb",
+  "/models/swimming.glb",
+  "/models/trekking.glb",
+];
+/** How long each model stays on screen before the carousel advances. */
+const RUNNER_ROTATE_MS = 1500;
+/** Target size (largest dimension) in scene units, so each model reads at a
+ *  consistent scale regardless of whether it's authored upright (runner,
+ *  cyclist, trekker) or lying flat (swimmer) — scaling by height alone
+ *  would over-scale a horizontal pose whose vertical extent is small. */
+const RUNNER_TARGET_HEIGHT = 3.2;
+
+function Runner({ calm }: { calm: boolean }) {
+  const gltfs = useLoader(GLTFLoader, RUNNER_MODEL_URLS);
+  const mixerRef = useRef<THREE.AnimationMixer | null>(null);
+  const group = useRef<THREE.Group>(null);
+  const [active, setActive] = useState(0);
+
+  // Advance the carousel on a timer. Paused while `calm` (reduced motion)
+  // so the figure doesn't keep changing under someone who asked for less
+  // motion — it just holds on the first model.
+  useEffect(() => {
+    if (calm || gltfs.length <= 1) return;
+    const id = setInterval(() => {
+      setActive((i) => (i + 1) % gltfs.length);
+    }, RUNNER_ROTATE_MS);
+    return () => clearInterval(id);
+  }, [calm, gltfs.length]);
+
+  const gltf = gltfs[active];
+
+  // Recentre on the origin and normalise scale on load — the source file's
+  // own units/pivot are unknown ahead of time, so this is computed rather
+  // than hard-coded. Recomputed per active model since each GLB was
+  // authored independently.
+  const scene = useMemo(() => {
+    // Regular Object3D.clone(true) does NOT re-link SkinnedMesh -> Skeleton
+    // bone bindings, so a rigged/animated model would render in its bind
+    // pose forever even though the mixer is updating. SkeletonUtils.clone
+    // rebuilds the skeleton correctly on the cloned hierarchy.
+    const cloned = SkeletonUtils.clone(gltf.scene);
+    const box = new THREE.Box3().setFromObject(cloned);
+    const size = new THREE.Vector3();
+    const center = new THREE.Vector3();
+    box.getSize(size);
+    box.getCenter(center);
+
+    const scale = RUNNER_TARGET_HEIGHT / (Math.max(size.x, size.y, size.z) || 1);
+    cloned.scale.setScalar(scale);
+
+    // `position` is applied in the parent's space, outside this object's own
+    // `scale` — so the offset has to be pre-multiplied by `scale` here rather
+    // than added afterwards. This is what actually plants every model's
+    // feet (box.min.y) on the same ground line regardless of the size or
+    // pivot each GLB was authored with; mixing scaled/unscaled offsets is
+    // what previously made each model land at a different height.
+    cloned.position.x = -center.x * scale;
+    cloned.position.z = -center.z * scale;
+    cloned.position.y = -box.min.y * scale - RUNNER_TARGET_HEIGHT / 2;
+    if (gltf === gltfs[2]) cloned.position.y += 1.8; // swimming.glb is index 2 in RUNNER_MODEL_URLS
+    return cloned;
+  }, [gltf]);
+
+  useEffect(() => {
+    // Guard: nothing to do if the active GLB has no animation tracks at all.
+    if (gltf.animations.length === 0) return;
+
+    const mixer = new THREE.AnimationMixer(scene);
+
+    // Play every clip in the file — avoids the silent failure when the
+    // relevant animation isn't at index 0 or has an unexpected name.
+    gltf.animations.forEach((clip) => {
+      const action = mixer.clipAction(clip);
+      action.setLoop(THREE.LoopRepeat, Infinity);
+      action.play();
+    });
+
+    mixerRef.current = mixer;
+    return () => {
+      mixer.stopAllAction();
+      mixer.uncacheRoot(scene);
+      mixerRef.current = null;
+    };
+  }, [gltf, scene]);
+
+  useFrame((state, delta) => {
+    // Always tick the mixer — skeletal animation runs regardless of calm.
+    // Clamp delta so a tab that was backgrounded doesn't jump the pose.
+    mixerRef.current?.update(Math.min(delta, 0.05));
+
+    if (!group.current) return;
+
+    if (calm) {
+      // Reduced motion: face forward, gentle idle breath only.
+      group.current.rotation.y = 0;
+    } else {
+      // Slow continuous y-rotation so all sides of the figure are seen.
+      group.current.rotation.y += delta * 0.12;
+      // Subtle idle sway on x so the figure feels alive even when the
+      // animation clip is very short.
+      group.current.rotation.x = Math.sin(state.clock.elapsedTime * 0.4) * 0.03;
+    }
+  });
+
+  return (
+    <group ref={group}>
+      <primitive object={scene} />
+      {/* Key fill from the front so the figure is never silhouetted */}
+      <pointLight color={GOLD} intensity={2.8} distance={6} position={[0, 2.5, 3]} />
+      {/* Rim light from behind for depth separation */}
+      <pointLight color={GOLD_DEEP} intensity={1.4} distance={5} position={[-1.5, 1.5, -2.5]} />
+    </group>
+  );
+}
+
 /* ── Dispatcher ───────────────────────────────────────────── */
 
 /* ── 7. Terrain — an elevation ridge (calendar, event detail) ── */
@@ -687,6 +839,7 @@ function Shards({ calm }: { calm: boolean }) {
   );
 }
 
+
 const CAMERA: Record<SceneVariant, [number, number, number]> = {
   ribbon: [0, 0.8, 8.2],
   lattice: [0, 0, 7.6],
@@ -699,6 +852,7 @@ const CAMERA: Record<SceneVariant, [number, number, number]> = {
   constellation: [0, 0, 8.0],
   pulse: [0, 0.6, 7.4],
   shards: [0, 0, 7.8],
+  runner: [0, 0.6, 7.0],
 };
 
 function Contents({ variant, calm }: { variant: SceneVariant; calm: boolean }) {
@@ -713,7 +867,7 @@ function Contents({ variant, calm }: { variant: SceneVariant; calm: boolean }) {
       return <Frames calm={calm} />;
     case "knot":
       return <Knot calm={calm} />;
-    case "terrain":
+          case "terrain":
       return <Terrain calm={calm} />;
     case "helix":
       return <Helix calm={calm} />;
@@ -723,6 +877,8 @@ function Contents({ variant, calm }: { variant: SceneVariant; calm: boolean }) {
       return <Pulse calm={calm} />;
     case "shards":
       return <Shards calm={calm} />;
+    case "runner":
+      return <Runner calm={calm} />;
     case "ribbon":
     default:
       return <Ribbon calm={calm} />;
@@ -742,9 +898,19 @@ export default function Scene({ variant = "ribbon" }: { variant?: SceneVariant }
     return () => document.removeEventListener("visibilitychange", onVis);
   }, []);
 
+  // Runner must always tick so the AnimationMixer updates every frame.
+  // For every other variant, pause when calm or backgrounded to save GPU.
+  const isRunner = variant === "runner";
+  const frameloop = isRunner
+    ? visible ? "always" : "demand"
+    : calm || !visible ? "demand" : "always";
+
   return (
     <Canvas
-      frameloop={calm || !visible ? "demand" : "always"}
+      /* Was hard-coded to the non-runner expression, leaving the `frameloop`
+         computed just above unused — so the runner's AnimationMixer never got
+         a per-frame tick under reduced motion and the figure stood still. */
+      frameloop={frameloop}
       dpr={[1, 1.6]}
       camera={{ position: CAMERA[variant], fov: 42 }}
       gl={{ antialias: true, alpha: true, powerPreference: "high-performance" }}
@@ -767,10 +933,20 @@ export default function Scene({ variant = "ribbon" }: { variant?: SceneVariant }
       <directionalLight position={[4, 6, 5]} intensity={1.4} color="#fff2cf" />
       <directionalLight position={[-5, -2, -4]} intensity={0.5} color={GOLD_DEEP} />
 
-      <ParallaxRig calm={calm}>
-        <Contents variant={variant} calm={calm} />
-        <Motes calm={calm} count={variant === "ribbon" ? 240 : 140} />
-      </ParallaxRig>
+      {isRunner ? (
+        // Runner bypasses ParallaxRig — pointer parallax fights the figure's
+        // own y-rotation and causes visible jitter. The Runner component
+        // handles its own gentle idle motion internally.
+        <>
+          <Contents variant={variant} calm={calm} />
+          <Motes calm={calm} count={70} />
+        </>
+      ) : (
+        <ParallaxRig calm={calm}>
+          <Contents variant={variant} calm={calm} />
+          <Motes calm={calm} count={variant === "ribbon" ? 240 : 140} />
+        </ParallaxRig>
+      )}
     </Canvas>
   );
 }
