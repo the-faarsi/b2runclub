@@ -320,7 +320,7 @@ export function MyTickets() {
                         )}
                         <Link
                           to={ev ? `/events/${ev.id}` : "/events"}
-                          className="truncate text-[15px] font-semibold text-ink transition-colors hover:text-gold"
+                          className="tap truncate text-[15px] font-semibold text-ink transition-colors hover:text-gold"
                         >
                           {ev?.title ?? "Event"}
                         </Link>

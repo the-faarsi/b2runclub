@@ -130,6 +130,23 @@
   button {
     -webkit-user-drag: none;
   }
+
+  /*
+   * Touch-target expander for small inline text controls ("Table view",
+   * "Full details", an event title). They render 17-23px tall, well under the
+   * ~44px a finger needs, but padding them out would change the text layout.
+   * The pseudo-element grows only the hit area, and only on touch devices.
+   */
+  @media (pointer: coarse) {
+    .tap {
+      position: relative;
+    }
+    .tap::after {
+      content: "";
+      position: absolute;
+      inset: -13px -10px;
+    }
+  }
   button img,
   a img {
     -webkit-user-drag: none;

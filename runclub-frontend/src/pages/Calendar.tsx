@@ -509,7 +509,7 @@ export function Calendar() {
                               </span>
                               <Link
                                 to={`/events/${ev.id}`}
-                                className="text-[15px] font-semibold text-ink transition-colors hover:text-gold"
+                                className="tap text-[15px] font-semibold text-ink transition-colors hover:text-gold"
                               >
                                 {ev.title}
                               </Link>

@@ -382,7 +382,11 @@ export function Navbar() {
           layout
           transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
           className={cn(
-            "pointer-events-auto hidden items-center transition-[background-color,padding,border-radius] duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] md:flex",
+            /* lg, not md. An admin sees nine items; laid out they need ~690px,
+               which does not fit a 768px tablet alongside the logo and the
+               bell/avatar — every page scrolled sideways by ~260px. Below lg the
+               hamburger panel is used instead. */
+            "pointer-events-auto hidden items-center transition-[background-color,padding,border-radius] duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] lg:flex",
             scrolled
               ? "absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 gap-0.5 rounded-[20px] bg-gold px-3 py-2"
               : "static flex-1 justify-evenly",
@@ -457,7 +461,7 @@ export function Navbar() {
             onClick={() => setMobileOpen((o) => !o)}
             aria-label="Menu"
             aria-expanded={mobileOpen}
-            className="grid size-9 place-items-center rounded-lg text-ink-2 transition-colors hover:bg-white/6 md:hidden"
+            className="grid size-11 place-items-center rounded-lg text-ink-2 transition-colors hover:bg-white/6 lg:hidden"
           >
             <svg viewBox="0 0 24 24" className="size-5" fill="none" aria-hidden>
               <path
@@ -478,7 +482,7 @@ export function Navbar() {
             animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
             transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
-            className="pointer-events-auto overflow-hidden border-b border-white/8 bg-void/95 backdrop-blur-xl md:hidden"
+            className="pointer-events-auto overflow-hidden border-b border-white/8 bg-void/95 backdrop-blur-xl lg:hidden"
           >
             <div className="space-y-0.5 px-4 py-3">
               {/* Same active test as the desktop nav, so the two never disagree. */}

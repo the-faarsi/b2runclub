@@ -134,7 +134,7 @@ export function ManagePolls() {
                     <div className="flex items-center gap-3">
                       <button
                         onClick={() => setAnalyticsFor(poll)}
-                        className="text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-3 transition-colors hover:text-gold"
+                        className="tap text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-3 transition-colors hover:text-gold"
                       >
                         Full analytics
                       </button>

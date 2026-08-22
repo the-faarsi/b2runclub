@@ -1,5 +1,5 @@
 import { motion, useScroll, useTransform, useSpring, MotionValue } from "framer-motion";
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { gsap } from "gsap";
 import { SplitText } from "gsap/SplitText";
 import { useGSAP } from "@gsap/react";
@@ -57,7 +57,7 @@ import { Tilt, TiltLayer } from "../components/tilt";
 import { Avatar, buttonClass, Card, Skeleton } from "../components/ui";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
-import { countdown, eventTime, fullDate, inr, isPast } from "../lib/format";
+import { cn, countdown, eventTime, fullDate, inr, isPast } from "../lib/format";
 import { useFetch } from "../lib/useFetch";
 
 const PILLARS = [
@@ -130,6 +130,52 @@ function useCardReveal(
   return { y, opacity, rotateX, rotateZ, scale };
 }
 
+/**
+ * True at the `lg` breakpoint and up — the width at which the pinned, two-column
+ * "How it works" section has room to work. Below it the section falls back to a
+ * plain stacked list: a 180vh pinned runway and a side-by-side masonry are both
+ * wrong on a 375px phone, where the two columns overflowed the viewport by up to
+ * 96px and forced the whole page to scroll sideways.
+ */
+/**
+ * Applies a card's scroll-driven motion values, or renders the card as-is when
+ * the section is not in its pinned mode. Without the opt-out the motion values
+ * would sit at their initial `opacity: 0` on phones — where the scroll progress
+ * that drives them never advances — leaving the cards permanently invisible.
+ */
+function StepReveal({
+  motion: mv,
+  animate,
+  children,
+}: {
+  motion: ReturnType<typeof useCardReveal>;
+  animate: boolean;
+  children: ReactNode;
+}) {
+  if (!animate) return <div>{children}</div>;
+  return (
+    <motion.div
+      style={{ y: mv.y, opacity: mv.opacity, rotateX: mv.rotateX, rotateZ: mv.rotateZ, scale: mv.scale }}
+    >
+      {children}
+    </motion.div>
+  );
+}
+
+function useIsWide() {
+  const [wide, setWide] = useState(
+    () => typeof window !== "undefined" && window.matchMedia("(min-width: 1024px)").matches,
+  );
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 1024px)");
+    const onChange = () => setWide(mq.matches);
+    onChange();
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+  return wide;
+}
+
 export function Landing() {
   const { user } = useAuth();
 
@@ -156,6 +202,9 @@ export function Landing() {
 
   // ── Scroll refs for the "How it works" sticky section ──
   const stickyRef = useRef<HTMLDivElement>(null);
+  /* Below lg the section is a plain stacked list — no pin, no scroll-driven
+     reveal. See useIsWide(). */
+  const isWide = useIsWide();
 
   /*
    * "start end" (section top reaching the viewport *bottom*) rather than
@@ -592,14 +641,25 @@ export function Landing() {
         The spacing below is tuned to keep all four cards on screen at once;
         if a card grows, shorten these rather than lengthening the runway.
       */}
-      <div ref={stickyRef} style={{ height: "180vh" }} className="relative">
+      <div
+        ref={stickyRef}
+        /* Only reserve a scroll runway on wide screens. On a phone the section
+           is a normal-height block and the cards simply stack. */
+        style={isWide ? { height: "180vh" } : undefined}
+        className="relative"
+      >
         {/* top-16, not top-0: the navbar is a 64px sticky band, so pinning flush
-            to the viewport top put the "How it works" eyebrow underneath it. */}
-        {/* min-h is the viewport *minus the navbar*, not a full 100vh: pinned at
-            top-16 there are only calc(100vh-4rem) visible pixels, so min-h-screen
-            guaranteed a 64px overflow at every window size. */}
-        <div className="sticky top-16 min-h-[calc(100vh-4rem)] overflow-visible">
-          <div className="flex min-h-[calc(100vh-4rem)] flex-col justify-start px-4 pb-[clamp(12px,1.5vw,20px)] pt-8 sm:px-6 lg:px-8">
+            to the viewport top put the "How it works" eyebrow underneath it.
+            min-h is the viewport *minus* that bar — min-h-screen guaranteed a
+            64px overflow at every window size. Neither applies below lg, where
+            nothing is pinned. */}
+        <div className={isWide ? "sticky top-16 min-h-[calc(100vh-4rem)] overflow-visible" : ""}>
+          <div
+            className={cn(
+              "flex flex-col justify-start px-4 pb-[clamp(12px,1.5vw,20px)] pt-8 sm:px-6 lg:px-8",
+              isWide ? "min-h-[calc(100vh-4rem)]" : "pb-14",
+            )}
+          >
             <div className="mx-auto w-full max-w-7xl">
 
               {/* Section header — eyebrow + scroll-driven text reveal */}
@@ -607,75 +667,51 @@ export function Landing() {
               <ScrollRevealText
                 text="Four steps from curious to running."
                 scrollProgress={smoothProgress}
+                animate={isWide}
               />
 
-              {/* Masonry layout — left col flush, right col pushed down 220px
-                  so the two columns genuinely overlap vertically at mid-scroll.
-                  `perspective` on this shared ancestor gives the rotateX/rotateZ
-                  tilt on each card real 3D depth instead of a flat skew.
-                  Each card fades in, un-tilts and un-scales, and rises together
-                  via its own useCardReveal() motion values. */}
-              <div className="mt-5 flex gap-5" style={{ perspective: "1000px" }}>
+              {/*
+                Two layouts rather than one that reflows, because the desktop
+                masonry puts 01/03 in the left column and 02/04 in the right —
+                collapsing that to one column reads 01, 03, 02, 04. On a phone
+                the steps have to run in order, so the narrow layout is a plain
+                sequential list.
+              */}
+              {isWide ? (
+                <div className="mt-5 flex gap-5" style={{ perspective: "1000px" }}>
+                  {/* Left column — cards 01 and 03 */}
+                  <div className="flex flex-1 flex-col gap-5">
+                    <StepReveal motion={cardMotionValues[0]} animate>
+                      <HowStepCard step={HOW_STEPS[0]} />
+                    </StepReveal>
+                    <StepReveal motion={cardMotionValues[2]} animate>
+                      <HowStepCard step={HOW_STEPS[2]} />
+                    </StepReveal>
+                  </div>
 
-                {/* Left column — cards 01 and 03 */}
-                <div className="flex flex-1 flex-col gap-5">
-                  <motion.div
-                    style={{
-                      y: cardMotionValues[0].y,
-                      opacity: cardMotionValues[0].opacity,
-                      rotateX: cardMotionValues[0].rotateX,
-                      rotateZ: cardMotionValues[0].rotateZ,
-                      scale: cardMotionValues[0].scale,
-                    }}
+                  {/* Right column — pushed down for masonry overlap. That offset
+                      is added to the section height twice over (here and as
+                      matching bottom padding), and at 240px it was what pushed
+                      the lower cards off screen. */}
+                  <div
+                    className="flex flex-1 flex-col gap-5"
+                    style={{ marginTop: "clamp(24px, 3vw, 44px)" }}
                   >
-                    <HowStepCard step={HOW_STEPS[0]} />
-                  </motion.div>
-                  <motion.div
-                    style={{
-                      y: cardMotionValues[2].y,
-                      opacity: cardMotionValues[2].opacity,
-                      rotateX: cardMotionValues[2].rotateX,
-                      rotateZ: cardMotionValues[2].rotateZ,
-                      scale: cardMotionValues[2].scale,
-                    }}
-                  >
-                    <HowStepCard step={HOW_STEPS[2]} />
-                  </motion.div>
+                    <StepReveal motion={cardMotionValues[1]} animate>
+                      <HowStepCard step={HOW_STEPS[1]} />
+                    </StepReveal>
+                    <StepReveal motion={cardMotionValues[3]} animate>
+                      <HowStepCard step={HOW_STEPS[3]} />
+                    </StepReveal>
+                  </div>
                 </div>
-
-                {/* Right column — pushed down for masonry overlap. Kept modest:
-                    this offset is added to the section's height twice over (once
-                    here, once as matching bottom padding), and at 240px it was
-                    what pushed the lower cards off screen. */}
-                <div
-                  className="flex flex-1 flex-col gap-5"
-                  style={{ marginTop: "clamp(24px, 3vw, 44px)" }}
-                >
-                  <motion.div
-                    style={{
-                      y: cardMotionValues[1].y,
-                      opacity: cardMotionValues[1].opacity,
-                      rotateX: cardMotionValues[1].rotateX,
-                      rotateZ: cardMotionValues[1].rotateZ,
-                      scale: cardMotionValues[1].scale,
-                    }}
-                  >
-                    <HowStepCard step={HOW_STEPS[1]} />
-                  </motion.div>
-                  <motion.div
-                    style={{
-                      y: cardMotionValues[3].y,
-                      opacity: cardMotionValues[3].opacity,
-                      rotateX: cardMotionValues[3].rotateX,
-                      rotateZ: cardMotionValues[3].rotateZ,
-                      scale: cardMotionValues[3].scale,
-                    }}
-                  >
-                    <HowStepCard step={HOW_STEPS[3]} />
-                  </motion.div>
+              ) : (
+                <div className="mt-5 flex flex-col gap-4">
+                  {HOW_STEPS.map((step) => (
+                    <HowStepCard key={step.n} step={step} />
+                  ))}
                 </div>
-
-              </div>
+              )}
             </div>
           </div>
         </div>
@@ -916,11 +952,18 @@ export function Landing() {
 function ScrollRevealText({
   text,
   scrollProgress,
+  animate = true,
 }: {
   text: string;
   scrollProgress: ReturnType<typeof useSpring>;
+  /** Off below `lg`, where the driving scroll progress never advances and every
+      character would otherwise stay at opacity 0. */
+  animate?: boolean;
 }) {
   const chars = text.split("");
+  if (!animate) {
+    return <h2 className="display text-[clamp(26px,7vw,48px)] leading-tight">{text}</h2>;
+  }
   return (
     <h2
       className="display text-[clamp(26px,3.6vw,48px)] leading-tight"
