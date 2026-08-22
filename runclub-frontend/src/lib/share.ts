@@ -24,7 +24,7 @@ export function eventToIcs(event: ClubEvent, assumedHours = 2): string {
   const lines = [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
-    "PRODID:-//B Squared Run Club//Events//EN",
+    "PRODID:-//Burn and Bond Run Club//Events//EN",
     "CALSCALE:GREGORIAN",
     "METHOD:PUBLISH",
     "BEGIN:VEVENT",
@@ -35,7 +35,7 @@ export function eventToIcs(event: ClubEvent, assumedHours = 2): string {
     `SUMMARY:${icsEscape(event.title)}`,
     `LOCATION:${icsEscape(event.location)}`,
     `DESCRIPTION:${icsEscape(
-      `${event.type} with B Squared Run Club.${
+      `${event.type} with Burn and Bond Run Club.${
         event.price > 0 ? ` Entry ₹${event.price}.` : " Free to enter."
       } Bring your QR ticket.`,
     )}`,

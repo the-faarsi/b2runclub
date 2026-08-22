@@ -1,5 +1,6 @@
 import { motion } from "framer-motion";
 import { useCallback, useState, type ReactNode } from "react";
+import { CLUB_NAME } from "../lib/brand";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { Logo } from "../components/layout";
 import { PageScene } from "../components/scene3d";
@@ -39,7 +40,7 @@ function AuthLayout({ children, aside }: { children: ReactNode; aside: ReactNode
         />
         <Logo />
         {aside}
-        <p className="text-xs text-ink-3">B Squared Run Club · {new Date().getFullYear()}</p>
+        <p className="text-xs text-ink-3">{CLUB_NAME} · {new Date().getFullYear()}</p>
       </div>
 
       {/* Right: the form */}

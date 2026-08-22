@@ -37,7 +37,7 @@ import { useFetch } from "../lib/useFetch";
 const PLACEHOLDER = {
   headline: "A running club that actually runs on time.",
   about:
-    "B Squared is a community running club. We meet for road runs, trail sessions and the occasional ride, and we finish with coffee. Everyone is welcome, whatever your pace.",
+    "Burn and Bond is a community running club. We meet for road runs, trail sessions and the occasional ride, and we finish with coffee. Everyone is welcome, whatever your pace.",
   mission: "Show up, run together, look after each other.",
 };
 
@@ -84,7 +84,7 @@ export function About() {
       <PageHeader
         eyebrow="About the club"
         title="Who we are"
-        description="What B Squared is, how it runs, and how to find us."
+        description="What Burn and Bond is, how it runs, and how to find us."
         action={
           isAdmin ? (
             <Button onClick={() => setEditing(true)}>Edit club details</Button>

@@ -15,6 +15,7 @@ import { ManageMembers } from "./pages/admin/ManageMembers";
 import { ManagePolls } from "./pages/admin/ManagePolls";
 import { Calendar } from "./pages/Calendar";
 import { About } from "./pages/About";
+import { PrivacyPage, RefundPage, TermsPage, VolunteerTermsPage } from "./pages/Policy";
 import { EventDetail } from "./pages/EventDetail";
 import { Gallery } from "./pages/Gallery";
 import { Events } from "./pages/Events";
@@ -84,6 +85,23 @@ export default function App() {
         {/* Gallery is view-only for members and visitors; posting is gated in the page. */}
         <Route path="/gallery" element={<Gallery />} />
         <Route path="/about" element={<About />} />
+
+        {/* Policies are public: someone deciding whether to join needs to read
+            the terms and the refund rules before they have an account. */}
+        <Route path="/terms" element={<TermsPage />} />
+        <Route path="/privacy" element={<PrivacyPage />} />
+        <Route path="/refunds" element={<RefundPage />} />
+
+        {/* Volunteer terms are for marshals. Admins can see it too — they are
+            the ones who brief volunteers on it. */}
+        <Route
+          path="/volunteer-terms"
+          element={
+            <Guard roles={["VOLUNTEER", "ADMIN"]}>
+              <VolunteerTermsPage />
+            </Guard>
+          }
+        />
 
         {/* Forum is club-only: VISITOR and signed-out users are turned away. */}
         <Route

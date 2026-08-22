@@ -1,5 +1,6 @@
 import { motion } from "framer-motion";
 import { useEffect, useState } from "react";
+import { CLUB_NAME } from "../lib/brand";
 import { Link } from "react-router-dom";
 import { api, ApiError } from "../lib/api";
 import { useAuth } from "../lib/auth";
@@ -14,6 +15,7 @@ import {
   ticketReady,
 } from "../lib/format";
 import { DUR, EASE } from "../lib/motion";
+import { REFUND_ONE_LINER, REFUND_WINDOW_HOURS } from "../lib/policies";
 import { CheckoutDismissed, isMockPayment, openCheckout } from "../lib/razorpay";
 import { downloadQr, extractQrDataUrl } from "../lib/share";
 import type { ClubEvent, Registration } from "../lib/types";
@@ -355,8 +357,25 @@ export function RegisterDialog({
             checked={waiver}
             onChange={setWaiver}
             label="I sign the liability waiver"
-            description="I confirm I am medically fit to take part, and I accept that B Squared Run Club is not liable for injury or loss during the event."
+            description={`I confirm I am medically fit to take part, and I accept that ${CLUB_NAME} is not liable for injury or loss during the event.`}
           />
+        </div>
+
+        {/* Refund terms shown before payment, not after. The wording comes from
+            lib/policies so it cannot drift from the refund page. */}
+        <div className="rounded-xl border border-gold/20 bg-gold/[0.04] p-4">
+          <p className="eyebrow mb-1.5 text-gold">Before you pay</p>
+          <p className="text-[13px] leading-relaxed text-ink-2">
+            {REFUND_ONE_LINER} Inside {REFUND_WINDOW_HOURS} hours the fee isn't refundable. If the
+            club cancels, you're refunded in full.{" "}
+            <Link
+              to="/refunds"
+              target="_blank"
+              className="font-medium text-gold underline-offset-2 hover:underline"
+            >
+              Full refund policy
+            </Link>
+          </p>
         </div>
 
         {error && (
@@ -484,7 +503,7 @@ export function TicketModal({
                       B<span className="ml-px text-[12px] leading-none">2</span>
                     </span>
                   </div>
-                  <p className="eyebrow mt-4">B Squared Run Club</p>
+                  <p className="eyebrow mt-4">{CLUB_NAME}</p>
                   <p className="mt-1 text-[13px] text-ink-3">Turning your ticket over…</p>
                 </div>
               </div>

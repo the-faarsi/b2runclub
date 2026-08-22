@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
+import { CLUB_MONOGRAM, CLUB_NAME, CLUB_WORDMARK } from "../lib/brand";
 import { cn, relativeTime, ROLE_META } from "../lib/format";
 import type { Notification } from "../lib/types";
 import { useFetch } from "../lib/useFetch";
@@ -13,19 +14,17 @@ import { Avatar, buttonClass } from "./ui";
 
 export function Logo({ compact = false }: { compact?: boolean }) {
   return (
-    <Link to="/" className="group flex items-center gap-2.5" aria-label="B Squared Run Club">
-      {/* B² monogram — solid gold plate, ink glyph */}
+    <Link to="/" className="group flex items-center gap-2.5" aria-label={CLUB_NAME}>
+      {/* Monogram — solid gold plate, ink glyph */}
       <span
         className="grid size-8 shrink-0 place-items-center rounded-[9px] bg-gold text-[color:var(--color-gold-ink)] transition-transform duration-300 group-hover:scale-105"
         aria-hidden
       >
-        <span className="display flex items-start text-[15px] leading-none">
-          B<span className="ml-px text-[9px] leading-none">2</span>
-        </span>
+        <span className="display text-[13px] leading-none">{CLUB_MONOGRAM}</span>
       </span>
       {!compact && (
         <span className="display text-[17px] tracking-[-0.02em]">
-          B SQUARED
+          {CLUB_WORDMARK}
           <span className="ml-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-ink-3">
             RC
           </span>
@@ -517,7 +516,55 @@ export function Navbar() {
 
 /* ── Page furniture ───────────────────────────────────────── */
 
-export function Page({ children, className }: { children: ReactNode; className?: string }) {
+/**
+ * Back control shown at the top of every page.
+ *
+ * Lives in <Page> rather than <PageHeader> on purpose: the two pages where a
+ * back link matters most — an event's detail page and race day — do not use
+ * PageHeader at all. The landing page does not use <Page>, so it is excluded
+ * without needing a special case.
+ *
+ * Falls back to a link home when there is no history to pop, which is what
+ * happens on a deep link, a hard refresh, or a fresh tab opened from an email.
+ * A `navigate(-1)` there either does nothing or leaves the site entirely.
+ */
+function BackControl() {
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  // `idx` is null until React Router has pushed at least one entry of its own.
+  const canGoBack = (location as { key?: string }).key !== "default";
+
+  return (
+    <button
+      onClick={() => (canGoBack ? navigate(-1) : navigate("/"))}
+      className="group mb-5 inline-flex items-center gap-1.5 text-[13px] font-medium text-ink-3 transition-colors hover:text-gold"
+    >
+      <svg viewBox="0 0 24 24" className="size-4" fill="none" aria-hidden>
+        <path
+          d="M19 12H5m0 0 6-6m-6 6 6 6"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="transition-transform duration-200 group-hover:-translate-x-0.5"
+        />
+      </svg>
+      {canGoBack ? "Back" : "Home"}
+    </button>
+  );
+}
+
+export function Page({
+  children,
+  className,
+  back = true,
+}: {
+  children: ReactNode;
+  className?: string;
+  /** Off for pages that are themselves an entry point, e.g. sign-in. */
+  back?: boolean;
+}) {
   return (
     <motion.main
       // Routes swing in on the X axis — a slight 3D hinge rather than a slide.
@@ -527,6 +574,7 @@ export function Page({ children, className }: { children: ReactNode; className?:
       style={{ perspective: 1400, transformStyle: "preserve-3d" }}
       className={cn("relative mx-auto w-full max-w-7xl px-4 pb-24 pt-8 sm:px-6 lg:px-8", className)}
     >
+      {back && <BackControl />}
       {children}
     </motion.main>
   );
@@ -571,6 +619,9 @@ export function Footer() {
    */
   const loadClub = useCallback(() => api.clubInfo(), []);
   const { data: club } = useFetch(loadClub);
+  // Gates the volunteer-terms link below. The route is guarded independently,
+  // so hiding it here is about not advertising a page you cannot open.
+  const { role } = useAuth();
 
   return (
     <footer className="border-t border-white/8 py-8">
@@ -578,7 +629,7 @@ export function Footer() {
         <div className="flex items-center gap-3">
           <Logo compact />
           <p className="text-xs text-ink-3">
-            B Squared Run Club · {new Date().getFullYear()}
+            {CLUB_NAME} · {new Date().getFullYear()}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-4">
@@ -597,6 +648,32 @@ export function Footer() {
             Gallery
           </Link>
           <p className="text-xs text-ink-3">Bring water.</p>
+        </div>
+      </div>
+
+      {/* Policies. Their own row rather than mixed in above: they are reference
+          material, and a member hunting for the refund rules should find them
+          in the same place on every page. */}
+      <div className="mx-auto mt-5 max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <Link to="/terms" className="text-xs text-ink-3 transition-colors hover:text-gold">
+            Club terms
+          </Link>
+          <Link to="/refunds" className="text-xs text-ink-3 transition-colors hover:text-gold">
+            Refund policy
+          </Link>
+          <Link to="/privacy" className="text-xs text-ink-3 transition-colors hover:text-gold">
+            Privacy policy
+          </Link>
+          {/* Only marshals and organisers can open this route, so only they see it. */}
+          {(role === "VOLUNTEER" || role === "ADMIN") && (
+            <Link
+              to="/volunteer-terms"
+              className="text-xs text-[color:var(--color-free)] transition-opacity hover:opacity-75"
+            >
+              Volunteer terms
+            </Link>
+          )}
         </div>
       </div>
 

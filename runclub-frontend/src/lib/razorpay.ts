@@ -120,7 +120,7 @@ export function openCheckout(opts: OpenOptions): Promise<CheckoutResult> {
       order_id: opts.orderId,
       amount: opts.amountPaise,
       currency: "INR",
-      name: "B Squared Run Club",
+      name: "Burn and Bond Run Club",
       description: opts.eventTitle,
       prefill: {
         name: opts.userName,
