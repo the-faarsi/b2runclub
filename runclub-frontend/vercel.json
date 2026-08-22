@@ -6,15 +6,15 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://REPLACE-WITH-YOUR-BACKEND-HOST/api/:path*"
+      "destination": "https://b2runclub-backend-rho.vercel.app/api/:path*"
     },
     {
       "source": "/uploads/:path*",
-      "destination": "https://REPLACE-WITH-YOUR-BACKEND-HOST/uploads/:path*"
+      "destination": "https://b2runclub-backend-rho.vercel.app/uploads/:path*"
     },
     {
       "source": "/health",
-      "destination": "https://REPLACE-WITH-YOUR-BACKEND-HOST/health"
+      "destination": "https://b2runclub-backend-rho.vercel.app/health"
     }
   ]
 }
