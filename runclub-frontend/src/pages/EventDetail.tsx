@@ -7,6 +7,7 @@ import { EventPhotoStrip } from "../components/eventPhotos";
 import { EventReminders } from "../components/eventReminders";
 import { EventResultsSheet, ResultsEditor } from "../components/eventResults";
 import { EventRoster } from "../components/eventRoster";
+import { QuickCheckIn } from "../components/quickCheckIn";
 import { RouteCard } from "../components/routeMap";
 import { CalendarIcon, DisciplineIcon, ShareIcon, SparkIcon } from "../components/icons";
 import { Page } from "../components/layout";
@@ -32,6 +33,7 @@ import {
   ticketReady,
 } from "../lib/format";
 import { useCountdown } from "../lib/motion";
+import { REFUND_ONE_LINER } from "../lib/policies";
 import { downloadIcs, shareEvent } from "../lib/share";
 import type { Registration } from "../lib/types";
 import { useFetch } from "../lib/useFetch";
@@ -135,6 +137,19 @@ export function EventDetail() {
         </svg>
         All events
       </Link>
+
+      {/*
+        Phone check-in, above the fold and above everything else for crew.
+        Sitting it in the action rail put it at y≈2191 on a 390px screen,
+        because the rail stacks below the whole article on mobile — an organiser
+        at the start line would have scrolled two thousand pixels to reach the
+        thing they opened the page for. Hidden once the event has run.
+      */}
+      {isCrew && !past && (
+        <div className="mb-6">
+          <QuickCheckIn event={event} />
+        </div>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-[1.6fr_1fr]">
         {/* ── Main ─────────────────────────────────────── */}
@@ -416,7 +431,9 @@ export function EventDetail() {
               </p>
             )}
 
-            {/* Crew console. Volunteers scan at the start line, so they get it too. */}
+            {/* Crew console. Volunteers scan at the start line, so they get it too.
+                The phone scanner above it is the one-tap path; this is the full
+                desk setup. */}
             {isCrew && (
               <>
                 <div className="hairline my-5" />
@@ -427,7 +444,7 @@ export function EventDetail() {
                   Open event-day console
                 </Link>
                 <p className="mt-2 text-center text-[11px] leading-relaxed text-ink-3">
-                  Ticket scanning, marshal posts and checkpoint tracking.
+                  Marshal posts, checkpoint tracking and the full roster.
                 </p>
               </>
             )}
@@ -443,7 +460,10 @@ export function EventDetail() {
           </Card>
 
           <p className="mt-4 px-2 text-[11px] leading-relaxed text-ink-3">
-            Cancellations up to 24 hours before the start are handled by an organiser in the forum.
+            {REFUND_ONE_LINER}{" "}
+            <Link to="/refunds" className="text-gold underline-offset-2 hover:underline">
+              Refund policy
+            </Link>
           </p>
         </div>
       </div>
