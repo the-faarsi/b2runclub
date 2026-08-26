@@ -1,5 +1,13 @@
-import { motion, useScroll, useTransform, useSpring, type MotionValue } from "framer-motion";
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  motion,
+  useScroll,
+  useTransform,
+  useSpring,
+  useVelocity,
+  useMotionValueEvent,
+  type MotionValue,
+} from "framer-motion";
+import { useCallback, useRef, useState, type ReactNode } from "react";
 import { gsap } from "gsap";
 import { SplitText } from "gsap/SplitText";
 import { useGSAP } from "@gsap/react";
@@ -22,8 +30,7 @@ import { Tilt, TiltLayer } from "../components/tilt";
 import { Avatar, buttonClass, Card, Skeleton } from "../components/ui";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
-import { cn, countdown, eventTime, fullDate, inr, isPast } from "../lib/format";
-import { REFUND_ONE_LINER, REFUND_WINDOW_HOURS } from "../lib/policies";
+import { countdown, eventTime, fullDate, inr, isPast } from "../lib/format";
 import { useFetch } from "../lib/useFetch";
 
 gsap.registerPlugin(SplitText);
@@ -60,6 +67,22 @@ function attachMagneticHover(el: HTMLElement | null, strength = 0.3) {
     el.removeEventListener("pointermove", handlePointerMove);
     el.removeEventListener("pointerleave", handlePointerLeave);
   };
+}
+
+/** Small chevron for the "keep scrolling" hint — local rather than pulled
+ *  from ../components/icons since this is a one-off, purely decorative mark. */
+function ChevronDownIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden>
+      <path
+        d="M5 9l7 7 7-7"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
 }
 
 const PILLARS = [
@@ -155,27 +178,6 @@ function StepReveal({
   );
 }
 
-/**
- * True at the `lg` breakpoint and up — the width at which the pinned, two-column
- * "How it works" section has room to work. Below it the section falls back to a
- * plain stacked list: a 180vh pinned runway and a side-by-side masonry are both
- * wrong on a 375px phone, where the two columns overflowed the viewport by up to
- * 96px and forced the whole page to scroll sideways.
- */
-function useIsWide() {
-  const [wide, setWide] = useState(
-    () => typeof window !== "undefined" && window.matchMedia("(min-width: 1024px)").matches,
-  );
-  useEffect(() => {
-    const mq = window.matchMedia("(min-width: 1024px)");
-    const onChange = () => setWide(mq.matches);
-    onChange();
-    mq.addEventListener("change", onChange);
-    return () => mq.removeEventListener("change", onChange);
-  }, []);
-  return wide;
-}
-
 export function Landing() {
   const { user } = useAuth();
 
@@ -202,9 +204,6 @@ export function Landing() {
 
   // ── Scroll refs for the "How it works" sticky section ──
   const stickyRef = useRef<HTMLDivElement>(null);
-  /* Below lg the section is a plain stacked list — no pin, no scroll-driven
-     reveal. See useIsWide(). */
-  const isWide = useIsWide();
 
   /*
    * "start end" (section top reaching the viewport *bottom*) rather than
@@ -266,6 +265,27 @@ export function Landing() {
   const card2 = useCardReveal(smoothProgress, [0.4, 0.74], 170);
   const card3 = useCardReveal(smoothProgress, [0.48, 0.9], 210);
   const cardMotionValues = [card0, card1, card2, card3];
+
+  // "Keep scrolling" hint (mobile/tablet, see the section below): fades in
+  // just after the heading starts writing on and fades out as card 04
+  // finishes, so it's never on screen for a fully blank or fully settled
+  // frame.
+  const scrollHintOpacity = useTransform(smoothProgress, [0, 0.05, 0.85, 0.97], [0, 1, 1, 0]);
+
+  // Direction for that hint: points down while the wheel is moving the
+  // section forward, flips to point up the moment the user backs out of it.
+  // Read off the raw scrollYProgress (not the spring) — smoothProgress lags
+  // by design, so its velocity briefly keeps the old sign for a beat after a
+  // real direction change, which showed the wrong arrow right when it
+  // mattered most. A small deadzone around 0 ignores the momentum-scroll
+  // "settling" jitter at the top/bottom of a fling, which would otherwise
+  // flicker the arrow between frames where velocity crosses zero.
+  const rawVelocity = useVelocity(scrollYProgress);
+  const [scrollDir, setScrollDir] = useState<"down" | "up">("down");
+  useMotionValueEvent(rawVelocity, "change", (v) => {
+    if (v > 0.02) setScrollDir("down");
+    else if (v < -0.02) setScrollDir("up");
+  });
 
   // ── Hero entrance choreography (GSAP) ──
   const heroRef = useRef<HTMLElement>(null);
@@ -393,6 +413,24 @@ export function Landing() {
         ref={heroRef}
         className="relative mx-auto max-w-7xl px-4 pb-16 pt-14 sm:px-6 sm:pt-20 lg:px-8"
       >
+        {/* Mobile + tablet: 3D graphic sits between the h1 and the paragraph.
+            Absolutely positioned so no div shifts — content stays in normal flow.
+            z-0 so text layers above it naturally.
+            10% inset on every side (rather than a fixed top/height) makes the
+            box resolve to 80% of the section's own width and height — since
+            the section's height is auto (driven by the in-flow content) and
+            this element is out of flow, top+bottom percentages resolve against
+            that resolved height once layout completes, so the graphic scales
+            with the section instead of being pinned to a fixed pixel band. */}
+        <div
+          className="pointer-events-none absolute inset-[10%] z-0 lg:hidden"
+          style={{ opacity: 0.5 }}
+          aria-hidden
+        >
+          <Hero3D className="h-full w-full" />
+        </div>
+
+        {/* Desktop: top-right corner, float + parallax via GSAP */}
         <div
           ref={heroGraphicRef}
           className="pointer-events-none absolute -top-10 right-[-6%] hidden h-[620px] w-[60%] lg:block"
@@ -569,7 +607,7 @@ export function Landing() {
       <Reveal>
         <section className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
           <div className="datastrip mb-10" />
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
             {[
               { label: "Sessions on the board", value: allEvents.length, suffix: "" },
               { label: "Published & open", value: upcoming.length, suffix: "" },
@@ -577,13 +615,16 @@ export function Landing() {
               { label: "Club distance", value: Math.round(clubKm), suffix: " km" },
             ].map((s) => (
               <Tilt key={s.label} max={8} lift={9}>
-                <Card hover className="hud edge-gold h-full p-6">
+                <Card
+                  hover
+                  className="hud edge-gold flex h-full min-h-[112px] flex-col justify-center rounded-[12px] p-4 sm:min-h-0 sm:p-6"
+                >
                   <TiltLayer depth={26}>
-                    <p className="display foil text-[40px] leading-none">
+                    <p className="display foil text-[28px] leading-none sm:text-[40px]">
                       <AnimatedNumber value={s.value} format={(v) => `${Math.round(v)}${s.suffix}`} />
                     </p>
                   </TiltLayer>
-                  <p className="eyebrow mt-3">{s.label}</p>
+                  <p className="eyebrow mt-2 sm:mt-3">{s.label}</p>
                 </Card>
               </Tilt>
             ))}
@@ -603,76 +644,97 @@ export function Landing() {
       */}
       <div
         ref={stickyRef}
-        /* Only reserve a scroll runway on wide screens. On a phone the section
-           is a normal-height block and the cards simply stack. */
-        style={isWide ? { height: "180vh" } : undefined}
+        style={{ height: "180vh" }}
         className="relative"
       >
         {/* top-16, not top-0: the navbar is a 64px sticky band, so pinning flush
-            to the viewport top put the "How it works" eyebrow underneath it.
-            min-h is the viewport *minus* that bar — min-h-screen guaranteed a
-            64px overflow at every window size. Neither applies below lg, where
-            nothing is pinned. */}
-        <div className={isWide ? "sticky top-16 min-h-[calc(100vh-4rem)] overflow-visible" : ""}>
-          <div
-            className={cn(
-              "flex flex-col justify-start px-4 pb-[clamp(12px,1.5vw,20px)] pt-8 sm:px-6 lg:px-8",
-              isWide ? "min-h-[calc(100vh-4rem)]" : "pb-14",
-            )}
-          >
+            to the viewport top put the "How it works" eyebrow underneath it. */}
+        {/* min-h capped at 640px below lg: uncapped min-h-[calc(100vh-4rem)]
+            forced this box to the full device height, but the mobile content
+            (heading + two 180px-floor cards per column) only ever needs
+            ~550-600px — on tall-screen phones that left 200px+ of dead space
+            under the last card. The cap doesn't touch the outer 180vh runway
+            or the scroll-progress math below (both are driven by stickyRef's
+            own fixed height, not by this box), so the reveal/card timing is
+            unaffected — only the leftover blank space shrinks. Desktop keeps
+            the uncapped height since the larger cards there actually use it. */}
+        <div className="sticky top-16 min-h-[min(calc(100vh-4rem),640px)] overflow-visible lg:min-h-[calc(100vh-4rem)]">
+          <div className="flex min-h-[min(calc(100vh-4rem),640px)] flex-col justify-start px-4 pb-[clamp(12px,1.5vw,20px)] pt-8 sm:px-6 lg:min-h-[calc(100vh-4rem)] lg:px-8">
             <div className="mx-auto w-full max-w-7xl">
 
               <p className="eyebrow mb-4 text-gold">How it works</p>
               <ScrollRevealText
                 text="Four steps from curious to running."
                 scrollProgress={smoothProgress}
-                animate={isWide}
+                animate
               />
 
-              {/*
-                Two layouts rather than one that reflows, because the desktop
-                masonry puts 01/03 in the left column and 02/04 in the right —
-                collapsing that to one column reads 01, 03, 02, 04. On a phone
-                the steps have to run in order, so the narrow layout is a plain
-                sequential list.
-              */}
-              {isWide ? (
-                <div className="mt-5 flex gap-5" style={{ perspective: "1000px" }}>
-                  {/* Left column — cards 01 and 03 */}
-                  <div className="flex flex-1 flex-col gap-5">
-                    <StepReveal motion={cardMotionValues[0]} animate>
-                      <HowStepCard step={HOW_STEPS[0]} />
-                    </StepReveal>
-                    <StepReveal motion={cardMotionValues[2]} animate>
-                      <HowStepCard step={HOW_STEPS[2]} />
-                    </StepReveal>
-                  </div>
+              <div className="mt-5 flex gap-5" style={{ perspective: "1000px" }}>
+                {/* Left column — cards 01 and 03. min-w-0 overrides the flex
+                    default of min-width: auto, which otherwise refuses to
+                    shrink a flex item below its content's intrinsic width —
+                    that's what previously overflowed narrow viewports by up
+                    to 96px and forced the page to scroll sideways. */}
+                <div className="flex min-w-0 flex-1 flex-col gap-5">
+                  <StepReveal motion={cardMotionValues[0]} animate>
+                    <HowStepCard step={HOW_STEPS[0]} />
+                  </StepReveal>
+                  <StepReveal motion={cardMotionValues[2]} animate>
+                    <HowStepCard step={HOW_STEPS[2]} />
+                  </StepReveal>
+                </div>
 
-                  {/* Right column — pushed down for masonry overlap. That offset
-                      is added to the section height twice over (here and as
-                      matching bottom padding), and at 240px it was what pushed
-                      the lower cards off screen. */}
-                  <div
-                    className="flex flex-1 flex-col gap-5"
-                    style={{ marginTop: "clamp(24px, 3vw, 44px)" }}
-                  >
-                    <StepReveal motion={cardMotionValues[1]} animate>
-                      <HowStepCard step={HOW_STEPS[1]} />
-                    </StepReveal>
-                    <StepReveal motion={cardMotionValues[3]} animate>
-                      <HowStepCard step={HOW_STEPS[3]} />
-                    </StepReveal>
-                  </div>
+                {/* Right column — pushed down for masonry overlap. That offset
+                    is added to the section height twice over (here and as
+                    matching bottom padding), and at 240px it was what pushed
+                    the lower cards off screen. */}
+                <div
+                  className="flex min-w-0 flex-1 flex-col gap-5"
+                  style={{ marginTop: "clamp(24px, 3vw, 44px)" }}
+                >
+                  <StepReveal motion={cardMotionValues[1]} animate>
+                    <HowStepCard step={HOW_STEPS[1]} />
+                  </StepReveal>
+                  <StepReveal motion={cardMotionValues[3]} animate>
+                    <HowStepCard step={HOW_STEPS[3]} />
+                  </StepReveal>
                 </div>
-              ) : (
-                <div className="mt-5 flex flex-col gap-4">
-                  {HOW_STEPS.map((step) => (
-                    <HowStepCard key={step.n} step={step} />
-                  ))}
-                </div>
-              )}
+              </div>
             </div>
           </div>
+
+          {/* Scroll hint — mobile/tablet only (lg+ shows every card at once
+              with no dead scroll, so the cue would be redundant there). This
+              section pins in place while the page keeps scrolling behind it,
+              which reads as "stuck" if someone pauses mid-reveal; the
+              bouncing chevrons say keep going. Opacity rides the same
+              scrollProgress driving the heading/cards: hidden at progress 0
+              (nothing to hint at yet), in by ~0.05 (right as the heading
+              starts revealing), and back out by ~0.9 as the last card
+              finishes and the section is about to unpin.
+              Direction flips with scrollDir: rotating the whole pair 180°
+              both turns the chevrons into an "up" mark and flips the
+              child's own downward bounce into an upward one (the bounce is
+              defined in the child's local space, so the parent's rotate
+              carries it along) — so scrolling back up shows the arrows
+              pointing and flowing the way that motion is actually going. */}
+          <motion.div
+            aria-hidden
+            style={{ opacity: scrollHintOpacity }}
+            className="pointer-events-none absolute inset-x-0 bottom-3 z-10 flex justify-center lg:hidden"
+          >
+            <motion.div
+              animate={{ y: [0, 7, 0], rotate: scrollDir === "up" ? 180 : 0 }}
+              transition={{
+                y: { duration: 1.5, repeat: Infinity, ease: "easeInOut" },
+                rotate: { duration: 0.25, ease: "easeOut" },
+              }}
+              className="flex flex-col items-center text-ink-3"
+            >
+              <ChevronDownIcon className="h-5 w-5" />
+              <ChevronDownIcon className="-mt-3 h-5 w-5 opacity-45" />
+            </motion.div>
+          </motion.div>
         </div>
       </div>
 
@@ -872,37 +934,26 @@ export function Landing() {
         </section>
       )}
 
-      {/* ── Terms and conditions ─────────────────────────────
-          Replaces the old "Turn up fifteen minutes early" section. The four
-          cards still carry the on-the-day practicalities, but the heading and
-          copy now point at the actual agreement, and the refund line comes
-          from lib/policies so it cannot disagree with the refund page. */}
+      {/* ── On the day ───────────────────────────────────── */}
       <section className="mx-auto max-w-7xl px-4 py-14 sm:px-6 lg:px-8">
         <Reveal>
           <div className="datastrip mb-10" />
           <div className="grid gap-8 lg:grid-cols-[1fr_1.1fr] lg:items-center">
             <div>
-              <p className="eyebrow mb-2 text-gold">Terms and conditions</p>
+              <p className="eyebrow mb-2 text-gold">On the day</p>
               <h2 className="display text-[clamp(26px,3.6vw,38px)]">
-                What you're agreeing to.
+                Turn up fifteen minutes early.
               </h2>
               <p className="mt-5 text-[15px] leading-relaxed text-ink-2">
-                Register for a session and you confirm you're medically fit to take part, and that
-                you take part at your own risk. There's a briefing fifteen minutes before every
-                start — the route, the junctions, where the marshals will be.
-              </p>
-              <p className="mt-3 text-[15px] leading-relaxed text-ink-2">
-                {REFUND_ONE_LINER} If the club cancels, everyone is refunded in full.
+                There's a briefing before every session — the route, the junctions, where the
+                marshals will be. Bring water and your own nutrition for anything over 10&nbsp;km.
               </p>
               <div className="mt-7 flex flex-wrap gap-3">
-                <Link to="/terms" className={buttonClass("gold", "md")}>
-                  Read the full terms
+                <Link to="/calendar" className={buttonClass("gold", "md")}>
+                  Pick a session
                 </Link>
-                <Link to="/refunds" className={buttonClass("outline", "md")}>
-                  Refund policy
-                </Link>
-                <Link to="/privacy" className={buttonClass("ghost", "md")}>
-                  Privacy
+                <Link to="/about" className={buttonClass("outline", "md")}>
+                  About the club
                 </Link>
               </div>
             </div>
@@ -912,11 +963,7 @@ export function Landing() {
                 { Icon: ClockIcon, t: "Briefing at −15", b: "Route, junctions, bag drop." },
                 { Icon: PinIcon, t: "Marshalled corners", b: "Gold bibs. Follow their calls." },
                 { Icon: TicketIcon, t: "Scan and go", b: "QR at the start line." },
-                {
-                  Icon: SparkIcon,
-                  t: `Refunds to −${REFUND_WINDOW_HOURS}h`,
-                  b: "Full refund before then.",
-                },
+                { Icon: SparkIcon, t: "Coffee after", b: "Always. Non-negotiable." },
               ].map((x, i) => (
                 <Reveal key={x.t} delay={i * 0.05}>
                   <Tilt max={7} lift={8}>
@@ -989,12 +1036,20 @@ function ScrollRevealText({
   animate?: boolean;
 }) {
   const chars = text.split("");
+  /* 26px floor overflowed to a wrapped second line on narrow phones — 3.6vw
+     (and 7vw here) only overtakes a 26px floor above a ~370-720px viewport,
+     so anything narrower was stuck at a flat 26px regardless of how little
+     room there was, and "Four steps from curious to running." doesn't fit
+     26px on a ~320-430px-wide screen. Lowering the floor to 20px and raising
+     the slope to 6.5vw makes it actually shrink on those widths (~21-27px
+     depending on device) while landing back on the same values as before at
+     sm/lg breakpoints, where there was already room to spare. */
   if (!animate) {
-    return <h2 className="display text-[clamp(26px,7vw,48px)] leading-tight">{text}</h2>;
+    return <h2 className="display text-[clamp(20px,6.5vw,48px)] leading-tight">{text}</h2>;
   }
   return (
     <h2
-      className="display text-[clamp(26px,3.6vw,48px)] leading-tight"
+      className="display text-[clamp(20px,6.5vw,48px)] leading-tight"
       aria-label={text}
     >
       {chars.map((char, i) => {
@@ -1056,14 +1111,18 @@ function HowStepCard({
   return (
     <Tilt max={4} lift={10}>
       <div
-        className="group relative overflow-hidden rounded-3xl"
+        className="group relative flex flex-col justify-between overflow-hidden rounded-3xl"
         style={{
           background: "#111214",
           padding: "clamp(24px, 3vw, 32px)",
           /* Was clamp(260px, 30vw, 340px) — 340px on a desktop width, well past
              what the number + badge + two lines of copy need. Two stacked cards
              at that height could not fit a viewport alongside the headline, so
-             the lower row sat below the fold for most of the scroll. */
+             the lower row sat below the fold for most of the scroll. Left as-is
+             here (not shrunk for the mobile no-description case) since this
+             feeds the sticky-runway/masonry height math above — the space
+             freed by hiding the description on mobile is instead redistributed
+             below via `justify-between`, not by shrinking the card. */
           minHeight: "clamp(180px, 17vw, 230px)",
         }}
       >
@@ -1074,57 +1133,66 @@ function HowStepCard({
           style={{ background: "rgba(255,255,255,0.08)" }}
         />
 
-        <p
-          className="display leading-none tnum select-none"
-          style={{
-            fontSize: "clamp(56px, 8vw, 88px)",
-            color: "rgba(255,255,255,0.08)",
-            letterSpacing: "-0.03em",
-          }}
-        >
-          {step.n}
-        </p>
-
-        <div className="mt-4 flex items-center gap-2">
-          <span
-            className="inline-flex items-center gap-1.5 rounded-full px-3 py-1"
-            style={{ background: step.badge.bg }}
-          >
-            <span className="text-[13px] leading-none" aria-hidden>
-              {step.badge.icon}
-            </span>
-            <span
-              className="text-[11px] font-bold uppercase tracking-[0.1em]"
-              style={{ color: step.badge.color }}
-            >
-              {step.badge.label}
-            </span>
-          </span>
-
-          <span
-            className="ml-auto rounded-full px-2.5 py-0.5 text-[10px] font-bold tracking-widest"
+        {/* Top group — number + badge row */}
+        <div>
+          <p
+            className="display leading-none tnum select-none"
             style={{
-              background: "rgba(255,255,255,0.06)",
-              color: "rgba(255,255,255,0.3)",
+              fontSize: "clamp(56px, 8vw, 88px)",
+              color: "rgba(255,255,255,0.08)",
+              letterSpacing: "-0.03em",
             }}
           >
-            STEP {step.n}
-          </span>
+            {step.n}
+          </p>
+
+          <div className="mt-4 flex flex-col items-start gap-2 sm:flex-row sm:items-center">
+            <span
+              className="inline-flex items-center gap-1.5 rounded-full px-3 py-1"
+              style={{ background: step.badge.bg }}
+            >
+              <span className="text-[13px] leading-none" aria-hidden>
+                {step.badge.icon}
+              </span>
+              <span
+                className="text-[11px] font-bold uppercase tracking-[0.1em]"
+                style={{ color: step.badge.color }}
+              >
+                {step.badge.label}
+              </span>
+            </span>
+
+            <span
+              className="rounded-full px-2.5 py-0.5 text-[10px] font-bold tracking-widest sm:ml-auto"
+              style={{
+                background: "rgba(255,255,255,0.06)",
+                color: "rgba(255,255,255,0.3)",
+              }}
+            >
+              STEP {step.n}
+            </span>
+          </div>
         </div>
 
-        <h3
-          className="mt-5 font-semibold leading-tight text-white"
-          style={{ fontSize: "clamp(17px, 2vw, 21px)" }}
-        >
-          {step.t}
-        </h3>
+        {/* Bottom group — title (+ description, sm and up). justify-between
+            on the card pins this to the bottom, so hiding the description on
+            mobile pushes the title down into the freed space instead of
+            leaving a gap underneath it. */}
+        <div className="mt-5">
+          <h3
+            className="font-semibold leading-tight text-white"
+            style={{ fontSize: "clamp(17px, 2vw, 21px)" }}
+          >
+            {step.t}
+          </h3>
 
-        <p
-          className="mt-2.5 text-[13px] leading-relaxed"
-          style={{ color: "rgba(255,255,255,0.38)" }}
-        >
-          {step.b}
-        </p>
+          <p
+            className="mt-2.5 hidden text-[13px] leading-relaxed sm:block"
+            style={{ color: "rgba(255,255,255,0.38)" }}
+          >
+            {step.b}
+          </p>
+        </div>
 
         <span
           aria-hidden

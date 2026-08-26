@@ -69,19 +69,12 @@ export function PageScene({
   const calm = useCalmMotion();
 
   useEffect(() => {
-    // Someone asking for reduced motion almost certainly does not want a
-    // WebGL canvas either. Skipping the mount entirely is both a stronger
-    // guarantee than "render a single frame" and free of GPU cost — and it
-    // means the chunk is never fetched for them.
     if (calm) return;
 
-    const wide = window.matchMedia("(min-width: 1024px)");
-    if (!wide.matches) {
-      const onChange = () => wide.matches && setEnabled(true);
-      wide.addEventListener("change", onChange);
-      return () => wide.removeEventListener("change", onChange);
-    }
-
+    // Previously gated on lg (1024px) to avoid the GPU cost on mobile, but
+    // the hero graphic is now intentionally shown on all sizes. WebGL is
+    // supported on every modern mobile browser (iOS Safari 8+, Chrome for
+    // Android since 2012), so the capability probe below is enough.
     if (!webglAvailable()) return;
 
     const idle = (
@@ -117,7 +110,7 @@ export function PageScene({
            widened the document by ~10px and gave every page with a scene a real
            horizontal scrollbar. It is decorative and -z-10, so nothing is lost
            by keeping it inside the viewport. */
-        "pointer-events-none absolute -top-16 right-0 -z-10 hidden h-[min(78vh,680px)] w-[64%] overflow-hidden lg:block",
+        "pointer-events-none absolute -top-16 right-0 -z-10 h-[min(78vh,680px)] w-[64%] overflow-hidden",
         className,
       )}
       style={{
