@@ -934,37 +934,26 @@ export function Landing() {
         </section>
       )}
 
-      {/* ── Terms and conditions ─────────────────────────────
-          Replaces the old "Turn up fifteen minutes early" section. The four
-          cards still carry the on-the-day practicalities, but the heading and
-          copy now point at the actual agreement, and the refund line comes
-          from lib/policies so it cannot disagree with the refund page. */}
+      {/* ── On the day ───────────────────────────────────── */}
       <section className="mx-auto max-w-7xl px-4 py-14 sm:px-6 lg:px-8">
         <Reveal>
           <div className="datastrip mb-10" />
           <div className="grid gap-8 lg:grid-cols-[1fr_1.1fr] lg:items-center">
             <div>
-              <p className="eyebrow mb-2 text-gold">Terms and conditions</p>
+              <p className="eyebrow mb-2 text-gold">On the day</p>
               <h2 className="display text-[clamp(26px,3.6vw,38px)]">
-                What you're agreeing to.
+                Turn up fifteen minutes early.
               </h2>
               <p className="mt-5 text-[15px] leading-relaxed text-ink-2">
-                Register for a session and you confirm you're medically fit to take part, and that
-                you take part at your own risk. There's a briefing fifteen minutes before every
-                start — the route, the junctions, where the marshals will be.
-              </p>
-              <p className="mt-3 text-[15px] leading-relaxed text-ink-2">
-                {REFUND_ONE_LINER} If the club cancels, everyone is refunded in full.
+                There's a briefing before every session — the route, the junctions, where the
+                marshals will be. Bring water and your own nutrition for anything over 10&nbsp;km.
               </p>
               <div className="mt-7 flex flex-wrap gap-3">
-                <Link to="/terms" className={buttonClass("gold", "md")}>
-                  Read the full terms
+                <Link to="/calendar" className={buttonClass("gold", "md")}>
+                  Pick a session
                 </Link>
-                <Link to="/refunds" className={buttonClass("outline", "md")}>
-                  Refund policy
-                </Link>
-                <Link to="/privacy" className={buttonClass("ghost", "md")}>
-                  Privacy
+                <Link to="/about" className={buttonClass("outline", "md")}>
+                  About the club
                 </Link>
               </div>
             </div>
@@ -974,11 +963,7 @@ export function Landing() {
                 { Icon: ClockIcon, t: "Briefing at −15", b: "Route, junctions, bag drop." },
                 { Icon: PinIcon, t: "Marshalled corners", b: "Gold bibs. Follow their calls." },
                 { Icon: TicketIcon, t: "Scan and go", b: "QR at the start line." },
-                {
-                  Icon: SparkIcon,
-                  t: `Refunds to −${REFUND_WINDOW_HOURS}h`,
-                  b: "Full refund before then.",
-                },
+                { Icon: SparkIcon, t: "Coffee after", b: "Always. Non-negotiable." },
               ].map((x, i) => (
                 <Reveal key={x.t} delay={i * 0.05}>
                   <Tilt max={7} lift={8}>
