@@ -50,7 +50,7 @@ export function HeroVideoPanel() {
       // The route answers { message, club } — not the record on its own, which
       // is what this used to assume, so the saved value was dropped from local
       // state and the panel showed the field as empty until a reload.
-      const { club: updated } = await api.updateClubInfo({ hero_video_url: next });
+      const { club: updated } = await api.saveClubInfo({ hero_video_url: next });
       setData(() => updated);
       setUrl(updated.hero_video_url ?? "");
       toast(next ? "Hero video updated." : "Hero video removed.", "ok");

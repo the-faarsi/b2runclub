@@ -700,7 +700,23 @@ export function Footer() {
 
           <FooterColumn title="Contact">
             {contact.length === 0 ? (
-              <li className="text-[13px] text-ink-3">Details coming soon.</li>
+              /* Nothing configured. A visitor gets the neutral line; an
+                 organiser gets told where to fix it, because "Details coming
+                 soon" reads like a design choice rather than an empty field —
+                 which is exactly how it went unnoticed in production while
+                 looking fine locally. */
+              role === "ADMIN" ? (
+                <li>
+                  <Link
+                    to="/about"
+                    className="tap text-[13px] text-gold transition-opacity hover:opacity-75"
+                  >
+                    Add contact details →
+                  </Link>
+                </li>
+              ) : (
+                <li className="text-[13px] text-ink-3">Details coming soon.</li>
+              )
             ) : (
               contact.map((c) => (
                 <li key={c.key}>

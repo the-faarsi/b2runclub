@@ -530,12 +530,6 @@ export const api = {
    * Admin edit of the club record. Only the keys sent are written, and an empty
    * string clears a nullable field — which is how the hero video is removed.
    */
-  updateClubInfo: (input: Partial<Omit<ClubInfo, "id" | "updated_at">>) =>
-    request<{ message: string; club: ClubInfo }>("/api/content/club", {
-      method: "PUT",
-      body: input,
-    }),
-
   saveClubInfo: (input: Partial<Omit<ClubInfo, "id" | "updated_at">>) =>
     request<{ message: string; club: ClubInfo }>("/api/content/club", {
       method: "PUT",
