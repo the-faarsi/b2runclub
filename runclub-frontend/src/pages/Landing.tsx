@@ -12,29 +12,19 @@ import { gsap } from "gsap";
 import { SplitText } from "gsap/SplitText";
 import { useGSAP } from "@gsap/react";
 import { Link } from "react-router-dom";
-import { EventCard } from "../components/events";
 import { ClubFeatures, JoinBanner } from "../components/clubFeatures";
 import { CollaboratorScroller } from "../components/collaborators";
-import { CommunityLinks } from "../components/communityLinks";
 import { Founders } from "../components/founders";
 import { HeroVideo } from "../components/heroVideo";
 import { Hero3D, RunnerScene } from "../components/scene3d";
-import {
-  CalendarIcon,
-  ClockIcon,
-  DisciplineIcon,
-  PinIcon,
-  SparkIcon,
-  TicketIcon,
-} from "../components/icons";
+import { DisciplineIcon } from "../components/icons";
 import { AnimatedNumber, Reveal } from "../components/motion";
-import { PillarCard } from "../components/PillarCard";
-import { Tilt, TiltLayer } from "../components/tilt";
-import { Avatar, buttonClass, Card, Skeleton } from "../components/ui";
+import { Tilt } from "../components/tilt";
+import { buttonClass, Card, Skeleton } from "../components/ui";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { countdown, eventTime, fullDate, inr, isPast } from "../lib/format";
-import { REFUND_ONE_LINER, REFUND_WINDOW_HOURS } from "../lib/policies";
+import { REFUND_ONE_LINER } from "../lib/policies";
 import { useFetch } from "../lib/useFetch";
 
 gsap.registerPlugin(SplitText);
@@ -88,29 +78,6 @@ function ChevronDownIcon({ className }: { className?: string }) {
     </svg>
   );
 }
-
-const PILLARS = [
-  {
-    Icon: CalendarIcon,
-    title: "Run the calendar",
-    body: "Road, trail, rides and the odd party.",
-    // Drop your image at public/pillars/calendar.jpg — omit this key entirely
-    // if you don't have one yet; the card works without it.
-    image: "/pillars/calendar.jpg",
-  },
-  {
-    Icon: TicketIcon,
-    title: "Carry a QR ticket",
-    body: "Every spot gets a scannable ticket.",
-    image: "/pillars/ticket.jpg",
-  },
-  {
-    Icon: SparkIcon,
-    title: "Decide together",
-    body: "Polls pick the routes. The forum carries the rest.",
-    image: "/pillars/decide.jpg",
-  },
-];
 
 const HOW_STEPS = [
   {
@@ -188,8 +155,6 @@ export function Landing() {
   const load = useCallback(() => api.events(), []);
   const { data: events, loading } = useFetch(load);
 
-  const loadGallery = useCallback(() => api.gallery(), []);
-  const { data: gallery } = useFetch(loadGallery);
   const loadBoard = useCallback(() => api.leaderboard(), []);
   const { data: leaderboard } = useFetch(loadBoard);
 
@@ -198,11 +163,8 @@ export function Landing() {
     .sort((a, b) => +new Date(a.date_time) - +new Date(b.date_time));
 
   const next = upcoming[0];
-  const rest = upcoming.slice(1, 4);
 
   const allEvents = events ?? [];
-  const disciplines = new Set(allEvents.map((e) => e.type)).size;
-  const photos = gallery ?? [];
   const board = leaderboard?.leaderboard ?? [];
   const clubKm = board.reduce((sum, r) => sum + r.weekly_distance_km, 0);
 
@@ -595,71 +557,27 @@ export function Landing() {
         </div>
       </section>
 
-      {/* ── Pillars ──────────────────────────────────────── */}
-      <section className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
-        <div className="grid gap-4 sm:grid-cols-3">
-          {PILLARS.map((p, i) => (
-            <motion.div
-              key={p.title}
-              initial={{ opacity: 0, y: 14 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true, margin: "-60px" }}
-              transition={{ duration: 0.45, delay: i * 0.08, ease: [0.16, 1, 0.3, 1] }}
-              className="h-full"
-            >
-              <PillarCard pillar={p} />
-            </motion.div>
-          ))}
-        </div>
-      </section>
 
-      {/* ── More events ──────────────────────────────────── */}
-      {rest.length > 0 && (
-        <section className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
-          <div className="mb-6 flex items-end justify-between gap-4">
-            <div>
-              <p className="eyebrow mb-2 text-gold">Also on the board</p>
-              <h2 className="display text-[clamp(24px,3vw,32px)]">Coming up</h2>
-            </div>
-            <Link
-              to="/events"
-              className="text-[13px] font-medium text-ink-3 transition-colors hover:text-gold"
-            >
-              All events →
-            </Link>
-          </div>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {rest.map((e, i) => (
-              <EventCard key={e.id} event={e} index={i} />
-            ))}
-          </div>
-        </section>
-      )}
 
-      {/* ── By the numbers ─────────── */}
+      {/* ── Club, in three numbers ───────────────────────── */}
+      {/* A hairline row rather than four tilting cards. The numbers are the
+          only part anyone reads, and on a page whose job is to get somebody to
+          join, four more cards was four more things to look at. */}
       <Reveal>
-        <section className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
-          <div className="datastrip mb-10" />
-          <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+        <section className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
+          <div className="rule-gold mb-8" />
+          <div className="grid grid-cols-3 gap-4">
             {[
-              { label: "Sessions on the board", value: allEvents.length, suffix: "" },
-              { label: "Published & open", value: upcoming.length, suffix: "" },
-              { label: "Disciplines", value: disciplines, suffix: "" },
-              { label: "Club distance", value: Math.round(clubKm), suffix: " km" },
+              { label: "Sessions", value: allEvents.length, suffix: "" },
+              { label: "Open now", value: upcoming.length, suffix: "" },
+              { label: "Club km", value: Math.round(clubKm), suffix: "" },
             ].map((s) => (
-              <Tilt key={s.label} max={8} lift={9}>
-                <Card
-                  hover
-                  className="hud edge-gold flex h-full min-h-[112px] flex-col justify-center rounded-[12px] p-4 sm:min-h-0 sm:p-6"
-                >
-                  <TiltLayer depth={26}>
-                    <p className="display foil text-[28px] leading-none sm:text-[40px]">
-                      <AnimatedNumber value={s.value} format={(v) => `${Math.round(v)}${s.suffix}`} />
-                    </p>
-                  </TiltLayer>
-                  <p className="eyebrow mt-2 sm:mt-3">{s.label}</p>
-                </Card>
-              </Tilt>
+              <div key={s.label} className="text-center sm:text-left">
+                <p className="display foil text-[clamp(30px,6vw,52px)] leading-none">
+                  <AnimatedNumber value={s.value} format={(v) => `${Math.round(v)}${s.suffix}`} />
+                </p>
+                <p className="eyebrow mt-2">{s.label}</p>
+              </div>
             ))}
           </div>
         </section>
@@ -670,7 +588,6 @@ export function Landing() {
           and it used to be absent from the page entirely — the club's own
           features were only discoverable after signing up. */}
       <ClubFeatures />
-      <JoinBanner />
 
       {/* ── How it works — scroll-driven sticky section ───── */}
       {/*
@@ -782,8 +699,8 @@ export function Landing() {
       <section className="mx-auto max-w-7xl px-4 py-14 sm:px-6 lg:px-8">
         <Reveal>
           <div className="datastrip mb-10" />
-          <p className="eyebrow mb-2 text-gold">Where you fit</p>
-          <h2 className="display text-[clamp(26px,3.6vw,38px)]">Three ways to be here.</h2>
+          <p className="eyebrow mb-2 text-gold">How you join</p>
+          <h2 className="display text-[clamp(26px,3.6vw,38px)]">Two ways to join.</h2>
         </Reveal>
 
         {/* 2-Column viewport split: left side reserved for future content, cards on the right */}
@@ -794,12 +711,11 @@ export function Landing() {
             <RunnerScene className="h-full w-full" />
           </div>
 
-          {/* Right Column — Cards Grid Alignment (2 square cards on top, 1 full-width card underneath) */}
+          {/* Right column — the two ways in */}
           <div className="grid gap-4">
             
-            {/* Top row: Member and Volunteer side by side. Visitor is the
-                full-width card below — it used to appear in this array too, so
-                it rendered twice on the page.
+            {/* Member and Volunteer. The third card told visitors they were
+                allowed to browse, which they were already doing.
                 No `aspect-square`: forcing a square on a ~570px column left a
                 large dead gap between the heading and the bullets, and made
                 these two cards look unrelated to the wider one underneath. */}
@@ -851,39 +767,6 @@ export function Landing() {
               ))}
             </div>
 
-            {/* Bottom Row: Card 3 spanning full width */}
-            <Reveal delay={0.14}>
-              <Tilt max={7} lift={9}>
-                <Card hover className="hud edge-gold p-6">
-                  <span
-                    className="inline-flex items-center gap-2 rounded-full px-2.5 py-1"
-                    style={{
-                      background: "color-mix(in oklab, var(--color-ink-3) 14%, transparent)",
-                      color: "var(--color-ink-3)",
-                    }}
-                  >
-                    <span className="size-1.5 rounded-full" style={{ background: "var(--color-ink-3)" }} />
-                    <span className="text-[10px] font-bold uppercase tracking-[0.14em]">
-                      Visitor
-                    </span>
-                  </span>
-                  <p className="display mt-4 text-[20px]">You're just looking.</p>
-                  <ul className="mt-4 grid gap-2.5 sm:grid-cols-3">
-                    {[
-                      "Browse the calendar and gallery",
-                      "See polls and the leaderboard",
-                      "No account needed to look around",
-                    ].map((perk) => (
-                      <li key={perk} className="flex gap-2.5 text-[13px] leading-relaxed text-ink-2">
-                        <span className="mt-1.5 size-1 shrink-0 rounded-full bg-gold" aria-hidden />
-                        {perk}
-                      </li>
-                    ))}
-                  </ul>
-                </Card>
-              </Tilt>
-            </Reveal>
-
           </div>
         </div>
       </section>
@@ -894,184 +777,41 @@ export function Landing() {
           organiser adds people at /admin/founders. */}
       <Founders />
 
-      {/* ── Contact ──────────────────────────────────────── */}
-      {/* Sits mid-page, straight after "where you fit": someone who has just read
-          how the club works is the person most likely to reach out. */}
-      <CommunityLinks />
 
-      {/* ── Gallery preview ──────────────────────────────── */}
-      {photos.length > 0 && (
-        <section className="mx-auto max-w-7xl px-4 py-14 sm:px-6 lg:px-8">
-          <Reveal>
-            <div className="datastrip mb-10" />
-            <div className="flex flex-wrap items-end justify-between gap-4">
-              <div>
-                <p className="eyebrow mb-2 text-gold">From the club</p>
-                <h2 className="display text-[clamp(26px,3.6vw,38px)]">Lately, in pictures</h2>
-              </div>
-              <Link to="/gallery" className="text-[13px] font-medium text-ink-3 hover:text-gold">
-                Full gallery →
-              </Link>
-            </div>
-          </Reveal>
 
-          <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {photos.slice(0, 4).map((ph, i) => (
-              <Reveal key={ph.id} delay={i * 0.06}>
-                <Tilt max={9} lift={10}>
-                  <Link
-                    to="/gallery"
-                    className="group block overflow-hidden rounded-[var(--radius-card)] border border-white/8"
-                  >
-                    <img
-                      src={ph.url}
-                      alt={ph.caption ?? "Club photo"}
-                      loading="lazy"
-                      className="aspect-[4/3] w-full object-cover transition-transform duration-500 group-hover:scale-105"
-                    />
-                  </Link>
-                </Tilt>
-              </Reveal>
-            ))}
+
+      {/* ── Terms, as a single line ──────────────────────── */}
+      {/* Was a two-column section with a heading, two paragraphs, three buttons
+          and four cards. The obligation is to make the terms reachable, not to
+          reprint them on the home page — so this is one line and the links. */}
+      <section className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
+        <div className="rule-gold mb-7" />
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-[13px] leading-relaxed text-ink-3">
+            You take part at your own risk. {REFUND_ONE_LINER}
+          </p>
+          <div className="flex shrink-0 flex-wrap gap-x-4 gap-y-2">
+            <Link to="/terms" className="text-[13px] text-gold transition-opacity hover:opacity-70">
+              Club terms
+            </Link>
+            <Link to="/refunds" className="text-[13px] text-gold transition-opacity hover:opacity-70">
+              Refunds
+            </Link>
+            <Link to="/privacy" className="text-[13px] text-gold transition-opacity hover:opacity-70">
+              Privacy
+            </Link>
           </div>
-        </section>
-      )}
-
-      {/* ── This week's board ────────────────────────────── */}
-      {board.length > 0 && (
-        <section className="mx-auto max-w-7xl px-4 py-14 sm:px-6 lg:px-8">
-          <Reveal>
-            <div className="datastrip mb-10" />
-            <div className="flex flex-wrap items-end justify-between gap-4">
-              <div>
-                <p className="eyebrow mb-2 text-gold">This week</p>
-                <h2 className="display text-[clamp(26px,3.6vw,38px)]">Who's putting the miles in</h2>
-              </div>
-              <Link to="/leaderboard" className="text-[13px] font-medium text-ink-3 hover:text-gold">
-                Full board →
-              </Link>
-            </div>
-          </Reveal>
-
-          <Reveal delay={0.05}>
-            <Card className="hud mt-8 overflow-hidden p-0">
-              <ol>
-                {board.slice(0, 5).map((r, i) => (
-                  <li
-                    key={r.user_id}
-                    className="flex items-center gap-4 border-b border-white/5 px-5 py-3.5 last:border-0"
-                  >
-                    <span className="display tnum w-7 text-center text-[15px] text-gold">
-                      {i + 1}
-                    </span>
-                    <Avatar name={r.name} size={32} />
-                    <span className="min-w-0 flex-1 truncate text-[13.5px] font-medium text-ink">
-                      {r.name}
-                    </span>
-                    <span className="tnum text-[13px] font-semibold text-ink">
-                      {r.weekly_distance_km.toFixed(1)}
-                      <span className="ml-0.5 text-[11px] font-normal text-ink-3">km</span>
-                    </span>
-                  </li>
-                ))}
-              </ol>
-            </Card>
-          </Reveal>
-        </section>
-      )}
-
-      {/* ── Terms and conditions ─────────────────────────────
-          Replaces the old "Turn up fifteen minutes early" section. The four
-          cards still carry the on-the-day practicalities; the heading and copy
-          point at the actual agreement, and the refund line comes from
-          lib/policies so it cannot disagree with the refund page. */}
-      <section className="mx-auto max-w-7xl px-4 py-14 sm:px-6 lg:px-8">
-        <Reveal>
-          <div className="datastrip mb-10" />
-          <div className="grid gap-8 lg:grid-cols-[1fr_1.1fr] lg:items-center">
-            <div>
-              <p className="eyebrow mb-2 text-gold">Terms and conditions</p>
-              <h2 className="display text-[clamp(26px,3.6vw,38px)]">
-                What you're agreeing to.
-              </h2>
-              {/* Two lines rather than four. The full text lives on /terms,
-                  which is one tap away below. */}
-              <p className="mt-5 text-[15px] leading-relaxed text-ink-2">
-                You take part at your own risk, and confirm you're fit to. Briefing is fifteen
-                minutes before every start.
-              </p>
-              <p className="mt-3 text-[15px] leading-relaxed text-ink-2">{REFUND_ONE_LINER}</p>
-              <div className="mt-7 flex flex-wrap gap-3">
-                <Link to="/terms" className={buttonClass("gold", "md")}>
-                  Read the full terms
-                </Link>
-                <Link to="/refunds" className={buttonClass("outline", "md")}>
-                  Refund policy
-                </Link>
-                <Link to="/privacy" className={buttonClass("ghost", "md")}>
-                  Privacy
-                </Link>
-              </div>
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-2">
-              {[
-                { Icon: ClockIcon, t: "Briefing at −15", b: "Route, junctions, bag drop." },
-                { Icon: PinIcon, t: "Marshalled corners", b: "Gold bibs. Follow their calls." },
-                { Icon: TicketIcon, t: "Scan and go", b: "QR at the start line." },
-                {
-                  Icon: SparkIcon,
-                  t: `Refunds to −${REFUND_WINDOW_HOURS}h`,
-                  b: "Full refund before then.",
-                },
-              ].map((x, i) => (
-                <Reveal key={x.t} delay={i * 0.05}>
-                  <Tilt max={7} lift={8}>
-                    <Card hover className="hud edge-gold h-full p-5">
-                      <span className="grid size-9 place-items-center rounded-xl border border-gold/25 bg-gold/8 text-gold">
-                        <x.Icon className="size-4" />
-                      </span>
-                      <p className="mt-3 text-[14px] font-semibold text-ink">{x.t}</p>
-                      <p className="mt-1 text-[12.5px] text-ink-3">{x.b}</p>
-                    </Card>
-                  </Tilt>
-                </Reveal>
-              ))}
-            </div>
-          </div>
-        </Reveal>
+        </div>
       </section>
 
       <CollaboratorScroller />
 
-      {/* ── Closing CTA ──────────────────────────────────── */}
-      {!user && (
-        <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
-          <Card className="relative overflow-hidden p-8 text-center sm:p-12">
-            <div
-              className="pointer-events-none absolute inset-x-0 -bottom-32 h-64 opacity-[0.16] blur-3xl"
-              style={{ background: "var(--color-gold)" }}
-              aria-hidden
-            />
-            <div className="relative">
-              <h2 className="display text-[clamp(28px,4vw,44px)]">
-                Next run leaves without you.
-              </h2>
-              <p className="mx-auto mt-4 max-w-md text-[15px] text-ink-2">
-                Member to run, volunteer to marshal for free.
-              </p>
-              <div className="mt-8 flex flex-wrap justify-center gap-3">
-                <Link to="/signup" className={buttonClass("gold", "lg")}>
-                  Create your account
-                </Link>
-                <Link to="/login" className={buttonClass("outline", "lg")}>
-                  I have one
-                </Link>
-              </div>
-            </div>
-          </Card>
-        </section>
-      )}
+      {/* ── The ask ──────────────────────────────────────── */}
+      {/* One join panel, last. There used to be this and a mid-page banner and
+          a separate closing card; on a page this short, one is enough. Renders
+          nothing for anyone already signed in. */}
+      <JoinBanner />
+
     </>
   );
 }

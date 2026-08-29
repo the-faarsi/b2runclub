@@ -27,74 +27,10 @@ interface Feature {
   members?: boolean;
 }
 
-/** Small marks used only here, so they stay out of the shared icon set. */
-function TrophyIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" className={className ?? "size-4"} fill="none" aria-hidden>
-      <path
-        d="M8 4h8v5a4 4 0 0 1-8 0V4Z"
-        stroke="currentColor"
-        strokeWidth="1.9"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M8 5.5H5.5a2.5 2.5 0 0 0 2.5 4M16 5.5h2.5a2.5 2.5 0 0 1-2.5 4"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinecap="round"
-      />
-      <path
-        d="M12 13v3m-3.5 4h7m-5-4h3l.5 4h-4l.5-4Z"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
+/** Local mark, kept out of the shared icon set since only this file uses it. */
 
-function ChatIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" className={className ?? "size-4"} fill="none" aria-hidden>
-      <path
-        d="M4 5.5h16v10H9l-5 3.5V5.5Z"
-        stroke="currentColor"
-        strokeWidth="1.9"
-        strokeLinejoin="round"
-      />
-      <path d="M8 9h8M8 12h5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
-    </svg>
-  );
-}
 
-function CameraIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" className={className ?? "size-4"} fill="none" aria-hidden>
-      <path
-        d="M3.5 8.5h3l1.5-2h8l1.5 2h3v10h-17v-10Z"
-        stroke="currentColor"
-        strokeWidth="1.9"
-        strokeLinejoin="round"
-      />
-      <circle cx="12" cy="13" r="3.2" stroke="currentColor" strokeWidth="1.8" />
-    </svg>
-  );
-}
 
-function StopwatchIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" className={className ?? "size-4"} fill="none" aria-hidden>
-      <circle cx="12" cy="13.5" r="7.5" stroke="currentColor" strokeWidth="1.9" />
-      <path
-        d="M12 10v3.5l2.5 1.5M10 2.5h4M12 2.5V6"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
-}
 
 function VoteIcon({ className }: { className?: string }) {
   return (
@@ -109,9 +45,17 @@ function VoteIcon({ className }: { className?: string }) {
   );
 }
 
+/*
+ * Four, not eight.
+ *
+ * Eight tiles was a catalogue, and the page's job is to get somebody to join,
+ * not to inventory the app. These four are the ones that answer "what do I
+ * actually get" — the sessions, the ticket, a say in the routes, and the way to
+ * come for free. The rest are one tap away in the nav once you are in.
+ */
 const FEATURES: Feature[] = [
   {
-    label: "Weekly calendar",
+    label: "Weekly sessions",
     line: "Road, trail, rides and socials.",
     to: "/calendar",
     tint: "var(--color-gold)",
@@ -133,41 +77,11 @@ const FEATURES: Feature[] = [
     Icon: VoteIcon,
   },
   {
-    label: "Weekly board",
-    line: "Distance, streaks and PBs.",
-    to: "/leaderboard",
-    tint: "var(--color-free)",
-    Icon: TrophyIcon,
-  },
-  {
-    label: "Club forum",
-    line: "Announcements and lift shares.",
-    to: "/forum",
-    tint: "#38bdf8",
-    Icon: ChatIcon,
-    members: true,
-  },
-  {
-    label: "Photo gallery",
-    line: "Every session, shot by shot.",
-    to: "/gallery",
-    tint: "#fb7185",
-    Icon: CameraIcon,
-  },
-  {
     label: "Volunteer free",
     line: "Marshal a corner, pay nothing.",
     to: "/signup",
     tint: "var(--color-free)",
     Icon: UsersIcon,
-  },
-  {
-    label: "Results & splits",
-    line: "Times posted after the finish.",
-    to: "/profile",
-    tint: "var(--color-pending)",
-    Icon: StopwatchIcon,
-    members: true,
   },
 ];
 
