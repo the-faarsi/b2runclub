@@ -2,6 +2,7 @@ import { motion } from "framer-motion";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { DataTable } from "../../components/charts";
+import { EventCoverBackdrop } from "../../components/eventCover";
 import { EventFormModal } from "../../components/eventForm";
 import { DisciplineIcon, SearchIcon } from "../../components/icons";
 import { Page, PageHeader } from "../../components/layout";
@@ -186,8 +187,11 @@ export function ManageEvents() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.32, delay: Math.min(i * 0.04, 0.24) }}
               >
-                <Card className="p-5">
-                  <div className="flex flex-wrap items-start gap-4">
+                <Card className="group relative overflow-hidden p-5">
+                  {/* The cover the organiser set, so this list doubles as a
+                      check that the right picture landed on the right event. */}
+                  <EventCoverBackdrop url={ev.cover_url} scrim="row" />
+                  <div className="relative flex flex-wrap items-start gap-4">
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="text-[11px] text-gold" aria-hidden>

@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { CancelRegistrationDialog } from "../components/cancelDialog";
 import { RegisterDialog, TicketModal } from "../components/events";
 import { EventFormModal } from "../components/eventForm";
+import { EventCoverBackdrop } from "../components/eventCover";
 import { DisciplineIcon, PlusIcon, TrackGraphic } from "../components/icons";
 import { Page, PageHeader } from "../components/layout";
 import { PageScene } from "../components/scene3d";
@@ -501,9 +502,14 @@ export function Calendar() {
                         return (
                           <div
                             key={ev.id}
-                            className="rounded-xl border border-white/8 bg-surface-2/50 p-4"
+                            className="group relative overflow-hidden rounded-xl border border-white/8 bg-surface-2/50 p-4"
                           >
-                            <div className="flex flex-wrap items-center gap-2">
+                            {/* Cover behind the row. `row` scrim fades left to
+                                right, so the text side stays near-solid while
+                                the picture reads on the right. */}
+                            <EventCoverBackdrop url={ev.cover_url} scrim="row" />
+
+                            <div className="relative flex flex-wrap items-center gap-2">
                               <span className="text-[11px] text-gold" aria-hidden>
                                 <DisciplineIcon type={ev.type} className="size-3.5" />
                               </span>
@@ -518,18 +524,18 @@ export function Calendar() {
                               )}
                             </div>
 
-                            <p className="mt-1.5 text-[13px] text-ink-3">
+                            <p className="relative mt-1.5 text-[13px] text-ink-3">
                               {eventTime(ev.date_time)} · {ev.location} ·{" "}
                               {ev.price === 0 ? "Free" : inr(ev.price)}
                             </p>
 
                             {!past && left && (
-                              <p className="tnum mt-1 text-[11px] font-semibold uppercase tracking-wider text-gold">
+                              <p className="tnum relative mt-1 text-[11px] font-semibold uppercase tracking-wider text-gold">
                                 starts in {left}
                               </p>
                             )}
 
-                            <div className="mt-4">
+                            <div className="relative mt-4">
                               {reg ? (
                                 <div className="space-y-2.5">
                                   <Badge

@@ -18,6 +18,7 @@ import { DUR, EASE } from "../lib/motion";
 import { REFUND_ONE_LINER, REFUND_WINDOW_HOURS } from "../lib/policies";
 import { CheckoutDismissed, isMockPayment, openCheckout } from "../lib/razorpay";
 import { downloadQr, extractQrDataUrl } from "../lib/share";
+import { EventCoverBackdrop } from "./eventCover";
 import type { ClubEvent, Registration } from "../lib/types";
 import { ClockIcon, DisciplineIcon, DownloadIcon, PinIcon } from "./icons";
 import { Confetti, Spotlight } from "./motion";
@@ -60,8 +61,13 @@ export function EventCard({
     >
       <Tilt className="h-full" max={8} lift={9}>
       <Spotlight className="h-full rounded-[var(--radius-card)]">
-        <Card hover className="group h-full overflow-hidden edge-gold">
-          <Link to={`/events/${event.id}`} className="flex h-full flex-col p-5">
+        <Card hover className="group relative h-full overflow-hidden edge-gold">
+          {/* The organiser's cover, as the card's own background. Heavily
+              scrimmed — small text runs across the whole face here, unlike the
+              detail hero where it sits in one corner. */}
+          <EventCoverBackdrop url={event.cover_url} scrim="card" />
+
+          <Link to={`/events/${event.id}`} className="relative flex h-full flex-col p-5">
             <div className="flex items-start gap-4" style={{ transformStyle: "preserve-3d" }}>
               {/* Calendar chip — floats above the card surface */}
               <div

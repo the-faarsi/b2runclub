@@ -7,11 +7,12 @@ import { EventFeedbackCard, FeedbackSummaryCard } from "../components/eventFeedb
 import { EventPhotoStrip } from "../components/eventPhotos";
 import { EventReminders } from "../components/eventReminders";
 import { EventResultsSheet, ResultsEditor } from "../components/eventResults";
+import { EventCoverBackdrop, EventMeta } from "../components/eventCover";
 import { EventRoster } from "../components/eventRoster";
 import { LocationMap } from "../components/locationMap";
 import { QuickCheckIn } from "../components/quickCheckIn";
 import { RouteCard } from "../components/routeMap";
-import { CalendarIcon, DisciplineIcon, PinIcon, ShareIcon, SparkIcon } from "../components/icons";
+import { CalendarIcon, DisciplineIcon, ShareIcon, SparkIcon } from "../components/icons";
 import { Page } from "../components/layout";
 import { PageScene } from "../components/scene3d";
 import {
@@ -168,21 +169,7 @@ export function EventDetail() {
       {event.cover_url && (
         <div className="relative mb-6 overflow-hidden rounded-3xl border border-white/8">
           <div className="relative h-[min(52vh,420px)] w-full">
-            <img
-              src={event.cover_url}
-              alt=""
-              className="absolute inset-0 h-full w-full object-cover"
-              loading="eager"
-              decoding="async"
-            />
-            <div
-              aria-hidden
-              className="absolute inset-0"
-              style={{
-                background:
-                  "linear-gradient(to top, rgba(8,9,11,0.94) 0%, rgba(8,9,11,0.62) 38%, rgba(8,9,11,0.18) 100%)",
-              }}
-            />
+            <EventCoverBackdrop url={event.cover_url} scrim="hero" />
 
             {/* Title block, bottom-left over the image. */}
             <div className="absolute inset-x-0 bottom-0 p-5 sm:p-7">
@@ -209,19 +196,7 @@ export function EventDetail() {
                 {event.title}
               </h1>
 
-              <p className="mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13.5px] text-ink-2">
-                <span className="inline-flex items-center gap-1.5">
-                  <CalendarIcon className="size-3.5 text-gold" />
-                  {fullDate(event.date_time)} · {eventTime(event.date_time)}
-                </span>
-                <span aria-hidden className="text-ink-3">
-                  ·
-                </span>
-                <span className="inline-flex items-center gap-1.5">
-                  <PinIcon className="size-3.5 text-gold" />
-                  {event.location}
-                </span>
-              </p>
+              <EventMeta event={event} className="mt-2.5" />
             </div>
           </div>
         </div>
@@ -282,21 +257,14 @@ export function EventDetail() {
             </>
           )}
 
-          <p className="mt-4 max-w-2xl text-[15px] leading-relaxed text-ink-2">
-            {/* The hero already gives date, time and place, so with a cover this
-                line only has to answer what it costs. */}
-            {event.cover_url ? null : (
-              <>
-                {fullDate(event.date_time)} · {eventTime(event.date_time)} at {event.location}.
-              </>
-            )}
+          {/* Without a cover there is no hero to carry when and where, so the
+              same icon row appears here instead — one shape either way. */}
+          {!event.cover_url && <EventMeta event={event} className="mt-4" />}
+
+          <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-ink-2">
             {event.price === 0
-              ? event.cover_url
-                ? "Free to enter."
-                : " Free to enter."
-              : event.cover_url
-                ? `Entry is ${inr(event.price)}, paid at registration.`
-                : ` Entry is ${inr(event.price)}, paid at registration.`}
+              ? "Free to enter."
+              : `Entry is ${inr(event.price)}, paid at registration.`}
           </p>
 
           {/* The organiser's brief. Newlines are preserved — people write lists. */}

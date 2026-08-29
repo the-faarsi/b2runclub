@@ -13,6 +13,7 @@ import { SplitText } from "gsap/SplitText";
 import { useGSAP } from "@gsap/react";
 import { Link } from "react-router-dom";
 import { ClubFeatures, JoinBanner } from "../components/clubFeatures";
+import { EventCoverBackdrop, EventMeta } from "../components/eventCover";
 import { CollaboratorScroller } from "../components/collaborators";
 import { Founders } from "../components/founders";
 import { HeroVideo } from "../components/heroVideo";
@@ -23,7 +24,7 @@ import { Tilt } from "../components/tilt";
 import { buttonClass, Card, Skeleton } from "../components/ui";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
-import { countdown, eventTime, fullDate, inr, isPast } from "../lib/format";
+import { countdown, inr, isPast } from "../lib/format";
 import { REFUND_ONE_LINER } from "../lib/policies";
 import { useFetch } from "../lib/useFetch";
 
@@ -501,7 +502,10 @@ export function Landing() {
             </Card>
           ) : next ? (
             <Tilt max={4} lift={5} glare={false}>
-            <Card className="speedlines relative overflow-hidden">
+            <Card className="speedlines group relative overflow-hidden">
+              {/* The next event's own cover behind the spotlight, so the first
+                  thing on the page shows the session rather than a gradient. */}
+              <EventCoverBackdrop url={next.cover_url} scrim="card" />
               <div
                 className="pointer-events-none absolute -right-16 -top-24 size-72 rounded-full opacity-[0.15] blur-3xl"
                 style={{ background: "var(--color-gold)" }}
@@ -518,10 +522,8 @@ export function Landing() {
                       </span>
                       {next.type}
                     </span>
-                    <span>{fullDate(next.date_time)}</span>
-                    <span>{eventTime(next.date_time)}</span>
-                    <span className="text-ink-3">{next.location}</span>
                   </div>
+                  <EventMeta event={next} className="mt-2.5" />
                 </div>
 
                 <div className="flex flex-wrap items-end gap-x-6 gap-y-4 lg:shrink-0">
