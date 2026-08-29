@@ -147,6 +147,12 @@ model Event {
   /// events keep behaving exactly as they did before capacity existed.
   capacity    Int?
 
+  /// Cover image, used as the backdrop on the event page and on its card.
+  /// Stored as a plain URL so it works with whichever storage driver wrote it
+  /// — an upload or an externally hosted image. Null keeps the previous look,
+  /// so events created before this existed are unaffected.
+  cover_url   String?
+
   admin_id    String
   created_by  User     @relation(fields: [admin_id], references: [id])
 

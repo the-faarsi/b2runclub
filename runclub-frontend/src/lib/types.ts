@@ -28,6 +28,8 @@ export interface ClubEvent {
   description?: string | null;
   /** Maximum participants. Null means no limit. */
   capacity?: number | null;
+  /** Cover image used as the event's backdrop. Null when none was set. */
+  cover_url?: string | null;
   /** Participant places used. Null on an uncapped event. Volunteers don't count. */
   taken?: number | null;
   spots_left?: number | null;

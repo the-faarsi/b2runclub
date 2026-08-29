@@ -266,6 +266,8 @@ export const api = {
     description?: string | null;
     /** Null or omitted means unlimited places. */
     capacity?: number | null;
+    /** Already-stored URL from `uploadImage`. */
+    cover_url?: string | null;
     /** Hours-before offsets to email registrants at. */
     reminder_offsets?: number[];
   }) =>
@@ -282,6 +284,17 @@ export const api = {
       method: "PUT",
       body: input,
     }),
+
+  /**
+   * Stores an image and returns its URL, for fields that need a picture before
+   * the record exists — an event cover is chosen while the event is still being
+   * created, so there is no id to attach it to yet.
+   */
+  uploadImage: (file: File) => {
+    const form = new FormData();
+    form.append("image", file);
+    return upload<{ url: string }>("/api/content/uploads/image", form);
+  },
 
   deleteEvent: (id: string) =>
     request<{ message: string }>(`/api/events/${id}`, { method: "DELETE" }),

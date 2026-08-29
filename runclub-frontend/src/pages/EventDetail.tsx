@@ -119,9 +119,44 @@ export function EventDetail() {
 
   return (
     <Page>
+      {/*
+        The organiser's cover, as the page's backdrop.
+
+        Kept inside <Page>'s box rather than bled to the viewport edges: a
+        `w-screen` layer would be wider than the content column and reintroduce
+        the horizontal scrollbar that took a while to get rid of.
+
+        The gradient is doing real work — a photo behind `display` type at 52px
+        is unreadable without it. It ends at --color-void so the band dissolves
+        into the page rather than stopping on a line.
+      */}
+      {event.cover_url && (
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[min(46vh,380px)] overflow-hidden rounded-b-3xl"
+        >
+          <img
+            src={event.cover_url}
+            alt=""
+            className="h-full w-full object-cover"
+            loading="eager"
+            decoding="async"
+          />
+          <div
+            className="absolute inset-0"
+            style={{
+              background:
+                "linear-gradient(to bottom, rgba(8,9,11,0.45) 0%, rgba(8,9,11,0.72) 45%, var(--color-void) 100%)",
+            }}
+          />
+        </div>
+      )}
+
       {/* Was only present in the loading skeleton, so the loaded page had no
-          backdrop at all. Terrain suits this page — it is the route view. */}
-      <PageScene variant="terrain" opacity={0.24} />
+          backdrop at all. Terrain suits this page — it is the route view.
+          Suppressed when a cover is set: two backdrops behind the same title
+          just muddle each other. */}
+      {!event.cover_url && <PageScene variant="terrain" opacity={0.24} />}
       <Link
         to="/events"
         className="mb-6 inline-flex items-center gap-1.5 text-[13px] text-ink-3 transition-colors hover:text-gold"

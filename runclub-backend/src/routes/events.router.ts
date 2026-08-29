@@ -1,6 +1,7 @@
 import { Router, Response } from "express";
 import prisma from "../utils/prisma";
 import { AuthRequest, requireRole } from "../middleware/auth";
+import { deleteObject } from "../utils/storage";
 import Razorpay from "razorpay";
 import { ALLOWED_OFFSETS } from "../utils/reminders";
 import {
@@ -120,7 +121,8 @@ async function syncReminders(eventId: string, offsets: number[]) {
 // 1. Create Event (Admin only)
 router.post("/", requireRole(["ADMIN"]), async (req: AuthRequest, res: Response): Promise<void> => {
     try {
-        const { title, type, date_time, location, price, status, description, capacity } = req.body;
+        const { title, type, date_time, location, price, status, description, capacity, cover_url } =
+            req.body;
         const adminId = req.user!.id;
 
         if (!title || !type || !date_time || !location || price === undefined) {
@@ -157,6 +159,9 @@ router.post("/", requireRole(["ADMIN"]), async (req: AuthRequest, res: Response)
                 admin_id: adminId,
                 description: description?.trim() || null,
                 capacity: eventCapacity,
+                // Already a stored URL by this point — the client uploads to
+                // /api/content/uploads/image first.
+                cover_url: typeof cover_url === "string" ? cover_url.trim() || null : null,
             },
         });
 
@@ -359,7 +364,8 @@ router.get("/:id", async (req: AuthRequest, res: Response): Promise<void> => {
 router.put("/:id", requireRole(["ADMIN"]), async (req: AuthRequest, res: Response): Promise<void> => {
     try {
         const id = req.params.id as string;
-        const { title, type, date_time, location, price, status, description, capacity } = req.body;
+        const { title, type, date_time, location, price, status, description, capacity, cover_url } =
+            req.body;
 
         const event = await prisma.event.findUnique({ where: { id } });
         if (!event) {
@@ -390,6 +396,12 @@ router.put("/:id", requireRole(["ADMIN"]), async (req: AuthRequest, res: Respons
         if (description !== undefined) {
             dataToUpdate.description = description?.trim() || null;
         }
+        // Present-but-empty clears the cover, so this is keyed on `undefined`
+        // rather than falsiness. The replaced file is binned after the row is
+        // updated, further down.
+        if (cover_url !== undefined) {
+            dataToUpdate.cover_url = String(cover_url).trim() || null;
+        }
         if (capacity !== undefined) {
             const parsed = parseCapacity(capacity);
             if (parsed === INVALID) {
@@ -418,10 +430,19 @@ router.put("/:id", requireRole(["ADMIN"]), async (req: AuthRequest, res: Respons
             dataToUpdate.capacity = parsed;
         }
 
+        const previousCover = event.cover_url;
+
         const updatedEvent = await prisma.event.update({
             where: { id },
             data: dataToUpdate,
         });
+
+        // Bin the old cover only once the row actually points elsewhere, so a
+        // failed update cannot leave the event referencing a deleted file.
+        // deleteObject ignores anything this app did not store.
+        if (previousCover && updatedEvent.cover_url !== previousCover) {
+            void deleteObject(previousCover);
+        }
 
         const offsets = parseOffsets(req.body.reminder_offsets);
         if (offsets !== null) await syncReminders(id, offsets);
@@ -456,6 +477,10 @@ router.delete("/:id", requireRole(["ADMIN"]), async (req: AuthRequest, res: Resp
         await prisma.eventRegistration.deleteMany({ where: { event_id: id } });
 
         await prisma.event.delete({ where: { id } });
+
+        // After the row is gone, so a failed delete cannot strand the event
+        // pointing at a file that no longer exists.
+        void deleteObject(event.cover_url);
 
         res.json({ message: "Event deleted successfully" });
     } catch (error: any) {

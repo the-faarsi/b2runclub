@@ -45,6 +45,42 @@ async function storeImage(file: MemFile): Promise<string> {
     return putObject(safeFilename(ext), file.buffer, file.mimetype);
 }
 
+/**
+ * 0. Store an image and return its URL. Admins and volunteers only.
+ *
+ * Exists because an event cover has to be uploadable *before* the event does —
+ * there is no id to attach it to yet, so the pattern used for GPX
+ * (POST /events/:id/route) does not work. The client uploads here first, then
+ * sends the returned URL as `cover_url` on the create call, which keeps the
+ * event routes as plain JSON instead of converting them to multipart.
+ *
+ * Nothing here is tied to events, so any future "pick an image" field can reuse
+ * it rather than growing another endpoint.
+ */
+router.post(
+    "/uploads/image",
+    requireRole(["ADMIN", "VOLUNTEER"]),
+    (req: AuthRequest, res: Response) => {
+        upload.single("image")(req as any, res as any, async (err: any) => {
+            try {
+                if (err) {
+                    res.status(400).json({ error: err.message || "Upload rejected" });
+                    return;
+                }
+                const file = (req as any).file as MemFile | undefined;
+                if (!file) {
+                    res.status(400).json({ error: "Attach an image file" });
+                    return;
+                }
+                const url = await storeImage(file);
+                res.status(201).json({ url });
+            } catch (error: any) {
+                res.status(500).json({ error: error.message || "Failed to store the image" });
+            }
+        });
+    },
+);
+
 /* ── Gallery ──────────────────────────────────────────────── */
 
 // 1. List photos — open to everyone, including visitors (view-only page).

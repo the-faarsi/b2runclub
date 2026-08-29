@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../lib/api";
 import { REMINDER_OFFSETS } from "../lib/types";
 import type { ClubEvent, EventStatus } from "../lib/types";
 import { cn } from "../lib/format";
+import { SparkIcon } from "./icons";
 import { Button, Field, Input, Modal, Select, Textarea } from "./ui";
 
 export const EVENT_TYPES = ["Run", "Cycle", "Swim", "Race", "Training", "Social", "Party"];
@@ -51,6 +52,8 @@ const BLANK = {
   description: "",
   /** Empty string means unlimited — the backend reads a blank as null. */
   capacity: "",
+  /** Stored URL of the cover image. Empty means no cover. */
+  cover_url: "",
 };
 
 /**
@@ -77,6 +80,45 @@ export function EventFormModal({
   const [offsets, setOffsets] = useState<number[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const coverRef = useRef<HTMLInputElement>(null);
+  const [coverBusy, setCoverBusy] = useState(false);
+  /** Object URL for the file just chosen, so the preview appears before upload. */
+  const [localPreview, setLocalPreview] = useState<string | null>(null);
+
+  // Prefer the local object URL while uploading, then the stored URL.
+  const coverPreview = localPreview ?? (form.cover_url || null);
+
+  useEffect(() => {
+    if (!open) setLocalPreview(null);
+  }, [open]);
+
+  /**
+   * Uploads immediately and keeps only the returned URL in form state.
+   *
+   * Deliberately not deferred to submit: the create endpoint is JSON, and an
+   * abandoned dialog leaving a stray file is a smaller problem than making both
+   * event routes multipart.
+   */
+  const pickCover = async (file: File) => {
+    if (file.size > 8 * 1024 * 1024) {
+      setError("Cover image must be under 8MB.");
+      return;
+    }
+    const preview = URL.createObjectURL(file);
+    setLocalPreview(preview);
+    setCoverBusy(true);
+    setError(null);
+    try {
+      const { url } = await api.uploadImage(file);
+      setForm((f) => ({ ...f, cover_url: url }));
+    } catch (err) {
+      setLocalPreview(null);
+      setError(err instanceof Error ? err.message : "Could not upload the cover");
+    } finally {
+      URL.revokeObjectURL(preview);
+      setCoverBusy(false);
+    }
+  };
 
   // Existing reminders come from the admin schedule endpoint, not the event
   // record, so they are fetched when the dialog opens on an existing event.
@@ -111,6 +153,7 @@ export function EventFormModal({
         status: event.status,
         description: event.description ?? "",
         capacity: event.capacity != null ? String(event.capacity) : "",
+        cover_url: event.cover_url ?? "",
       });
     } else {
       setForm({
@@ -162,6 +205,9 @@ export function EventFormModal({
         status: form.status,
         description: form.description.trim() || null,
         capacity,
+        // Always sent, including as an empty string, so clearing the cover on an
+        // edit actually clears it — the backend keys on `undefined`, not falsy.
+        cover_url: form.cover_url.trim() || null,
         reminder_offsets: offsets,
       };
 
@@ -256,6 +302,53 @@ export function EventFormModal({
             }
           />
         </Field>
+
+        {/* Cover image. Uploaded immediately rather than on submit, so the form
+            only ever carries a URL — that keeps the create/update endpoints as
+            plain JSON and lets a cover be chosen before the event exists. */}
+        <div>
+          <span className="eyebrow mb-1.5 block text-ink-2">Cover image</span>
+          <div
+            onClick={() => coverRef.current?.click()}
+            className="group relative flex cursor-pointer items-center gap-4 overflow-hidden rounded-xl border border-dashed border-white/14 p-4 transition-colors hover:border-gold/45"
+          >
+            <span className="grid h-16 w-24 shrink-0 place-items-center overflow-hidden rounded-lg border border-white/8 bg-surface-2/60">
+              {coverPreview ? (
+                <img src={coverPreview} alt="" className="h-full w-full object-cover" />
+              ) : (
+                <SparkIcon className="size-4 text-ink-3" />
+              )}
+            </span>
+            <span className="min-w-0 flex-1 text-[13px] leading-relaxed text-ink-3">
+              {coverBusy
+                ? "Uploading…"
+                : coverPreview
+                  ? "Click to replace. Shown behind the event's title."
+                  : "Click to upload a cover (optional). Landscape works best — it sits behind the event title."}
+            </span>
+            <input
+              ref={coverRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/avif"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                // Reset so picking the same file twice still fires onChange.
+                e.target.value = "";
+                if (f) void pickCover(f);
+              }}
+            />
+          </div>
+          {coverPreview && (
+            <button
+              type="button"
+              onClick={() => setForm((f) => ({ ...f, cover_url: "" }))}
+              className="mt-2 text-[12px] text-ink-3 transition-colors hover:text-[color:var(--color-failed)]"
+            >
+              Remove cover
+            </button>
+          )}
+        </div>
 
         <div className="grid gap-5 sm:grid-cols-2">
           <Field label="Entry price (INR)" htmlFor="ev-price" hint="Zero makes it free to enter.">
