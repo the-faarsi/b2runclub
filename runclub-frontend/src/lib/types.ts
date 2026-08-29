@@ -253,10 +253,28 @@ export interface ClubInfo {
   strava_club: string | null;
   /** Invite URL for the club's WhatsApp community, or null if not set. */
   whatsapp: string | null;
+  /** Looping hero video for the home page. Null falls back to the 3D scene. */
+  hero_video_url: string | null;
   updated_at: string | null;
 }
 
 export type CollaboratorTier = "PARTNER" | "SPONSOR" | "COMMUNITY";
+
+/** A club founder, shown on the home page and editable by admins. */
+export interface Founder {
+  id: string;
+  name: string;
+  /** Free-text title, e.g. "Founder & Head Coach". Empty when unset. */
+  role: string;
+  bio: string;
+  photo_url: string | null;
+  /** Bare handle, no leading @ — the client builds the URL. */
+  instagram: string | null;
+  /** Full URL or a bare Strava id. */
+  strava: string | null;
+  sort_order: number;
+  created_at: string;
+}
 
 export interface Collaborator {
   id: string;

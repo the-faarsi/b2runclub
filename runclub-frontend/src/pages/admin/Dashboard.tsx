@@ -23,6 +23,7 @@ import {
   Skeleton,
   useToast,
 } from "../../components/ui";
+import { HeroVideoPanel } from "../../components/heroVideoPanel";
 import { MailerPanel } from "../../components/mailerPanel";
 import { api } from "../../lib/api";
 import { CLUB_SLUG } from "../../lib/brand";
@@ -235,6 +236,9 @@ export function AdminDashboard() {
             </Link>
             <Link to="/admin/collaborators" className={buttonClass("ghost", "md")}>
               Collaborators
+            </Link>
+            <Link to="/admin/founders" className={buttonClass("ghost", "md")}>
+              Founders
             </Link>
           </div>
         }
@@ -508,9 +512,12 @@ export function AdminDashboard() {
             </ChartCard>
           </div>
 
-          {/* Email settings — reminders and reset links depend on this being live */}
-          <div className="mt-5">
+          {/* Site settings. Two panels side by side on wide screens — both are
+              configuration rather than reporting, so they read as a pair. */}
+          <div className="mt-5 grid gap-5 lg:grid-cols-2">
+            {/* Email settings — reminders and reset links depend on this being live */}
             <MailerPanel />
+            <HeroVideoPanel />
           </div>
         </>
       ) : null}

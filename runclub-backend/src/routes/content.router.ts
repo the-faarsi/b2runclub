@@ -252,6 +252,7 @@ router.put("/club", requireRole(["ADMIN"]), async (req: AuthRequest, res: Respon
             "instagram",
             "strava_club",
             "whatsapp",
+            "hero_video_url",
         ] as const;
 
         const data: Record<string, string | null> = {};
@@ -513,6 +514,147 @@ router.delete(
             res.json({ message: `${row.name} removed` });
         } catch (error: any) {
             res.status(500).json({ error: error.message || "Failed to remove the collaborator" });
+        }
+    }
+);
+
+/* ── Founders ─────────────────────────────────────────────────
+ * Same shape as the collaborator routes above — multipart so one client form
+ * covers both create and edit, every field optional on PATCH so a photo-only
+ * edit does not blank the bio, and the replaced photo is deleted after the row
+ * is written.
+ */
+
+/** Trims a string field, mapping blank to null. Shared by create and edit. */
+function optional(v: unknown): string | null {
+    return typeof v === "string" && v.trim() ? v.trim() : null;
+}
+
+// 10. List founders — public, drives the home page section.
+router.get("/founders", async (_req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const rows = await prisma.founder.findMany({
+            orderBy: [{ sort_order: "asc" }, { created_at: "asc" }],
+        });
+        res.json(rows);
+    } catch (error: any) {
+        res.status(500).json({ error: error.message || "Failed to fetch founders" });
+    }
+});
+
+// 11. Add a founder — admin only. Photo may be uploaded or linked.
+router.post("/founders", requireRole(["ADMIN"]), (req: AuthRequest, res: Response) => {
+    upload.single("photo")(req as any, res as any, async (err: any) => {
+        try {
+            if (err) {
+                res.status(400).json({ error: err.message || "Upload rejected" });
+                return;
+            }
+
+            const file = (req as any).file as MemFile | undefined;
+            const { name, role, bio, instagram, strava, sort_order, photo_url } = req.body ?? {};
+
+            if (!name?.trim()) {
+                res.status(400).json({ error: "A founder name is required" });
+                return;
+            }
+
+            const founder = await prisma.founder.create({
+                data: {
+                    name: name.trim(),
+                    role: role?.trim() || "",
+                    bio: bio?.trim() || "",
+                    // A pasted handle often keeps its @; store it bare so the
+                    // client can build the URL without guessing.
+                    instagram: optional(instagram)?.replace(/^@/, "") ?? null,
+                    strava: optional(strava),
+                    sort_order: Number.parseInt(sort_order, 10) || 0,
+                    photo_url: file ? await storeImage(file) : optional(photo_url),
+                },
+            });
+
+            res.status(201).json({ message: `${founder.name} added`, founder });
+        } catch (error: any) {
+            res.status(500).json({ error: error.message || "Failed to add the founder" });
+        }
+    });
+});
+
+// 12. Edit a founder — admin only.
+router.patch("/founders/:id", requireRole(["ADMIN"]), (req: AuthRequest, res: Response) => {
+    upload.single("photo")(req as any, res as any, async (err: any) => {
+        try {
+            if (err) {
+                res.status(400).json({ error: err.message || "Upload rejected" });
+                return;
+            }
+
+            const existing = await prisma.founder.findUnique({
+                where: { id: req.params.id as string },
+            });
+            if (!existing) {
+                res.status(404).json({ error: "Founder not found" });
+                return;
+            }
+
+            const file = (req as any).file as MemFile | undefined;
+            const { name, role, bio, instagram, strava, sort_order, photo_url } = req.body ?? {};
+
+            const data: Record<string, unknown> = {};
+            if (name !== undefined) {
+                if (!String(name).trim()) {
+                    res.status(400).json({ error: "A founder name is required" });
+                    return;
+                }
+                data.name = String(name).trim();
+            }
+            if (role !== undefined) data.role = String(role).trim();
+            if (bio !== undefined) data.bio = String(bio).trim();
+            if (instagram !== undefined) {
+                data.instagram = optional(instagram)?.replace(/^@/, "") ?? null;
+            }
+            if (strava !== undefined) data.strava = optional(strava);
+            if (sort_order !== undefined) {
+                data.sort_order = Number.parseInt(String(sort_order), 10) || 0;
+            }
+            if (file) data.photo_url = await storeImage(file);
+            else if (photo_url !== undefined) data.photo_url = optional(photo_url);
+
+            const founder = await prisma.founder.update({ where: { id: existing.id }, data });
+
+            // After the write, so a failed update cannot leave the row pointing
+            // at a file that no longer exists.
+            if (existing.photo_url && founder.photo_url !== existing.photo_url) {
+                void deleteObject(existing.photo_url);
+            }
+
+            res.json({ message: `${founder.name} updated`, founder });
+        } catch (error: any) {
+            res.status(500).json({ error: error.message || "Failed to update the founder" });
+        }
+    });
+});
+
+// 13. Remove a founder — admin only.
+router.delete(
+    "/founders/:id",
+    requireRole(["ADMIN"]),
+    async (req: AuthRequest, res: Response): Promise<void> => {
+        try {
+            const row = await prisma.founder.findUnique({
+                where: { id: req.params.id as string },
+            });
+            if (!row) {
+                res.status(404).json({ error: "Founder not found" });
+                return;
+            }
+
+            await prisma.founder.delete({ where: { id: row.id } });
+            void deleteObject(row.photo_url);
+
+            res.json({ message: `${row.name} removed` });
+        } catch (error: any) {
+            res.status(500).json({ error: error.message || "Failed to remove the founder" });
         }
     }
 );

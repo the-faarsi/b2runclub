@@ -15,6 +15,8 @@ import { Link } from "react-router-dom";
 import { EventCard } from "../components/events";
 import { CollaboratorScroller } from "../components/collaborators";
 import { CommunityLinks } from "../components/communityLinks";
+import { Founders } from "../components/founders";
+import { HeroVideo } from "../components/heroVideo";
 import { Hero3D, RunnerScene } from "../components/scene3d";
 import {
   CalendarIcon,
@@ -414,6 +416,9 @@ export function Landing() {
         ref={heroRef}
         className="relative mx-auto max-w-7xl px-4 pb-16 pt-14 sm:px-6 sm:pt-20 lg:px-8"
       >
+        {/* Optional background video, set by an organiser. Renders nothing when
+            none is configured, so the 3D scene below stays the default. */}
+        <HeroVideo />
         {/* Mobile + tablet: 3D graphic sits between the h1 and the paragraph.
             Absolutely positioned so no div shifts — content stays in normal flow.
             z-0 so text layers above it naturally.
@@ -849,9 +854,15 @@ export function Landing() {
         </div>
       </section>
 
-      {/* ── Community channels ───────────────────────────── */}
+      {/* ── Founders ─────────────────────────────────────── */}
+      {/* Before the contact section on purpose: knowing who runs the thing is
+          what makes someone want to get in touch. Renders nothing until an
+          organiser adds people at /admin/founders. */}
+      <Founders />
+
+      {/* ── Contact ──────────────────────────────────────── */}
       {/* Sits mid-page, straight after "where you fit": someone who has just read
-          how the club works is the person most likely to join a channel. */}
+          how the club works is the person most likely to reach out. */}
       <CommunityLinks />
 
       {/* ── Gallery preview ──────────────────────────────── */}

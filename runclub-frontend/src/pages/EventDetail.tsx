@@ -1,4 +1,5 @@
 import { useCallback, useState } from "react";
+import { createPortal } from "react-dom";
 import { Link, useParams } from "react-router-dom";
 import { CancelRegistrationDialog } from "../components/cancelDialog";
 import { RegisterDialog, TicketModal } from "../components/events";
@@ -7,9 +8,10 @@ import { EventPhotoStrip } from "../components/eventPhotos";
 import { EventReminders } from "../components/eventReminders";
 import { EventResultsSheet, ResultsEditor } from "../components/eventResults";
 import { EventRoster } from "../components/eventRoster";
+import { LocationMap } from "../components/locationMap";
 import { QuickCheckIn } from "../components/quickCheckIn";
 import { RouteCard } from "../components/routeMap";
-import { CalendarIcon, DisciplineIcon, ShareIcon, SparkIcon } from "../components/icons";
+import { CalendarIcon, DisciplineIcon, PinIcon, ShareIcon, SparkIcon } from "../components/icons";
 import { Page } from "../components/layout";
 import { PageScene } from "../components/scene3d";
 import {
@@ -72,6 +74,36 @@ export function EventDetail() {
   /** Who may open the event-day console — matches the backend's CREW list. */
   const isCrew = role === "ADMIN" || role === "VOLUNTEER";
 
+  /**
+   * The single action the sticky phone bar offers.
+   *
+   * Derived once here and read by the bar, so it can never disagree with the
+   * entry card about what this person is allowed to do. The card keeps the full
+   * explanation — the spare places, the waiver note, the refund line — and this
+   * is only the shortcut, because on a phone the card sits below the whole
+   * article and is a long scroll away.
+   */
+  const primary: { label: string; act: "ticket" | "track" | "register" | "signin" | "none" } =
+    !event
+      ? { label: "", act: "none" }
+      : registration
+        ? registration.blocked_at
+          ? { label: "Removed by an organiser", act: "none" }
+          : ticketReady(registration.status)
+            ? { label: "View QR ticket", act: "ticket" }
+            : { label: "Track in my tickets", act: "track" }
+        : past
+          ? { label: "Event finished", act: "none" }
+          : event.status !== "PUBLISHED"
+            ? { label: "Not open yet", act: "none" }
+            : !user
+              ? { label: "Sign in to register", act: "signin" }
+              : event.full && role !== "VOLUNTEER"
+                ? { label: "Fully booked", act: "none" }
+                : canRegister
+                  ? { label: "Register", act: "register" }
+                  : { label: isAdmin ? "You're running this" : "Members only", act: "none" };
+
   if (loading) {
     return (
       <Page>
@@ -120,35 +152,78 @@ export function EventDetail() {
   return (
     <Page>
       {/*
-        The organiser's cover, as the page's backdrop.
+        Cover hero.
+
+        The cover used to be a faded band sitting behind the title, which read as
+        a tint rather than a photograph. Here the image is the subject and the
+        title sits on it, which is how event pages elsewhere present themselves.
 
         Kept inside <Page>'s box rather than bled to the viewport edges: a
         `w-screen` layer would be wider than the content column and reintroduce
         the horizontal scrollbar that took a while to get rid of.
 
         The gradient is doing real work — a photo behind `display` type at 52px
-        is unreadable without it. It ends at --color-void so the band dissolves
-        into the page rather than stopping on a line.
+        is unreadable without one.
       */}
       {event.cover_url && (
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[min(46vh,380px)] overflow-hidden rounded-b-3xl"
-        >
-          <img
-            src={event.cover_url}
-            alt=""
-            className="h-full w-full object-cover"
-            loading="eager"
-            decoding="async"
-          />
-          <div
-            className="absolute inset-0"
-            style={{
-              background:
-                "linear-gradient(to bottom, rgba(8,9,11,0.45) 0%, rgba(8,9,11,0.72) 45%, var(--color-void) 100%)",
-            }}
-          />
+        <div className="relative mb-6 overflow-hidden rounded-3xl border border-white/8">
+          <div className="relative h-[min(52vh,420px)] w-full">
+            <img
+              src={event.cover_url}
+              alt=""
+              className="absolute inset-0 h-full w-full object-cover"
+              loading="eager"
+              decoding="async"
+            />
+            <div
+              aria-hidden
+              className="absolute inset-0"
+              style={{
+                background:
+                  "linear-gradient(to top, rgba(8,9,11,0.94) 0%, rgba(8,9,11,0.62) 38%, rgba(8,9,11,0.18) 100%)",
+              }}
+            />
+
+            {/* Title block, bottom-left over the image. */}
+            <div className="absolute inset-x-0 bottom-0 p-5 sm:p-7">
+              <div className="flex flex-wrap items-center gap-2.5">
+                <span className="inline-flex items-center gap-2 rounded-full border border-gold/30 bg-gold/12 px-3 py-1 backdrop-blur-sm">
+                  <span className="text-[11px] text-gold" aria-hidden>
+                    <DisciplineIcon type={event.type} className="size-3.5" />
+                  </span>
+                  <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-gold">
+                    {event.type}
+                  </span>
+                </span>
+                {isAdmin && event.status !== "PUBLISHED" && (
+                  <Badge color={EVENT_STATUS_TINT[event.status]}>{event.status}</Badge>
+                )}
+                {past ? (
+                  <Badge>Finished</Badge>
+                ) : left ? (
+                  <Badge color="var(--color-gold)">Starts in {left}</Badge>
+                ) : null}
+              </div>
+
+              <h1 className="display mt-3 text-[clamp(28px,5.5vw,52px)] leading-[1.04]">
+                {event.title}
+              </h1>
+
+              <p className="mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13.5px] text-ink-2">
+                <span className="inline-flex items-center gap-1.5">
+                  <CalendarIcon className="size-3.5 text-gold" />
+                  {fullDate(event.date_time)} · {eventTime(event.date_time)}
+                </span>
+                <span aria-hidden className="text-ink-3">
+                  ·
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                  <PinIcon className="size-3.5 text-gold" />
+                  {event.location}
+                </span>
+              </p>
+            </div>
+          </div>
         </div>
       )}
 
@@ -175,44 +250,63 @@ export function EventDetail() {
         </div>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-[1.6fr_1fr]">
+      <div className="grid gap-6 pb-20 lg:grid-cols-[1.6fr_1fr] lg:pb-0">
         {/* ── Main ─────────────────────────────────────── */}
         <div>
-          <div className="flex flex-wrap items-center gap-2.5">
-            <span className="inline-flex items-center gap-2 rounded-full border border-gold/25 bg-gold/8 px-3 py-1">
-              <span className="text-[11px] text-gold" aria-hidden>
-                <DisciplineIcon type={event.type} className="size-3.5" />
-              </span>
-              <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-gold">
-                {event.type}
-              </span>
-            </span>
+          {/* Badges and title only when there is no hero to carry them —
+              otherwise the page would state its own name twice. */}
+          {!event.cover_url && (
+            <>
+              <div className="flex flex-wrap items-center gap-2.5">
+                <span className="inline-flex items-center gap-2 rounded-full border border-gold/25 bg-gold/8 px-3 py-1">
+                  <span className="text-[11px] text-gold" aria-hidden>
+                    <DisciplineIcon type={event.type} className="size-3.5" />
+                  </span>
+                  <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-gold">
+                    {event.type}
+                  </span>
+                </span>
 
-            {isAdmin && event.status !== "PUBLISHED" && (
-              <Badge color={EVENT_STATUS_TINT[event.status]}>{event.status}</Badge>
-            )}
+                {isAdmin && event.status !== "PUBLISHED" && (
+                  <Badge color={EVENT_STATUS_TINT[event.status]}>{event.status}</Badge>
+                )}
 
-            {past ? (
-              <Badge>Finished</Badge>
-            ) : left ? (
-              <Badge color="var(--color-gold)">Starts in {left}</Badge>
-            ) : null}
-          </div>
+                {past ? (
+                  <Badge>Finished</Badge>
+                ) : left ? (
+                  <Badge color="var(--color-gold)">Starts in {left}</Badge>
+                ) : null}
+              </div>
 
-          <h1 className="display mt-5 text-[clamp(32px,5.5vw,52px)]">{event.title}</h1>
+              <h1 className="display mt-5 text-[clamp(32px,5.5vw,52px)]">{event.title}</h1>
+            </>
+          )}
 
           <p className="mt-4 max-w-2xl text-[15px] leading-relaxed text-ink-2">
-            {fullDate(event.date_time)} · {eventTime(event.date_time)} at {event.location}.
+            {/* The hero already gives date, time and place, so with a cover this
+                line only has to answer what it costs. */}
+            {event.cover_url ? null : (
+              <>
+                {fullDate(event.date_time)} · {eventTime(event.date_time)} at {event.location}.
+              </>
+            )}
             {event.price === 0
-              ? " Free to enter."
-              : ` Entry is ${inr(event.price)}, paid at registration.`}
+              ? event.cover_url
+                ? "Free to enter."
+                : " Free to enter."
+              : event.cover_url
+                ? `Entry is ${inr(event.price)}, paid at registration.`
+                : ` Entry is ${inr(event.price)}, paid at registration.`}
           </p>
 
           {/* The organiser's brief. Newlines are preserved — people write lists. */}
           {event.description && (
-            <p className="mt-4 max-w-2xl whitespace-pre-wrap text-[15px] leading-relaxed text-ink-2">
-              {event.description}
-            </p>
+            <>
+              <p className="eyebrow mt-7 text-gold">About this event</p>
+              <p className="mt-2 max-w-2xl whitespace-pre-wrap text-[15px] leading-relaxed text-ink-2">
+                {event.description}
+              </p>
+            </>
           )}
 
           {/* Live countdown — ticks every second */}
@@ -273,6 +367,10 @@ export function EventDetail() {
               </div>
             ))}
           </div>
+
+          {/* Where it starts. Above the route card because the first question is
+              "where do I go", and the GPX trace answers a different one. */}
+          <LocationMap location={event.location} />
 
           {/* The course, from the attached GPX. Organisers can upload one here. */}
           <RouteCard event={event} isAdmin={isAdmin} />
@@ -491,6 +589,68 @@ export function EventDetail() {
           </p>
         </div>
       </div>
+
+      {/*
+        Sticky entry bar, phones and tablets only.
+
+        On a narrow screen the two-column grid stacks, so the entry card lands
+        below the whole article — description, facts, map, route, photos — and
+        someone who came to register has to scroll past all of it to find the
+        button. Desktop already keeps that card in view via the sticky rail, so
+        the bar is hidden from `lg` up rather than duplicated.
+
+        Portalled to <body> deliberately. `<main>` carries `perspective: 1400px`
+        for the 3D card effects, and a non-none perspective makes that element
+        the containing block for every `position: fixed` descendant — rendered
+        in place, this bar pinned itself to the bottom of the *document* (y≈2982
+        on a 390px screen) rather than the viewport, so it was never on screen.
+
+        `pb-[env(safe-area-inset-bottom)]` keeps it clear of the iOS home bar.
+      */}
+      {createPortal(
+        <div className="fixed inset-x-0 bottom-0 z-30 border-t border-white/10 bg-void/95 backdrop-blur-md lg:hidden">
+        <div className="mx-auto flex max-w-7xl items-center gap-4 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-6">
+          <div className="min-w-0">
+            <p className="eyebrow">Entry</p>
+            {comped && event.price > 0 ? (
+              <p className="flex items-baseline gap-1.5">
+                <span className="text-[12px] text-ink-3 line-through">{inr(event.price)}</span>
+                <span className="display text-[20px] text-[color:var(--color-free)]">Free</span>
+              </p>
+            ) : (
+              <p className="display text-[20px] leading-tight">
+                {event.price === 0 ? "Free" : inr(event.price)}
+              </p>
+            )}
+          </div>
+
+          <div className="ml-auto min-w-0">
+            {primary.act === "register" ? (
+              <Button onClick={() => setDialogOpen(true)}>{primary.label}</Button>
+            ) : primary.act === "ticket" ? (
+              <Button onClick={() => setTicketOpen(true)}>{primary.label}</Button>
+            ) : primary.act === "track" ? (
+              <Link to="/tickets" className={buttonClass("outline", "md")}>
+                {primary.label}
+              </Link>
+            ) : primary.act === "signin" ? (
+              <Link
+                to="/login"
+                state={{ from: `/events/${event.id}` }}
+                className={buttonClass("gold", "md")}
+              >
+                {primary.label}
+              </Link>
+            ) : (
+              <span className="block truncate rounded-xl border border-white/10 px-4 py-2.5 text-[13px] text-ink-3">
+                {primary.label}
+              </span>
+            )}
+          </div>
+        </div>
+      </div>,
+        document.body,
+      )}
 
       <RegisterDialog
         event={event}

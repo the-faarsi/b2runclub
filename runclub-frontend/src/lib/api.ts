@@ -14,6 +14,7 @@ import type {
   EventStatus,
   FeedbackSummary,
   FinancialOverview,
+  Founder,
   HealthImportResult,
   HealthSummary,
   Leaderboard,
@@ -467,6 +468,13 @@ export const api = {
 
   clubInfo: () => request<ClubInfo>("/api/content/club"),
 
+  /**
+   * Admin edit of the club record. Only the keys sent are written, and an empty
+   * string clears a nullable field — which is how the hero video is removed.
+   */
+  updateClubInfo: (input: Partial<Omit<ClubInfo, "id" | "updated_at">>) =>
+    request<ClubInfo>("/api/content/club", { method: "PUT", body: input }),
+
   saveClubInfo: (input: Partial<Omit<ClubInfo, "id" | "updated_at">>) =>
     request<{ message: string; club: ClubInfo }>("/api/content/club", {
       method: "PUT",
@@ -532,6 +540,69 @@ export const api = {
 
   deleteCollaborator: (id: string) =>
     request<{ message: string }>(`/api/content/collaborators/${id}`, { method: "DELETE" }),
+
+  /* ── founders ───────────────────────────────────────────── */
+
+  founders: () => request<Founder[]>("/api/content/founders"),
+
+  addFounder: (input: {
+    name: string;
+    role?: string;
+    bio?: string;
+    instagram?: string;
+    strava?: string;
+    sort_order?: number;
+    photoFile?: File;
+    photo_url?: string;
+  }) => {
+    const form = new FormData();
+    form.append("name", input.name);
+    if (input.role) form.append("role", input.role);
+    if (input.bio) form.append("bio", input.bio);
+    if (input.instagram) form.append("instagram", input.instagram);
+    if (input.strava) form.append("strava", input.strava);
+    if (input.sort_order !== undefined) form.append("sort_order", String(input.sort_order));
+    if (input.photoFile) form.append("photo", input.photoFile);
+    if (input.photo_url) form.append("photo_url", input.photo_url);
+    return upload<{ message: string; founder: Founder }>("/api/content/founders", form);
+  },
+
+  /**
+   * Only the keys present are written, so a photo-only edit leaves the bio
+   * alone. An empty string clears a field — hence `!== undefined` rather than
+   * truthiness.
+   */
+  updateFounder: (
+    id: string,
+    input: {
+      name?: string;
+      role?: string;
+      bio?: string;
+      instagram?: string;
+      strava?: string;
+      sort_order?: number;
+      photoFile?: File;
+      photo_url?: string;
+    },
+  ) => {
+    const form = new FormData();
+    if (input.name !== undefined) form.append("name", input.name);
+    if (input.role !== undefined) form.append("role", input.role);
+    if (input.bio !== undefined) form.append("bio", input.bio);
+    if (input.instagram !== undefined) form.append("instagram", input.instagram);
+    if (input.strava !== undefined) form.append("strava", input.strava);
+    if (input.sort_order !== undefined) form.append("sort_order", String(input.sort_order));
+    if (input.photoFile) form.append("photo", input.photoFile);
+    if (input.photo_url !== undefined) form.append("photo_url", input.photo_url);
+    return upload<{ message: string; founder: Founder }>(
+      `/api/content/founders/${id}`,
+      form,
+      "PATCH",
+    );
+  },
+
+  deleteFounder: (id: string) =>
+    request<{ message: string }>(`/api/content/founders/${id}`, { method: "DELETE" }),
 
   /* ── admin ──────────────────────────────────────────────── */
 
