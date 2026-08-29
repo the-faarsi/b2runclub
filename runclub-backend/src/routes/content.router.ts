@@ -3,7 +3,13 @@ import multer from "multer";
 import prisma from "../utils/prisma";
 import { AuthRequest, requireRole } from "../middleware/auth";
 import { parseGpx, summariseRoute } from "../utils/gpx";
-import { deleteObject, putObject, readObjectText, safeFilename } from "../utils/storage";
+import {
+    createDirectUpload,
+    deleteObject,
+    putObject,
+    readObjectText,
+    safeFilename,
+} from "../utils/storage";
 
 const router = Router();
 
@@ -45,16 +51,25 @@ const ALLOWED_VIDEO_MIME: Record<string, string> = {
 };
 
 /**
+ * Ceiling for a hero video, whichever route it takes.
+ *
+ * Declared here rather than beside the signing route below because the multer
+ * instance evaluates it at module load — referencing it later would throw
+ * "Cannot access before initialization" the moment this file is imported.
+ */
+export const MAX_VIDEO_BYTES = 200 * 1024 * 1024;
+
+/**
  * Separate multer instance for the hero video.
  *
- * 64MB here, but note the deployment is the real ceiling: serverless platforms
- * cap request bodies (Vercel at 4.5MB), so anything larger has to be hosted
- * elsewhere and pasted in as a URL. The generous limit is for self-hosted and
- * local runs, where it genuinely works.
+ * This is the fallback route. A serverless host rejects request bodies over a
+ * few megabytes before any of this runs, so in production a video of real size
+ * goes browser → storage via a signed URL instead (see /uploads/video/sign).
+ * This path is what runs locally, where Express has no such limit.
  */
 const videoUpload = multer({
     storage: multer.memoryStorage(),
-    limits: { fileSize: 64 * 1024 * 1024, files: 1 },
+    limits: { fileSize: MAX_VIDEO_BYTES, files: 1 },
     fileFilter: (_req, file, cb) => {
         if (ALLOWED_VIDEO_MIME[file.mimetype]) return cb(null, true);
         cb(new Error("Only MP4, WebM or MOV videos are allowed"));
@@ -107,6 +122,64 @@ router.post(
 );
 
 /**
+ * 0a. Ask for permission to upload a video straight to storage. Admins only.
+ *
+ * The client sends the filename, type and size; it gets back either a signed
+ * URL to PUT the bytes to, or `mode: "proxy"` meaning post through the API
+ * instead. Only the second route is subject to the platform's request-body
+ * limit, so this is what makes a 50MB upload possible at all in production.
+ */
+router.post(
+    "/uploads/video/sign",
+    requireRole(["ADMIN"]),
+    async (req: AuthRequest, res: Response): Promise<void> => {
+        try {
+            const { content_type, size } = req.body ?? {};
+
+            const ext = ALLOWED_VIDEO_MIME[String(content_type)];
+            if (!ext) {
+                res.status(400).json({ error: "Only MP4, WebM or MOV videos are allowed" });
+                return;
+            }
+
+            const bytes = Number(size);
+            if (!Number.isFinite(bytes) || bytes <= 0) {
+                res.status(400).json({ error: "A file size is required" });
+                return;
+            }
+            if (bytes > MAX_VIDEO_BYTES) {
+                res.status(400).json({
+                    error: `That video is ${(bytes / 1024 / 1024).toFixed(0)}MB. The limit is ${
+                        MAX_VIDEO_BYTES / 1024 / 1024
+                    }MB.`,
+                });
+                return;
+            }
+
+            const filename = safeFilename(ext);
+            const direct = await createDirectUpload(filename);
+
+            if (!direct) {
+                // disk or blob driver: no signing available, so the client posts
+                // through the API. Works locally; on a serverless host the
+                // platform will refuse anything sizeable.
+                res.json({ mode: "proxy" });
+                return;
+            }
+
+            res.json({
+                mode: "direct",
+                upload_url: direct.uploadUrl,
+                token: direct.token,
+                public_url: direct.publicUrl,
+            });
+        } catch (error: any) {
+            res.status(500).json({ error: error.message || "Could not prepare the upload" });
+        }
+    },
+);
+
+/**
  * 0b. Store a video and return its URL. Admins only.
  *
  * Sibling of the image route above, kept separate because the accepted types
@@ -122,7 +195,7 @@ router.post("/uploads/video", requireRole(["ADMIN"]), (req: AuthRequest, res: Re
                 const tooBig = err.code === "LIMIT_FILE_SIZE";
                 res.status(400).json({
                     error: tooBig
-                        ? "That video is over 64MB. Host it elsewhere and paste the link, or use a YouTube URL."
+                        ? `That video is over ${MAX_VIDEO_BYTES / 1024 / 1024}MB.`
                         : err.message || "Upload rejected",
                 });
                 return;

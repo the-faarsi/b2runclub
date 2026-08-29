@@ -292,14 +292,61 @@ export const api = {
    * created, so there is no id to attach it to yet.
    */
   /**
-   * Stores a hero video and returns its URL. Separate from `uploadImage`
-   * because the server's accepted types and size cap are different by an order
-   * of magnitude.
+   * Stores a hero video and returns its URL.
+   *
+   * Asks the server to sign an upload first. If it can, the bytes go straight
+   * from the browser to object storage and never touch the API — which is the
+   * only way a 50MB file gets through, since a serverless host rejects request
+   * bodies over a few megabytes before our code runs at all.
+   *
+   * Falls back to posting through the API when signing is unavailable (local
+   * disk storage), where Express imposes no such limit.
+   *
+   * `onProgress` reports 0–1 for the direct route. XHR rather than fetch purely
+   * because fetch still cannot report upload progress, and a 50MB upload with no
+   * feedback looks broken.
    */
-  uploadVideo: (file: File) => {
-    const form = new FormData();
-    form.append("video", file);
-    return upload<{ url: string }>("/api/content/uploads/video", form);
+  async uploadVideo(
+    file: File,
+    onProgress?: (fraction: number) => void,
+  ): Promise<{ url: string }> {
+    const permit = await request<
+      | { mode: "direct"; upload_url: string; token: string; public_url: string }
+      | { mode: "proxy" }
+    >("/api/content/uploads/video/sign", {
+      method: "POST",
+      body: { content_type: file.type, size: file.size },
+    });
+
+    if (permit.mode === "proxy") {
+      const form = new FormData();
+      form.append("video", file);
+      return upload<{ url: string }>("/api/content/uploads/video", form);
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("PUT", permit.upload_url, true);
+      // No Authorization header on purpose. The signed URL already carries the
+      // permit as `?token=`, which is what the storage API reads for this route,
+      // and supabase-js does not send one either — passing the upload token as a
+      // bearer credential risks the gateway rejecting it as a bad JWT.
+      xhr.setRequestHeader("Content-Type", file.type);
+      xhr.setRequestHeader("cache-control", "max-age=3600");
+      // Names are already random, so a collision means something is wrong.
+      xhr.setRequestHeader("x-upsert", "false");
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable && onProgress) onProgress(e.loaded / e.total);
+      };
+      xhr.onload = () =>
+        xhr.status >= 200 && xhr.status < 300
+          ? resolve()
+          : reject(new Error(`Storage rejected the upload (${xhr.status}). ${xhr.responseText.slice(0, 160)}`));
+      xhr.onerror = () => reject(new Error("Network error while uploading to storage"));
+      xhr.send(file);
+    });
+
+    return { url: permit.public_url };
   },
 
   uploadImage: (file: File) => {

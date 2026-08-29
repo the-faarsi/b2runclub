@@ -104,6 +104,49 @@ function supabaseKeyFromUrl(url: string): string | null {
 }
 
 /**
+ * A one-shot permit for the browser to upload straight to object storage.
+ *
+ * This exists because of a hard platform limit, not a preference: a serverless
+ * function rejects request bodies over a few megabytes (Vercel at 4.5MB) before
+ * any of our code runs, so a video of any real size cannot be posted through the
+ * API at all. Raising multer's limit does nothing — the request never arrives.
+ *
+ * With a signed URL the bytes go browser → Supabase directly and the function
+ * only ever handles the small JSON that names the file. That is the only way to
+ * accept a 50MB upload on this deployment.
+ *
+ * Returns null when the active driver cannot do this (disk, blob), so callers
+ * can fall back to posting through the API — which is fine locally, where
+ * Express has no such limit.
+ */
+export async function createDirectUpload(
+    filename: string,
+): Promise<{ uploadUrl: string; token: string; publicUrl: string } | null> {
+    if (!usingSupabase) return null;
+
+    const { data, error } = await supabase()
+        .storage.from(SUPABASE_BUCKET)
+        .createSignedUploadUrl(filename);
+
+    if (error || !data) {
+        throw new Error(
+            `Could not sign an upload: ${error?.message ?? "no data returned"}. ` +
+                `Check the "${SUPABASE_BUCKET}" bucket exists.`,
+        );
+    }
+
+    // `signedUrl` has been relative in some versions of supabase-js and absolute
+    // in others, so normalise rather than assuming.
+    const signed = data.signedUrl.startsWith("http")
+        ? data.signedUrl
+        : `${SUPABASE_URL}/storage/v1${data.signedUrl.startsWith("/") ? "" : "/"}${data.signedUrl}`;
+
+    const { data: pub } = supabase().storage.from(SUPABASE_BUCKET).getPublicUrl(filename);
+
+    return { uploadUrl: signed, token: data.token, publicUrl: pub.publicUrl };
+}
+
+/**
  * Stores bytes and returns the URL to persist on the record.
  * disk returns "/uploads/<name>"; the other two return absolute URLs.
  */

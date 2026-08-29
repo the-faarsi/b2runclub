@@ -4,10 +4,14 @@ import { useFetch } from "../lib/useFetch";
 import { videoKind, youtubeEmbedUrl, youtubeId } from "../lib/video";
 import { Button, Card, Field, Input, useToast } from "./ui";
 
-/** Vercel and most serverless hosts reject request bodies over this. */
-const PLATFORM_BODY_LIMIT_MB = 4.5;
-/** What the backend itself accepts, for self-hosted and local runs. */
-const SERVER_LIMIT_MB = 64;
+/**
+ * The cap that actually applies now.
+ *
+ * It used to be the platform's 4.5MB request-body limit, because the file was
+ * posted through the API. Uploads go browser → object storage via a signed URL
+ * instead, so the function never sees the bytes and that limit no longer binds.
+ */
+const MAX_MB = 200;
 
 /**
  * Organiser control for the home page background video.
@@ -25,6 +29,8 @@ export function HeroVideoPanel() {
   const [url, setUrl] = useState("");
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
+  /** 0-1 while a file is going up. A 50MB upload with no feedback looks stuck. */
+  const [progress, setProgress] = useState(0);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -58,26 +64,20 @@ export function HeroVideoPanel() {
   /** Uploads, then saves the returned URL — one action from the organiser's side. */
   const pickFile = async (file: File) => {
     const mb = file.size / 1024 / 1024;
-    if (mb > SERVER_LIMIT_MB) {
-      toast(`That file is ${mb.toFixed(0)}MB. The limit is ${SERVER_LIMIT_MB}MB.`, "err");
+    if (mb > MAX_MB) {
+      toast(`That file is ${mb.toFixed(0)}MB. The limit is ${MAX_MB}MB.`, "err");
       return;
     }
     setUploading(true);
+    setProgress(0);
     try {
-      const { url: stored } = await api.uploadVideo(file);
+      const { url: stored } = await api.uploadVideo(file, setProgress);
       await save(stored);
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Upload failed";
-      // A body-size rejection comes back from the platform, not the app, so the
-      // message is usually unhelpful. Say what actually happened.
-      toast(
-        mb > PLATFORM_BODY_LIMIT_MB
-          ? `${message} — files over about ${PLATFORM_BODY_LIMIT_MB}MB are rejected by the host before reaching the app. Use a YouTube link instead.`
-          : message,
-        "err",
-      );
+      toast(err instanceof Error ? err.message : "Upload failed", "err");
     } finally {
       setUploading(false);
+      setProgress(0);
     }
   };
 
@@ -150,7 +150,9 @@ export function HeroVideoPanel() {
             disabled={busy}
             onClick={() => fileRef.current?.click()}
           >
-            Upload a file
+            {uploading && progress > 0
+              ? `Uploading ${Math.round(progress * 100)}%`
+              : "Upload a file"}
           </Button>
           {current && (
             <Button
@@ -178,11 +180,19 @@ export function HeroVideoPanel() {
           />
         </div>
 
+        {uploading && (
+          <div className="h-1 overflow-hidden rounded-full bg-white/8">
+            <div
+              className="h-full rounded-full bg-gold transition-[width] duration-200"
+              style={{ width: `${Math.max(2, Math.round(progress * 100))}%` }}
+            />
+          </div>
+        )}
+
         <p className="text-[11.5px] leading-relaxed text-ink-3">
-          A few seconds is plenty — it downloads before anyone reads the page. Uploads are capped at{" "}
-          {SERVER_LIMIT_MB}MB, but a serverless host rejects bodies over about {PLATFORM_BODY_LIMIT_MB}
-          MB before they reach the app, so YouTube is the reliable route for anything larger. Skipped
-          entirely for visitors who ask for reduced motion.
+          Up to {MAX_MB}MB. Files go straight to storage rather than through the API, so the host's
+          request-size limit no longer applies. Keep it short anyway — it downloads before anyone
+          reads the page. Skipped entirely for visitors who ask for reduced motion.
         </p>
       </div>
     </Card>
