@@ -13,6 +13,7 @@ import { SplitText } from "gsap/SplitText";
 import { useGSAP } from "@gsap/react";
 import { Link } from "react-router-dom";
 import { EventCard } from "../components/events";
+import { ClubFeatures, JoinBanner } from "../components/clubFeatures";
 import { CollaboratorScroller } from "../components/collaborators";
 import { CommunityLinks } from "../components/communityLinks";
 import { Founders } from "../components/founders";
@@ -92,7 +93,7 @@ const PILLARS = [
   {
     Icon: CalendarIcon,
     title: "Run the calendar",
-    body: "Weekly road runs, trail sessions, rides and the odd party. Register in two taps.",
+    body: "Road, trail, rides and the odd party.",
     // Drop your image at public/pillars/calendar.jpg — omit this key entirely
     // if you don't have one yet; the card works without it.
     image: "/pillars/calendar.jpg",
@@ -100,13 +101,13 @@ const PILLARS = [
   {
     Icon: TicketIcon,
     title: "Carry a QR ticket",
-    body: "Every confirmed spot gets a scannable ticket. Volunteers marshal for free.",
+    body: "Every spot gets a scannable ticket.",
     image: "/pillars/ticket.jpg",
   },
   {
     Icon: SparkIcon,
     title: "Decide together",
-    body: "Polls pick the routes. The forum carries the announcements and the banter.",
+    body: "Polls pick the routes. The forum carries the rest.",
     image: "/pillars/decide.jpg",
   },
 ];
@@ -115,25 +116,25 @@ const HOW_STEPS = [
   {
     n: "01",
     t: "Pick a session",
-    b: "Browse the calendar or the list. Every session shows route, start time and entry.",
+    b: "Route, start time and entry, all on the board.",
     badge: { label: "Calendar", color: "var(--color-gold)", bg: "rgba(233,185,73,0.13)", icon: "📅" },
   },
   {
     n: "02",
     t: "Sign the waiver",
-    b: "Once, with your emergency contact. We keep it for the organisers on the day.",
+    b: "Once, with an emergency contact.",
     badge: { label: "One time", color: "var(--color-free)", bg: "rgba(100,200,120,0.13)", icon: "✍️" },
   },
   {
     n: "03",
     t: "Pay in-app",
-    b: "Card payment through Razorpay. Volunteers marshal and pay nothing.",
+    b: "Card through Razorpay. Volunteers pay nothing.",
     badge: { label: "Secure pay", color: "var(--color-paid)", bg: "rgba(100,160,255,0.13)", icon: "💳" },
   },
   {
     n: "04",
     t: "Show your ticket",
-    b: "A QR code we scan at the start line. Screenshots are fine.",
+    b: "We scan the QR at the start line.",
     badge: { label: "QR ticket", color: "#c084fc", bg: "rgba(192,132,252,0.13)", icon: "🎟️" },
   },
 ];
@@ -412,9 +413,14 @@ export function Landing() {
   return (
     <>
       {/* ── Hero ─────────────────────────────────────────── */}
+      {/* overflow-x-clip because the desktop graphic is floated and parallaxed
+          by GSAP, so it drifts a few pixels past `right-0` mid-animation and
+          took the document 7px wider than the viewport at 1024 and 1280. `clip`
+          rather than `hidden` leaves the vertical hover lift on the cards
+          below intact. */}
       <section
         ref={heroRef}
-        className="relative mx-auto max-w-7xl px-4 pb-16 pt-14 sm:px-6 sm:pt-20 lg:px-8"
+        className="relative mx-auto max-w-7xl overflow-x-clip px-4 pb-16 pt-14 sm:px-6 sm:pt-20 lg:px-8"
       >
         {/* Optional background video, set by an organiser. Renders nothing when
             none is configured, so the 3D scene below stays the default. */}
@@ -436,7 +442,13 @@ export function Landing() {
           <Hero3D className="h-full w-full" />
         </div>
 
-        {/* Desktop: top-right corner, float + parallax via GSAP */}
+        {/* Desktop: top-right corner, float + parallax via GSAP.
+            Still hung 6% past the right edge — that offset is what keeps it out
+            of the headline and the buttons. Pulling it to right-0 to stop the
+            document growing wider than the viewport worked, but moved the
+            ribbon ~77px left, straight across the call-to-action row. The
+            section clips on x instead, which fixes the scrollbar without
+            touching the composition. */}
         <div
           ref={heroGraphicRef}
           className="pointer-events-none absolute -top-10 right-[-6%] hidden h-[620px] w-[60%] lg:block"
@@ -473,14 +485,24 @@ export function Landing() {
             <span className="text-gold">stride.</span>
           </h1>
 
-          <p ref={heroParagraphRef} className="mt-6 max-w-xl text-[17px] leading-relaxed text-ink-2">
-            A running club that actually runs on time. Pick a session, sign the waiver, pay once,
-            and turn up with a ticket in your pocket.
+          {/* One line. The old two-sentence explanation said what the four-step
+              section below already shows. */}
+          <p ref={heroParagraphRef} className="mt-6 max-w-md text-[17px] leading-relaxed text-ink-2">
+            A running club that actually runs on time.
           </p>
 
           <div ref={heroButtonsRef} className="mt-9 flex flex-wrap items-center gap-3">
-            <Link ref={heroBtnPrimaryRef} to="/calendar" className={buttonClass("gold", "lg", "sweep")}>
-              See the calendar
+            {/* Joining is the point of this page, so it takes the gold button.
+                It used to be the outline one next to "See the calendar", which
+                made browsing the primary action for someone who had not signed
+                up yet. Members already have an account, so for them the
+                calendar is the useful first move. */}
+            <Link
+              ref={heroBtnPrimaryRef}
+              to={user ? "/calendar" : "/signup"}
+              className={buttonClass("gold", "lg", "sweep")}
+            >
+              {user ? "See the calendar" : "Join the club"}
               <svg viewBox="0 0 24 24" className="size-4" fill="none" aria-hidden>
                 <path
                   d="M5 12h14m-6-6 6 6-6 6"
@@ -492,8 +514,8 @@ export function Landing() {
               </svg>
             </Link>
             {!user && (
-              <Link ref={heroBtnSecondaryRef} to="/signup" className={buttonClass("outline", "lg")}>
-                Join the club
+              <Link ref={heroBtnSecondaryRef} to="/calendar" className={buttonClass("outline", "lg")}>
+                See the calendar
               </Link>
             )}
             <Link ref={heroBtnGhostRef} to="/leaderboard" className={buttonClass("ghost", "lg")}>
@@ -638,6 +660,13 @@ export function Landing() {
         </section>
       </Reveal>
 
+      {/* ── Inside the club ──────────────────────────────── */}
+      {/* High up on purpose. This is what someone is actually deciding about,
+          and it used to be absent from the page entirely — the club's own
+          features were only discoverable after signing up. */}
+      <ClubFeatures />
+      <JoinBanner />
+
       {/* ── How it works — scroll-driven sticky section ───── */}
       {/*
         Runway is 180vh, so the inner sticky div pins for 80vh of scrolling.
@@ -775,13 +804,13 @@ export function Landing() {
                   role: "Member",
                   tint: "var(--color-paid)",
                   line: "You want to run.",
-                  perks: ["Register for any published session", "Pay once, carry a QR ticket", "Post, comment and vote on routes"],
+                  perks: ["Register for any session", "Pay once, carry a QR ticket", "Vote on the routes"],
                 },
                 {
                   role: "Volunteer",
                   tint: "var(--color-free)",
                   line: "You want to marshal.",
-                  perks: ["Entry comped on every event", "Gold bib and the junction calls", "Post photos to the club gallery"],
+                  perks: ["Entry comped, every event", "Gold bib, junction calls", "Post to the gallery"],
                 },
               ].map((r, i) => (
                 <Reveal key={r.role} delay={i * 0.07}>
@@ -960,14 +989,13 @@ export function Landing() {
               <h2 className="display text-[clamp(26px,3.6vw,38px)]">
                 What you're agreeing to.
               </h2>
+              {/* Two lines rather than four. The full text lives on /terms,
+                  which is one tap away below. */}
               <p className="mt-5 text-[15px] leading-relaxed text-ink-2">
-                Register for a session and you confirm you're medically fit to take part, and that
-                you take part at your own risk. There's a briefing fifteen minutes before every
-                start — the route, the junctions, where the marshals will be.
+                You take part at your own risk, and confirm you're fit to. Briefing is fifteen
+                minutes before every start.
               </p>
-              <p className="mt-3 text-[15px] leading-relaxed text-ink-2">
-                {REFUND_ONE_LINER} If the club cancels, everyone is refunded in full.
-              </p>
+              <p className="mt-3 text-[15px] leading-relaxed text-ink-2">{REFUND_ONE_LINER}</p>
               <div className="mt-7 flex flex-wrap gap-3">
                 <Link to="/terms" className={buttonClass("gold", "md")}>
                   Read the full terms
@@ -1025,7 +1053,7 @@ export function Landing() {
                 Next run leaves without you.
               </h2>
               <p className="mx-auto mt-4 max-w-md text-[15px] text-ink-2">
-                Join as a member to register and pay, or as a volunteer to marshal for free.
+                Member to run, volunteer to marshal for free.
               </p>
               <div className="mt-8 flex flex-wrap justify-center gap-3">
                 <Link to="/signup" className={buttonClass("gold", "lg")}>

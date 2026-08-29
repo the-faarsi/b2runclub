@@ -672,7 +672,13 @@ export function Footer() {
    * collapsed into an unlabelled list of eleven links in no particular order.
    */
   return (
-    <footer className="mt-8 border-t border-white/8">
+    /* overflow-x-clip, not hidden: the creators' mark carries a .creator-glow
+       inset at -60% -30%, so the glow reaches 30% past the logo box on each side
+       — deliberately, so the gradient is transparent before its own edge. That
+       bleed was widening the document by 14px at 768 and 6px at 1024+, giving
+       every page in the app a horizontal scrollbar. `clip` stops the horizontal
+       growth while still allowing the vertical bleed, which `hidden` would cut. */
+    <footer className="mt-8 overflow-x-clip border-t border-white/8">
       <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
         <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-[1.4fr_1fr_1fr_1fr]">
           {/* Identity */}
