@@ -32,7 +32,21 @@ import { RaceDay } from "./pages/RaceDay";
 /** Chrome-wrapped routes. */
 function Shell() {
   return (
-    <div className="flex min-h-screen flex-col">
+    /*
+     * overflow-x-clip at the shell, not on individual sections.
+     *
+     * Several decorative layers deliberately bleed sideways — the hero's 3D
+     * graphic, PageScene backdrops, the creators' glow — and any of them can
+     * widen the document and produce a horizontal scrollbar. Clipping each
+     * section was worse than the scrollbar: it cut the hero model off at the
+     * 1280px container edge, which on a wide screen is nowhere near the edge of
+     * the picture. Clipping here means nothing is trimmed until it actually
+     * leaves the viewport.
+     *
+     * `clip` rather than `hidden` on purpose: `hidden` on one axis makes the
+     * other axis a scroll container, which would break the sticky navbar.
+     */
+    <div className="flex min-h-screen flex-col overflow-x-clip">
       <ScrollProgress />
       <Navbar />
       <div className="flex-1">

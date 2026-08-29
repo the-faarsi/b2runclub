@@ -10,6 +10,8 @@ import {
   UsersIcon,
   WhatsAppIcon,
 } from "../components/icons";
+import { CLUB_SHORT } from "../lib/brand";
+
 import { Page, PageHeader } from "../components/layout";
 import { PageScene } from "../components/scene3d";
 import { Reveal } from "../components/motion";
@@ -37,7 +39,7 @@ import { useFetch } from "../lib/useFetch";
 const PLACEHOLDER = {
   headline: "A running club that actually runs on time.",
   about:
-    "Burn and Bond is a community running club. We meet for road runs, trail sessions and the occasional ride, and we finish with coffee. Everyone is welcome, whatever your pace.",
+    `${CLUB_SHORT} is a community running club. We meet for road runs, trail sessions and the occasional ride, and we finish with coffee. Everyone is welcome, whatever your pace.`,
   mission: "Show up, run together, look after each other.",
 };
 
@@ -84,7 +86,7 @@ export function About() {
       <PageHeader
         eyebrow="About the club"
         title="Who we are"
-        description="What Burn and Bond is, how it runs, and how to find us."
+        description={`What ${CLUB_SHORT} is, how it runs, and how to find us.`}
         action={
           isAdmin ? (
             <Button onClick={() => setEditing(true)}>Edit club details</Button>

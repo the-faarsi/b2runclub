@@ -413,14 +413,12 @@ export function Landing() {
   return (
     <>
       {/* ── Hero ─────────────────────────────────────────── */}
-      {/* overflow-x-clip because the desktop graphic is floated and parallaxed
-          by GSAP, so it drifts a few pixels past `right-0` mid-animation and
-          took the document 7px wider than the viewport at 1024 and 1280. `clip`
-          rather than `hidden` leaves the vertical hover lift on the cards
-          below intact. */}
+      {/* No clip here — the shell clips at the viewport instead. Clipping this
+          section cut the 3D model off at the container edge, which on a wide
+          screen is well inside the visible area. */}
       <section
         ref={heroRef}
-        className="relative mx-auto max-w-7xl overflow-x-clip px-4 pb-16 pt-14 sm:px-6 sm:pt-20 lg:px-8"
+        className="relative mx-auto max-w-7xl px-4 pb-16 pt-14 sm:px-6 sm:pt-20 lg:px-8"
       >
         {/* Optional background video, set by an organiser. Renders nothing when
             none is configured, so the 3D scene below stays the default. */}
@@ -442,16 +440,23 @@ export function Landing() {
           <Hero3D className="h-full w-full" />
         </div>
 
-        {/* Desktop: top-right corner, float + parallax via GSAP.
-            Still hung 6% past the right edge — that offset is what keeps it out
-            of the headline and the buttons. Pulling it to right-0 to stop the
-            document growing wider than the viewport worked, but moved the
-            ribbon ~77px left, straight across the call-to-action row. The
-            section clips on x instead, which fixes the scrollbar without
-            touching the composition. */}
+        {/*
+          Desktop: top-right corner, float + parallax via GSAP.
+
+          The right offset is the container's own gutter, so the graphic's right
+          edge lands on the viewport edge at any width — pushed as far right as
+          it can go, clear of the headline and the buttons, and never cut.
+
+          It was a flat `right-[-6%]`, which is a share of the container rather
+          than of the space outside it: on a 1280 screen that hung 61px past the
+          viewport and the model lost its end, while on a 1680 screen it left
+          139px of gutter unused. `min(100vw,80rem)` is the container's real
+          width, so `(100vw - that) / 2` is exactly one gutter, and the 12px
+          keeps the GSAP float from drifting over the edge.
+        */}
         <div
           ref={heroGraphicRef}
-          className="pointer-events-none absolute -top-10 right-[-6%] hidden h-[620px] w-[60%] lg:block"
+          className="pointer-events-none absolute -top-10 right-[calc(12px-(100vw-min(100vw,80rem))/2)] hidden h-[620px] w-[60%] lg:block"
           style={{ opacity: 0 }}
           aria-hidden
         >

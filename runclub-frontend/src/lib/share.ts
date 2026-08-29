@@ -1,4 +1,5 @@
 import type { ClubEvent } from "./types";
+import { CLUB_NAME } from "./brand";
 
 /* ── Add to calendar ──────────────────────────────────────── */
 
@@ -24,7 +25,7 @@ export function eventToIcs(event: ClubEvent, assumedHours = 2): string {
   const lines = [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
-    "PRODID:-//Burn and Bond Run Club//Events//EN",
+    `PRODID:-//${CLUB_NAME}//Events//EN`,
     "CALSCALE:GREGORIAN",
     "METHOD:PUBLISH",
     "BEGIN:VEVENT",
@@ -35,7 +36,7 @@ export function eventToIcs(event: ClubEvent, assumedHours = 2): string {
     `SUMMARY:${icsEscape(event.title)}`,
     `LOCATION:${icsEscape(event.location)}`,
     `DESCRIPTION:${icsEscape(
-      `${event.type} with Burn and Bond Run Club.${
+      `${event.type} with ${CLUB_NAME}.${
         event.price > 0 ? ` Entry ₹${event.price}.` : " Free to enter."
       } Bring your QR ticket.`,
     )}`,
