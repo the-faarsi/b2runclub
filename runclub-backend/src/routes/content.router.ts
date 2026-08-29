@@ -36,6 +36,31 @@ const upload = multer({
     },
 });
 
+const ALLOWED_VIDEO_MIME: Record<string, string> = {
+    "video/mp4": ".mp4",
+    "video/webm": ".webm",
+    // iPhones record .mov; browsers play the H.264 inside it, so it is worth
+    // accepting rather than making an organiser convert it first.
+    "video/quicktime": ".mov",
+};
+
+/**
+ * Separate multer instance for the hero video.
+ *
+ * 64MB here, but note the deployment is the real ceiling: serverless platforms
+ * cap request bodies (Vercel at 4.5MB), so anything larger has to be hosted
+ * elsewhere and pasted in as a URL. The generous limit is for self-hosted and
+ * local runs, where it genuinely works.
+ */
+const videoUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 64 * 1024 * 1024, files: 1 },
+    fileFilter: (_req, file, cb) => {
+        if (ALLOWED_VIDEO_MIME[file.mimetype]) return cb(null, true);
+        cb(new Error("Only MP4, WebM or MOV videos are allowed"));
+    },
+});
+
 /** multer's in-memory file shape, narrowed to what these handlers use. */
 type MemFile = { buffer: Buffer; mimetype: string; originalname: string };
 
@@ -80,6 +105,41 @@ router.post(
         });
     },
 );
+
+/**
+ * 0b. Store a video and return its URL. Admins only.
+ *
+ * Sibling of the image route above, kept separate because the accepted types
+ * and the size limit are different by an order of magnitude, and a single
+ * endpoint would have to accept video-sized bodies for image uploads too.
+ */
+router.post("/uploads/video", requireRole(["ADMIN"]), (req: AuthRequest, res: Response) => {
+    videoUpload.single("video")(req as any, res as any, async (err: any) => {
+        try {
+            if (err) {
+                // multer's own message for an oversized file is "File too large",
+                // which does not say what the limit is.
+                const tooBig = err.code === "LIMIT_FILE_SIZE";
+                res.status(400).json({
+                    error: tooBig
+                        ? "That video is over 64MB. Host it elsewhere and paste the link, or use a YouTube URL."
+                        : err.message || "Upload rejected",
+                });
+                return;
+            }
+            const file = (req as any).file as MemFile | undefined;
+            if (!file) {
+                res.status(400).json({ error: "Attach a video file" });
+                return;
+            }
+            const ext = ALLOWED_VIDEO_MIME[file.mimetype] ?? ".mp4";
+            const url = await putObject(safeFilename(ext), file.buffer, file.mimetype);
+            res.status(201).json({ url });
+        } catch (error: any) {
+            res.status(500).json({ error: error.message || "Failed to store the video" });
+        }
+    });
+});
 
 /* ── Gallery ──────────────────────────────────────────────── */
 

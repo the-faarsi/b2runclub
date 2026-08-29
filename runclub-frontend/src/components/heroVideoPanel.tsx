@@ -1,16 +1,21 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../lib/api";
 import { useFetch } from "../lib/useFetch";
+import { videoKind, youtubeEmbedUrl, youtubeId } from "../lib/video";
 import { Button, Card, Field, Input, useToast } from "./ui";
+
+/** Vercel and most serverless hosts reject request bodies over this. */
+const PLATFORM_BODY_LIMIT_MB = 4.5;
+/** What the backend itself accepts, for self-hosted and local runs. */
+const SERVER_LIMIT_MB = 64;
 
 /**
  * Organiser control for the home page background video.
  *
- * A URL rather than an upload, deliberately. A hero clip that looks like
- * anything is several megabytes, and the deployment rejects request bodies over
- * 4.5MB — so an upload field would fail for precisely the files people have.
- * Pointing at a file served from `public/` or object storage sidesteps that and
- * gets a CDN in front of it.
+ * Two ways in, because neither covers everything on its own: a YouTube link
+ * costs nothing to host and streams at any size, and an uploaded file avoids
+ * YouTube's branding and works without a third party. The player works out
+ * which it has been given from the value, so there is no type to pick.
  */
 export function HeroVideoPanel() {
   const toast = useToast();
@@ -19,20 +24,29 @@ export function HeroVideoPanel() {
 
   const [url, setUrl] = useState("");
   const [busy, setBusy] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setUrl(club?.hero_video_url ?? "");
   }, [club?.hero_video_url]);
 
   const current = club?.hero_video_url ?? null;
-  const dirty = url.trim() !== (current ?? "");
+  const trimmed = url.trim();
+  const dirty = trimmed !== (current ?? "");
+  const kind = videoKind(trimmed);
+  const ytId = kind === "youtube" ? youtubeId(trimmed) : null;
 
   const save = async (next: string) => {
     setBusy(true);
     try {
       // Empty string clears it server-side, which is how "Remove" works.
-      const updated = await api.updateClubInfo({ hero_video_url: next });
+      // The route answers { message, club } — not the record on its own, which
+      // is what this used to assume, so the saved value was dropped from local
+      // state and the panel showed the field as empty until a reload.
+      const { club: updated } = await api.updateClubInfo({ hero_video_url: next });
       setData(() => updated);
+      setUrl(updated.hero_video_url ?? "");
       toast(next ? "Hero video updated." : "Hero video removed.", "ok");
     } catch (err) {
       toast(err instanceof Error ? err.message : "Could not save", "err");
@@ -41,53 +55,107 @@ export function HeroVideoPanel() {
     }
   };
 
+  /** Uploads, then saves the returned URL — one action from the organiser's side. */
+  const pickFile = async (file: File) => {
+    const mb = file.size / 1024 / 1024;
+    if (mb > SERVER_LIMIT_MB) {
+      toast(`That file is ${mb.toFixed(0)}MB. The limit is ${SERVER_LIMIT_MB}MB.`, "err");
+      return;
+    }
+    setUploading(true);
+    try {
+      const { url: stored } = await api.uploadVideo(file);
+      await save(stored);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Upload failed";
+      // A body-size rejection comes back from the platform, not the app, so the
+      // message is usually unhelpful. Say what actually happened.
+      toast(
+        mb > PLATFORM_BODY_LIMIT_MB
+          ? `${message} — files over about ${PLATFORM_BODY_LIMIT_MB}MB are rejected by the host before reaching the app. Use a YouTube link instead.`
+          : message,
+        "err",
+      );
+    } finally {
+      setUploading(false);
+    }
+  };
+
   return (
     <Card className="p-6">
       <h2 className="text-[15px] font-semibold text-ink">Home page video</h2>
       <p className="mt-1.5 text-[13px] leading-relaxed text-ink-3">
-        Plays muted on a loop behind the headline. Leave it empty to keep the 3D graphic.
+        Plays muted on a loop behind the hero. Leave it empty to keep the 3D graphic.
       </p>
 
       <div className="mt-5 space-y-4">
         <Field
-          label="Video URL"
+          label="YouTube link or video URL"
           htmlFor="hero-video"
-          hint="An .mp4 or .webm. Drop the file in the site's public folder and use /hero.mp4, or paste a link from storage."
+          hint="Any YouTube address works — watch, youtu.be, shorts or embed. Or paste a direct .mp4 / .webm link."
         >
           <Input
             id="hero-video"
             value={url}
             onChange={(e) => setUrl(e.target.value)}
-            placeholder="/hero.mp4"
+            placeholder="https://youtube.com/watch?v=… or /hero.mp4"
             inputMode="url"
           />
         </Field>
 
-        {/* A silent preview, so a wrong or dead link is obvious here rather than
+        {trimmed && (
+          <p className="text-[12px] text-ink-3">
+            Reads as{" "}
+            <span className="font-semibold text-gold">
+              {kind === "youtube" ? "a YouTube video" : "a video file"}
+            </span>
+            {kind === "youtube" && ytId ? ` (${ytId})` : ""}.
+          </p>
+        )}
+
+        {/* Silent preview, so a wrong or dead link is obvious here rather than
             on the public home page. */}
-        {url.trim() && (
+        {trimmed && (
           <div className="overflow-hidden rounded-xl border border-white/8 bg-surface-2/60">
-            <video
-              key={url.trim()}
-              src={url.trim()}
-              muted
-              loop
-              autoPlay
-              playsInline
-              preload="metadata"
-              className="aspect-video w-full object-cover"
-            />
+            {kind === "youtube" && ytId ? (
+              <iframe
+                key={ytId}
+                title="Hero video preview"
+                src={youtubeEmbedUrl(ytId)}
+                allow="autoplay; encrypted-media"
+                className="aspect-video w-full border-0"
+              />
+            ) : (
+              <video
+                key={trimmed}
+                src={trimmed}
+                muted
+                loop
+                autoPlay
+                playsInline
+                preload="metadata"
+                className="aspect-video w-full object-cover"
+              />
+            )}
           </div>
         )}
 
         <div className="flex flex-wrap gap-2.5">
-          <Button loading={busy} disabled={!dirty} onClick={() => void save(url.trim())}>
+          <Button loading={busy && !uploading} disabled={!dirty} onClick={() => void save(trimmed)}>
             Save video
+          </Button>
+          <Button
+            variant="outline"
+            loading={uploading}
+            disabled={busy}
+            onClick={() => fileRef.current?.click()}
+          >
+            Upload a file
           </Button>
           {current && (
             <Button
-              variant="outline"
-              disabled={busy}
+              variant="ghost"
+              disabled={busy || uploading}
               onClick={() => {
                 setUrl("");
                 void save("");
@@ -96,11 +164,25 @@ export function HeroVideoPanel() {
               Remove
             </Button>
           )}
+          <input
+            ref={fileRef}
+            type="file"
+            accept="video/mp4,video/webm,video/quicktime"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              // Reset so picking the same file twice still fires onChange.
+              e.target.value = "";
+              if (f) void pickFile(f);
+            }}
+          />
         </div>
 
         <p className="text-[11.5px] leading-relaxed text-ink-3">
-          Keep it under about 8MB and a few seconds long — it downloads before anyone reads the
-          headline. It is skipped for visitors who ask for reduced motion.
+          A few seconds is plenty — it downloads before anyone reads the page. Uploads are capped at{" "}
+          {SERVER_LIMIT_MB}MB, but a serverless host rejects bodies over about {PLATFORM_BODY_LIMIT_MB}
+          MB before they reach the app, so YouTube is the reliable route for anything larger. Skipped
+          entirely for visitors who ask for reduced motion.
         </p>
       </div>
     </Card>

@@ -291,6 +291,17 @@ export const api = {
    * the record exists — an event cover is chosen while the event is still being
    * created, so there is no id to attach it to yet.
    */
+  /**
+   * Stores a hero video and returns its URL. Separate from `uploadImage`
+   * because the server's accepted types and size cap are different by an order
+   * of magnitude.
+   */
+  uploadVideo: (file: File) => {
+    const form = new FormData();
+    form.append("video", file);
+    return upload<{ url: string }>("/api/content/uploads/video", form);
+  },
+
   uploadImage: (file: File) => {
     const form = new FormData();
     form.append("image", file);
@@ -473,7 +484,10 @@ export const api = {
    * string clears a nullable field — which is how the hero video is removed.
    */
   updateClubInfo: (input: Partial<Omit<ClubInfo, "id" | "updated_at">>) =>
-    request<ClubInfo>("/api/content/club", { method: "PUT", body: input }),
+    request<{ message: string; club: ClubInfo }>("/api/content/club", {
+      method: "PUT",
+      body: input,
+    }),
 
   saveClubInfo: (input: Partial<Omit<ClubInfo, "id" | "updated_at">>) =>
     request<{ message: string; club: ClubInfo }>("/api/content/club", {

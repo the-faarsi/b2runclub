@@ -9,7 +9,6 @@ import {
 } from "framer-motion";
 import { useCallback, useRef, useState, type ReactNode } from "react";
 import { gsap } from "gsap";
-import { SplitText } from "gsap/SplitText";
 import { useGSAP } from "@gsap/react";
 import { Link } from "react-router-dom";
 import { ClubFeatures, JoinBanner } from "../components/clubFeatures";
@@ -27,8 +26,6 @@ import { useAuth } from "../lib/auth";
 import { countdown, inr, isPast } from "../lib/format";
 import { REFUND_ONE_LINER } from "../lib/policies";
 import { useFetch } from "../lib/useFetch";
-
-gsap.registerPlugin(SplitText);
 
 /**
  * Magnetic hover: the element nudges toward the cursor as it moves within
@@ -257,12 +254,8 @@ export function Landing() {
   // ── Hero entrance choreography (GSAP) ──
   const heroRef = useRef<HTMLElement>(null);
   const heroPillRef = useRef<HTMLSpanElement>(null);
-  const heroHeadlineRef = useRef<HTMLHeadingElement>(null);
-  const heroParagraphRef = useRef<HTMLParagraphElement>(null);
-  const heroButtonsRef = useRef<HTMLDivElement>(null);
   const heroBtnPrimaryRef = useRef<HTMLAnchorElement>(null);
   const heroBtnSecondaryRef = useRef<HTMLAnchorElement>(null);
-  const heroBtnGhostRef = useRef<HTMLAnchorElement>(null);
   const heroGraphicRef = useRef<HTMLDivElement>(null);
   const heroGraphicFloatRef = useRef<HTMLDivElement>(null);
   const heroGraphicParallaxRef = useRef<HTMLDivElement>(null);
@@ -270,13 +263,6 @@ export function Landing() {
 
   useGSAP(
     () => {
-      const headlineSplit = heroHeadlineRef.current
-        ? new SplitText(heroHeadlineRef.current, { type: "words", wordsClass: "hero-word" })
-        : null;
-      if (headlineSplit) {
-        gsap.set(headlineSplit.words, { display: "inline-block" });
-      }
-
       const tl = gsap.timeline({ defaults: { ease: "power3.out" } });
 
       tl.fromTo(
@@ -284,31 +270,21 @@ export function Landing() {
         { opacity: 0, y: -10, scale: 0.9 },
         { opacity: 1, y: 0, scale: 1, duration: 0.5, ease: "back.out(1.7)" },
       )
+        /* The model leads now, so it comes in first and the button follows it
+           rather than the other way round. */
         .fromTo(
-          headlineSplit ? headlineSplit.words : heroHeadlineRef.current,
-          { opacity: 0, y: 40, rotateX: -40, transformOrigin: "50% 100%" },
-          { opacity: 1, y: 0, rotateX: 0, duration: 0.8, stagger: 0.08, ease: "power4.out" },
-          "-=0.25",
-        )
-        .fromTo(
-          heroParagraphRef.current,
-          { opacity: 0, y: 16 },
-          { opacity: 1, y: 0, duration: 0.5 },
-          "-=0.4",
-        )
-        .fromTo(
-          // Collect only the refs that are actually mounted (secondary button
-          // is absent when the user is already signed in).
-          [heroBtnPrimaryRef.current, heroBtnSecondaryRef.current, heroBtnGhostRef.current].filter(Boolean),
-          { opacity: 0, y: 14 },
-          { opacity: 1, y: 0, duration: 0.45, stagger: 0.08 },
+          heroGraphicRef.current,
+          { opacity: 0, scale: 0.94 },
+          { opacity: 1, scale: 1, duration: 1.1, ease: "power2.out" },
           "-=0.3",
         )
         .fromTo(
-          heroGraphicRef.current,
-          { opacity: 0, scale: 0.96 },
-          { opacity: 1, scale: 1, duration: 1.1, ease: "power2.out" },
-          "-=1.0",
+          // Only the refs actually mounted — the secondary link is absent once
+          // someone is signed in.
+          [heroBtnPrimaryRef.current, heroBtnSecondaryRef.current].filter(Boolean),
+          { opacity: 0, y: 14 },
+          { opacity: 1, y: 0, duration: 0.45, stagger: 0.08 },
+          "-=0.55",
         )
         .fromTo(
           heroSpotlightRef.current,
@@ -357,12 +333,9 @@ export function Landing() {
       const magneticCleanups: Array<() => void> = [];
       if (typeof window !== "undefined" && window.matchMedia("(pointer: fine)").matches) {
         magneticCleanups.push(attachMagneticHover(heroBtnPrimaryRef.current, 0.3));
-        magneticCleanups.push(attachMagneticHover(heroBtnSecondaryRef.current, 0.3));
-        magneticCleanups.push(attachMagneticHover(heroBtnGhostRef.current, 0.3));
       }
 
       return () => {
-        headlineSplit?.revert();
         if (sectionEl && handlePointerMove && handlePointerLeave) {
           sectionEl.removeEventListener("pointermove", handlePointerMove);
           sectionEl.removeEventListener("pointerleave", handlePointerLeave);
@@ -386,51 +359,17 @@ export function Landing() {
         {/* Optional background video, set by an organiser. Renders nothing when
             none is configured, so the 3D scene below stays the default. */}
         <HeroVideo />
-        {/* Mobile + tablet: 3D graphic sits between the h1 and the paragraph.
-            Absolutely positioned so no div shifts — content stays in normal flow.
-            z-0 so text layers above it naturally.
-            10% inset on every side (rather than a fixed top/height) makes the
-            box resolve to 80% of the section's own width and height — since
-            the section's height is auto (driven by the in-flow content) and
-            this element is out of flow, top+bottom percentages resolve against
-            that resolved height once layout completes, so the graphic scales
-            with the section instead of being pinned to a fixed pixel band. */}
-        <div
-          className="pointer-events-none absolute inset-[10%] z-0 lg:hidden"
-          style={{ opacity: 0.5 }}
-          aria-hidden
-        >
-          <Hero3D className="h-full w-full" />
-        </div>
-
         {/*
-          Desktop: top-right corner, float + parallax via GSAP.
+          Centred hero: the model is the headline.
 
-          The right offset is the container's own gutter, so the graphic's right
-          edge lands on the viewport edge at any width — pushed as far right as
-          it can go, clear of the headline and the buttons, and never cut.
-
-          It was a flat `right-[-6%]`, which is a share of the container rather
-          than of the space outside it: on a 1280 screen that hung 61px past the
-          viewport and the model lost its end, while on a 1680 screen it left
-          139px of gutter unused. `min(100vw,80rem)` is the container's real
-          width, so `(100vw - that) / 2` is exactly one gutter, and the 12px
-          keeps the GSAP float from drifting over the edge.
+          There were two Hero3D instances before — one absolutely positioned for
+          phones, one hung in the top-right corner for desktop with a calc()
+          offset to keep it inside the viewport — because the corner had to stay
+          clear of the h1 and the buttons. With the copy gone the model sits in
+          normal flow in the middle, which needs neither the duplicate nor the
+          offset, and cannot be cut at any width.
         */}
-        <div
-          ref={heroGraphicRef}
-          className="pointer-events-none absolute -top-10 right-[calc(12px-(100vw-min(100vw,80rem))/2)] hidden h-[620px] w-[60%] lg:block"
-          style={{ opacity: 0 }}
-          aria-hidden
-        >
-          <div ref={heroGraphicFloatRef} className="h-full w-full">
-            <div ref={heroGraphicParallaxRef} className="h-full w-full">
-              <Hero3D className="h-full w-full" />
-            </div>
-          </div>
-        </div>
-
-        <div className="relative max-w-3xl">
+        <div className="flex flex-col items-center text-center">
           <span
             ref={heroPillRef}
             className="inline-flex items-center gap-2 rounded-full border border-gold/25 bg-gold/8 px-3 py-1.5"
@@ -443,35 +382,33 @@ export function Landing() {
             </span>
           </span>
 
-          <h1
-            ref={heroHeadlineRef}
-            className="display mt-6 text-[clamp(44px,9vw,86px)]"
-            style={{ perspective: "600px" }}
+          {/* Height scales with the viewport so the model fills the space the
+              headline used to take, without pushing the button below the fold. */}
+          <div
+            ref={heroGraphicRef}
+            className="pointer-events-none relative mt-6 h-[clamp(230px,44vw,500px)] w-full"
+            style={{ opacity: 0 }}
+            aria-hidden
           >
-            Find your
-            <br />
-            <span className="text-gold">stride.</span>
-          </h1>
+            <div ref={heroGraphicFloatRef} className="h-full w-full">
+              <div ref={heroGraphicParallaxRef} className="h-full w-full">
+                <Hero3D className="h-full w-full" />
+              </div>
+            </div>
+          </div>
 
-          {/* One line. The old two-sentence explanation said what the four-step
-              section below already shows. */}
-          <p ref={heroParagraphRef} className="mt-6 max-w-md text-[17px] leading-relaxed text-ink-2">
-            A running club that actually runs on time.
-          </p>
-
-          <div ref={heroButtonsRef} className="mt-9 flex flex-wrap items-center gap-3">
-            {/* Joining is the point of this page, so it takes the gold button.
-                It used to be the outline one next to "See the calendar", which
-                made browsing the primary action for someone who had not signed
-                up yet. Members already have an account, so for them the
-                calendar is the useful first move. */}
+          <div className="mt-8 flex flex-col items-center gap-4">
             <Link
               ref={heroBtnPrimaryRef}
               to={user ? "/calendar" : "/signup"}
-              className={buttonClass("gold", "lg", "sweep")}
+              className={buttonClass(
+                "gold",
+                "lg",
+                "sweep px-10 py-5 text-[18px] sm:px-14 sm:py-6 sm:text-[20px]",
+              )}
             >
-              {user ? "See the calendar" : "Join the club"}
-              <svg viewBox="0 0 24 24" className="size-4" fill="none" aria-hidden>
+              {user ? "See the calendar" : "Join Us"}
+              <svg viewBox="0 0 24 24" className="size-5" fill="none" aria-hidden>
                 <path
                   d="M5 12h14m-6-6 6 6-6 6"
                   stroke="currentColor"
@@ -481,14 +418,18 @@ export function Landing() {
                 />
               </svg>
             </Link>
+
+            {/* Quiet second option for anyone not ready to sign up. A text link
+                rather than a button, so the big one stays the only real call. */}
             {!user && (
-              <Link ref={heroBtnSecondaryRef} to="/calendar" className={buttonClass("outline", "lg")}>
-                See the calendar
+              <Link
+                ref={heroBtnSecondaryRef}
+                to="/calendar"
+                className="tap text-[13.5px] text-ink-3 transition-colors hover:text-gold"
+              >
+                or see what's on →
               </Link>
             )}
-            <Link ref={heroBtnGhostRef} to="/leaderboard" className={buttonClass("ghost", "lg")}>
-              This week's board
-            </Link>
           </div>
         </div>
 
