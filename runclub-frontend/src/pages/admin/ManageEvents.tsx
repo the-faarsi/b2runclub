@@ -20,7 +20,9 @@ import {
   Tabs,
   useToast,
 } from "../../components/ui";
-import { api, downloadText } from "../../lib/api";
+import { api } from "../../lib/api";
+import { CLUB_SLUG } from "../../lib/brand";
+import { buildXlsx, downloadXlsx } from "../../lib/xlsx";
 import { eventTime, fullDate, inr, isPast, PAYMENT_META } from "../../lib/format";
 import type { ClubEvent, EventStatus, RosterRow } from "../../lib/types";
 import { useFetch } from "../../lib/useFetch";
@@ -109,7 +111,7 @@ export function ManageEvents() {
             <Link to="/admin/members" className={buttonClass("ghost", "md")}>
               Members
             </Link>
-            <Button onClick={() => setCreating(true)}>New event</Button>
+            <Button onClick={() => setCreating(true)}>+ New event</Button>
           </div>
         }
       />
@@ -169,7 +171,7 @@ export function ManageEvents() {
                 ? "Try a different title, place or discipline."
                 : "Create a session and publish it when the details are settled."
             }
-            action={<Button size="sm" onClick={() => setCreating(true)}>New event</Button>}
+            action={<Button size="sm" onClick={() => setCreating(true)}>+ New event</Button>}
           />
         </Card>
       ) : (
@@ -324,11 +326,33 @@ function RosterModal({
     };
   }, [open, event]);
 
-  const exportCsv = async () => {
+  /** Excel, matching the dashboard's all-events export. */
+  const exportRoster = async () => {
     if (!event) return;
     try {
-      const csv = await api.rosterCsv(event.id);
-      downloadText(`roster_${event.title.replace(/\W+/g, "_").toLowerCase()}.csv`, csv);
+      // The parsed rows, not the raw CSV: this needs typed cells, and `rows` is
+      // already loaded for the table above.
+      const data = rows ?? (await api.roster(event.id));
+      if (data.length === 0) {
+        toast("Nobody has registered yet.", "info");
+        return;
+      }
+      const blob = buildXlsx({
+        header: ["Name", "Email", "Role", "Waiver Signed", "Payment Status", "Payment ID"],
+        rows: data.map((r) => [
+          r.name,
+          r.email,
+          r.role_at_event,
+          r.waiver_signed ? "Yes" : "No",
+          r.status,
+          r.payment_id,
+        ]),
+        sheetName: "Roster",
+      });
+      downloadXlsx(
+        `${CLUB_SLUG}-roster-${event.title.replace(/\W+/g, "-").toLowerCase()}.xlsx`,
+        blob,
+      );
       toast("Roster exported.", "ok");
     } catch (err) {
       toast(err instanceof Error ? err.message : "Export failed", "err");
@@ -362,7 +386,7 @@ function RosterModal({
               <span className="font-semibold text-ink">{rows.length}</span> registered ·{" "}
               <span className="font-semibold text-ink">{paid}</span> ticket-ready
             </p>
-            <Button size="sm" variant="outline" onClick={exportCsv}>
+            <Button size="sm" variant="outline" onClick={exportRoster}>
               Export CSV
             </Button>
           </div>

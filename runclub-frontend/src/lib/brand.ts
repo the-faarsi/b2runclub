@@ -19,3 +19,10 @@ export const CLUB_WORDMARK = "BURN AND BOND";
 
 /** Monogram inside the gold plate. */
 export const CLUB_MONOGRAM = "B&B";
+
+/**
+ * Filename-safe slug for exports. Downloads used to be named "b-squared-…",
+ * which outlived the rename and put the old name on every file an organiser
+ * sent to an accountant.
+ */
+export const CLUB_SLUG = "burn-and-bond";

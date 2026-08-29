@@ -157,21 +157,10 @@ export function EventDetail() {
           Suppressed when a cover is set: two backdrops behind the same title
           just muddle each other. */}
       {!event.cover_url && <PageScene variant="terrain" opacity={0.24} />}
-      <Link
-        to="/events"
-        className="mb-6 inline-flex items-center gap-1.5 text-[13px] text-ink-3 transition-colors hover:text-gold"
-      >
-        <svg viewBox="0 0 24 24" className="size-3.5" fill="none" aria-hidden>
-          <path
-            d="M19 12H5m6 6-6-6 6-6"
-            stroke="currentColor"
-            strokeWidth="2.2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-        All events
-      </Link>
+      {/* The "All events" link that used to sit here was removed: <Page> renders
+          a generic Back control, and arriving from the events list made the two
+          land in the same place, so the header read "← Back ← All events" with
+          both doing the same thing. */}
 
       {/*
         Phone check-in, above the fold and above everything else for crew.

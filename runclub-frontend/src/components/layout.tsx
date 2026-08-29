@@ -8,6 +8,7 @@ import { cn, relativeTime, ROLE_META } from "../lib/format";
 import type { Notification } from "../lib/types";
 import { useFetch } from "../lib/useFetch";
 import { CreatorsCredit } from "./creatorsLogo";
+import { InstagramIcon, MailIcon, StravaIcon, WhatsAppIcon } from "./icons";
 import { Avatar, buttonClass } from "./ui";
 
 /* ── Wordmark ─────────────────────────────────────────────── */
@@ -623,70 +624,143 @@ export function Footer() {
   // so hiding it here is about not advertising a page you cannot open.
   const { role } = useAuth();
 
+  /* Where the club can actually be reached. Built from the editable club record,
+     so a channel is simply absent until an organiser fills it in. */
+  const contact: { key: string; label: string; href: string; Icon: FooterIcon }[] = [];
+  if (club?.contact_email) {
+    contact.push({
+      key: "email",
+      label: club.contact_email,
+      href: `mailto:${club.contact_email}`,
+      Icon: MailIcon,
+    });
+  }
+  if (club?.instagram) {
+    contact.push({
+      key: "instagram",
+      label: `@${club.instagram}`,
+      href: `https://instagram.com/${club.instagram}`,
+      Icon: InstagramIcon,
+    });
+  }
+  if (club?.strava_club) {
+    contact.push({
+      key: "strava",
+      label: "Strava club",
+      // A bare id becomes a club URL; a full URL is used as given.
+      href: /^https?:\/\//i.test(club.strava_club)
+        ? club.strava_club
+        : `https://www.strava.com/clubs/${club.strava_club}`,
+      Icon: StravaIcon,
+    });
+  }
+  if (club?.whatsapp) {
+    contact.push({
+      key: "whatsapp",
+      label: "WhatsApp group",
+      href: club.whatsapp,
+      Icon: WhatsAppIcon,
+    });
+  }
+
+  /*
+   * Four labelled columns rather than the three flat rows this used to be.
+   *
+   * The old version put the club mark, the contact address, two page links and
+   * the words "Bring water." on one justified row, then policies on a second and
+   * the creators' credit on a third — so nothing was grouped, and on a phone it
+   * collapsed into an unlabelled list of eleven links in no particular order.
+   */
   return (
-    <footer className="border-t border-white/8 py-8">
-      <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center gap-3">
-          <Logo compact />
+    <footer className="mt-8 border-t border-white/8">
+      <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
+        <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-[1.4fr_1fr_1fr_1fr]">
+          {/* Identity */}
+          <div>
+            <Logo compact />
+            <p className="mt-4 max-w-xs text-[13px] leading-relaxed text-ink-3">
+              A running club that meets early, marshals its own corners and always ends with
+              coffee. Bring water.
+            </p>
+          </div>
+
+          <FooterColumn title="The club">
+            <FooterLink to="/about">About the club</FooterLink>
+            <FooterLink to="/calendar">Calendar</FooterLink>
+            <FooterLink to="/events">Events</FooterLink>
+            <FooterLink to="/gallery">Gallery</FooterLink>
+            <FooterLink to="/leaderboard">Leaderboard</FooterLink>
+          </FooterColumn>
+
+          <FooterColumn title="Contact">
+            {contact.length === 0 ? (
+              <li className="text-[13px] text-ink-3">Details coming soon.</li>
+            ) : (
+              contact.map((c) => (
+                <li key={c.key}>
+                  <a
+                    href={c.href}
+                    target={c.href.startsWith("mailto:") ? undefined : "_blank"}
+                    rel="noreferrer"
+                    className="tap inline-flex items-center gap-2 text-[13px] text-ink-3 transition-colors hover:text-gold"
+                  >
+                    <c.Icon className="size-3.5 shrink-0" />
+                    <span className="truncate">{c.label}</span>
+                  </a>
+                </li>
+              ))
+            )}
+          </FooterColumn>
+
+          <FooterColumn title="Policies">
+            <FooterLink to="/terms">Club terms</FooterLink>
+            <FooterLink to="/refunds">Refund policy</FooterLink>
+            <FooterLink to="/privacy">Privacy policy</FooterLink>
+            {/* Only marshals and organisers can open this route, so only they see it. */}
+            {(role === "VOLUNTEER" || role === "ADMIN") && (
+              <li>
+                <Link
+                  to="/volunteer-terms"
+                  className="tap text-[13px] text-[color:var(--color-free)] transition-opacity hover:opacity-75"
+                >
+                  Volunteer terms
+                </Link>
+              </li>
+            )}
+          </FooterColumn>
+        </div>
+
+        {/* Bottom bar: copyright and the creators' credit, which is distinct from
+            the club's own mark and so kept quiet and separate. */}
+        <div className="hairline mt-10 mb-6" />
+        <div className="flex flex-col-reverse items-start gap-5 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-xs text-ink-3">
-            {CLUB_NAME} · {new Date().getFullYear()}
+            © {new Date().getFullYear()} {CLUB_NAME}. All rights reserved.
           </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-4">
-          {club?.contact_email && (
-            <a
-              href={`mailto:${club.contact_email}`}
-              className="text-xs text-ink-2 transition-colors hover:text-gold"
-            >
-              {club.contact_email}
-            </a>
-          )}
-          <Link to="/about" className="text-xs text-ink-3 transition-colors hover:text-gold">
-            About the club
-          </Link>
-          <Link to="/gallery" className="text-xs text-ink-3 transition-colors hover:text-gold">
-            Gallery
-          </Link>
-          <p className="text-xs text-ink-3">Bring water.</p>
-        </div>
-      </div>
-
-      {/* Policies. Their own row rather than mixed in above: they are reference
-          material, and a member hunting for the refund rules should find them
-          in the same place on every page. */}
-      <div className="mx-auto mt-5 max-w-7xl px-4 sm:px-6 lg:px-8">
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-          <Link to="/terms" className="text-xs text-ink-3 transition-colors hover:text-gold">
-            Club terms
-          </Link>
-          <Link to="/refunds" className="text-xs text-ink-3 transition-colors hover:text-gold">
-            Refund policy
-          </Link>
-          <Link to="/privacy" className="text-xs text-ink-3 transition-colors hover:text-gold">
-            Privacy policy
-          </Link>
-          {/* Only marshals and organisers can open this route, so only they see it. */}
-          {(role === "VOLUNTEER" || role === "ADMIN") && (
-            <Link
-              to="/volunteer-terms"
-              className="text-xs text-[color:var(--color-free)] transition-opacity hover:opacity-75"
-            >
-              Volunteer terms
-            </Link>
-          )}
-        </div>
-      </div>
-
-      {/* Creators' credit — distinct from the club's own mark above, so it gets
-          its own rule and a quieter position. <Footer> is mounted inside
-          <Shell>, which wraps every chrome route, so this shows for visitors,
-          members, volunteers and admins alike. */}
-      <div className="mx-auto mt-7 max-w-7xl px-4 sm:px-6 lg:px-8">
-        <div className="hairline mb-5" />
-        <div className="flex justify-center sm:justify-start">
           <CreatorsCredit />
         </div>
       </div>
     </footer>
+  );
+}
+
+type FooterIcon = (p: { className?: string }) => JSX.Element;
+
+function FooterColumn({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div>
+      <p className="eyebrow mb-3.5 text-ink-2">{title}</p>
+      <ul className="space-y-2.5">{children}</ul>
+    </div>
+  );
+}
+
+function FooterLink({ to, children }: { to: string; children: ReactNode }) {
+  return (
+    <li>
+      <Link to={to} className="tap text-[13px] text-ink-3 transition-colors hover:text-gold">
+        {children}
+      </Link>
+    </li>
   );
 }

@@ -328,6 +328,49 @@ export function WhatsAppIcon({ className }: { className?: string }) {
   );
 }
 
+/**
+ * Strava's chevron mark. Two paths, the lower one lighter — that contrast is
+ * what makes it read as Strava rather than a generic arrow.
+ *
+ * Lives here rather than inside communityLinks so the footer's contact column
+ * draws the same mark instead of a second copy drifting out of step.
+ */
+export function StravaIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className ?? "size-4"} aria-hidden>
+      <path fill="currentColor" d="M10.463 0 3.46 13.828h4.169l2.836 5.599 2.833-5.599h4.172z" />
+      <path
+        fill="currentColor"
+        opacity="0.55"
+        d="m15.387 17.944-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066z"
+      />
+    </svg>
+  );
+}
+
+/** Envelope, for the club's contact address. */
+export function MailIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className ?? "size-4"} fill="none" aria-hidden>
+      <rect
+        x="2.75"
+        y="5"
+        width="18.5"
+        height="14"
+        rx="2.5"
+        stroke="currentColor"
+        strokeWidth="1.9"
+      />
+      <path
+        d="m3.5 7.5 7.32 5.23a2 2 0 0 0 2.36 0L20.5 7.5"
+        stroke="currentColor"
+        strokeWidth="1.9"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
 /** Instagram glyph — rounded square, lens and flash dot. */
 export function InstagramIcon({ className }: { className?: string }) {
   return (

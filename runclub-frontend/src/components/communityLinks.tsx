@@ -3,25 +3,8 @@ import { useCallback } from "react";
 import { api } from "../lib/api";
 import { cn } from "../lib/format";
 import { useFetch } from "../lib/useFetch";
-import { InstagramIcon, WhatsAppIcon } from "./icons";
+import { InstagramIcon, MailIcon, StravaIcon, WhatsAppIcon } from "./icons";
 import { Card, Skeleton } from "./ui";
-
-/**
- * Strava's chevron mark. Two paths, the lower one lighter, which is what makes it
- * read as Strava rather than a generic arrow.
- */
-function StravaGlyph({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" className={className ?? "size-5"} aria-hidden>
-      <path fill="currentColor" d="M10.463 0 3.46 13.828h4.169l2.836 5.599 2.833-5.599h4.172z" />
-      <path
-        fill="currentColor"
-        opacity="0.55"
-        d="m15.387 17.944-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066z"
-      />
-    </svg>
-  );
-}
 
 interface Channel {
   key: string;
@@ -56,8 +39,8 @@ export function CommunityLinks() {
       <section className="mx-auto max-w-7xl px-4 py-14 sm:px-6 lg:px-8">
         <Skeleton className="h-4 w-28" />
         <Skeleton className="mt-4 h-9 w-80" />
-        <div className="mt-8 grid gap-4 sm:grid-cols-3">
-          {[0, 1, 2].map((i) => (
+        <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {[0, 1, 2, 3].map((i) => (
             <Skeleton key={i} className="h-52 rounded-2xl" />
           ))}
         </div>
@@ -108,7 +91,24 @@ export function CommunityLinks() {
         : `https://www.strava.com/clubs/${club.strava_club}`,
       cta: "Join the club",
       tint: "#fc4c02",
-      Icon: StravaGlyph,
+      Icon: StravaIcon,
+    });
+  }
+
+  /* Email last: it is the formal route, and the three above are where the club
+     actually talks. Previously the address only appeared as small footer text,
+     so anyone with an actual question had nowhere obvious to look. */
+  if (club?.contact_email) {
+    channels.push({
+      key: "email",
+      label: "Email",
+      handle: club.contact_email,
+      blurb:
+        "Questions about a session, a refund, or bringing a group along? Write to the organisers.",
+      href: `mailto:${club.contact_email}`,
+      cta: "Send an email",
+      tint: "var(--color-gold)",
+      Icon: MailIcon,
     });
   }
 
@@ -120,20 +120,24 @@ export function CommunityLinks() {
       <div className="datastrip mb-10" />
 
       <div className="max-w-2xl">
-        <p className="eyebrow mb-2 text-gold">Off the road</p>
-        <h2 className="display text-[clamp(26px,3.6vw,38px)]">
-          The club doesn't stop at the finish line.
-        </h2>
+        <p className="eyebrow mb-2 text-gold">Contact us</p>
+        <h2 className="display text-[clamp(26px,3.6vw,38px)]">Get in touch.</h2>
         <p className="mt-5 text-[15px] leading-relaxed text-ink-2">
-          Three places to find us between sessions. All open — you don't need an account here to
-          join any of them.
+          Where to find us between sessions, and how to reach the organisers. All open — you don't
+          need an account here to use any of them.
         </p>
       </div>
 
       <div
         className={cn(
           "mt-9 grid gap-4",
-          channels.length === 3 ? "sm:grid-cols-3" : channels.length === 2 ? "sm:grid-cols-2" : "",
+          channels.length >= 4
+            ? "sm:grid-cols-2 lg:grid-cols-4"
+            : channels.length === 3
+              ? "sm:grid-cols-3"
+              : channels.length === 2
+                ? "sm:grid-cols-2"
+                : "",
         )}
       >
         {channels.map((c, i) => (
