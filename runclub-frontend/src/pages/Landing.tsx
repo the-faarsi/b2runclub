@@ -9,22 +9,32 @@ import {
 } from "framer-motion";
 import { useCallback, useRef, useState, type ReactNode } from "react";
 import { gsap } from "gsap";
+import { SplitText } from "gsap/SplitText";
 import { useGSAP } from "@gsap/react";
 import { Link } from "react-router-dom";
-import { ClubFeatures, JoinBanner } from "../components/clubFeatures";
-import { EventCoverBackdrop, EventMeta } from "../components/eventCover";
+import { EventCard } from "../components/events";
 import { CollaboratorScroller } from "../components/collaborators";
-import { Founders } from "../components/founders";
-import { HeroVideo } from "../components/heroVideo";
+import { CommunityLinks } from "../components/communityLinks";
 import { Hero3D, RunnerScene } from "../components/scene3d";
-import { DisciplineIcon } from "../components/icons";
+import {
+  CalendarIcon,
+  ClockIcon,
+  DisciplineIcon,
+  PinIcon,
+  SparkIcon,
+  TicketIcon,
+} from "../components/icons";
 import { AnimatedNumber, Reveal } from "../components/motion";
-import { Tilt } from "../components/tilt";
-import { buttonClass, Card, Skeleton } from "../components/ui";
+import { PillarCard } from "../components/PillarCard";
+import { Tilt, TiltLayer } from "../components/tilt";
+import { Avatar, buttonClass, Card, Skeleton } from "../components/ui";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
-import { countdown, inr, isPast } from "../lib/format";
+import { countdown, eventTime, fullDate, inr, isPast } from "../lib/format";
+import { REFUND_ONE_LINER, REFUND_WINDOW_HOURS } from "../lib/policies";
 import { useFetch } from "../lib/useFetch";
+
+gsap.registerPlugin(SplitText);
 
 /**
  * Magnetic hover: the element nudges toward the cursor as it moves within
@@ -76,29 +86,52 @@ function ChevronDownIcon({ className }: { className?: string }) {
   );
 }
 
+const PILLARS = [
+  {
+    Icon: CalendarIcon,
+    title: "Run the calendar",
+    body: "Weekly road runs, trail sessions, rides and the odd party. Register in two taps.",
+    // Drop your image at public/pillars/calendar.jpg — omit this key entirely
+    // if you don't have one yet; the card works without it.
+    image: "/pillars/calendar.jpg",
+  },
+  {
+    Icon: TicketIcon,
+    title: "Carry a QR ticket",
+    body: "Every confirmed spot gets a scannable ticket. Volunteers marshal for free.",
+    image: "/pillars/ticket.jpg",
+  },
+  {
+    Icon: SparkIcon,
+    title: "Decide together",
+    body: "Polls pick the routes. The forum carries the announcements and the banter.",
+    image: "/pillars/decide.jpg",
+  },
+];
+
 const HOW_STEPS = [
   {
     n: "01",
     t: "Pick a session",
-    b: "Route, start time and entry, all on the board.",
+    b: "Browse the calendar or the list. Every session shows route, start time and entry.",
     badge: { label: "Calendar", color: "var(--color-gold)", bg: "rgba(233,185,73,0.13)", icon: "📅" },
   },
   {
     n: "02",
     t: "Sign the waiver",
-    b: "Once, with an emergency contact.",
+    b: "Once, with your emergency contact. We keep it for the organisers on the day.",
     badge: { label: "One time", color: "var(--color-free)", bg: "rgba(100,200,120,0.13)", icon: "✍️" },
   },
   {
     n: "03",
     t: "Pay in-app",
-    b: "Card through Razorpay. Volunteers pay nothing.",
+    b: "Card payment through Razorpay. Volunteers marshal and pay nothing.",
     badge: { label: "Secure pay", color: "var(--color-paid)", bg: "rgba(100,160,255,0.13)", icon: "💳" },
   },
   {
     n: "04",
     t: "Show your ticket",
-    b: "We scan the QR at the start line.",
+    b: "A QR code we scan at the start line. Screenshots are fine.",
     badge: { label: "QR ticket", color: "#c084fc", bg: "rgba(192,132,252,0.13)", icon: "🎟️" },
   },
 ];
@@ -152,6 +185,8 @@ export function Landing() {
   const load = useCallback(() => api.events(), []);
   const { data: events, loading } = useFetch(load);
 
+  const loadGallery = useCallback(() => api.gallery(), []);
+  const { data: gallery } = useFetch(loadGallery);
   const loadBoard = useCallback(() => api.leaderboard(), []);
   const { data: leaderboard } = useFetch(loadBoard);
 
@@ -160,8 +195,11 @@ export function Landing() {
     .sort((a, b) => +new Date(a.date_time) - +new Date(b.date_time));
 
   const next = upcoming[0];
+  const rest = upcoming.slice(1, 4);
 
   const allEvents = events ?? [];
+  const disciplines = new Set(allEvents.map((e) => e.type)).size;
+  const photos = gallery ?? [];
   const board = leaderboard?.leaderboard ?? [];
   const clubKm = board.reduce((sum, r) => sum + r.weekly_distance_km, 0);
 
@@ -253,8 +291,12 @@ export function Landing() {
   // ── Hero entrance choreography (GSAP) ──
   const heroRef = useRef<HTMLElement>(null);
   const heroPillRef = useRef<HTMLSpanElement>(null);
+  const heroHeadlineRef = useRef<HTMLHeadingElement>(null);
+  const heroParagraphRef = useRef<HTMLParagraphElement>(null);
+  const heroButtonsRef = useRef<HTMLDivElement>(null);
   const heroBtnPrimaryRef = useRef<HTMLAnchorElement>(null);
   const heroBtnSecondaryRef = useRef<HTMLAnchorElement>(null);
+  const heroBtnGhostRef = useRef<HTMLAnchorElement>(null);
   const heroGraphicRef = useRef<HTMLDivElement>(null);
   const heroGraphicFloatRef = useRef<HTMLDivElement>(null);
   const heroGraphicParallaxRef = useRef<HTMLDivElement>(null);
@@ -262,6 +304,13 @@ export function Landing() {
 
   useGSAP(
     () => {
+      const headlineSplit = heroHeadlineRef.current
+        ? new SplitText(heroHeadlineRef.current, { type: "words", wordsClass: "hero-word" })
+        : null;
+      if (headlineSplit) {
+        gsap.set(headlineSplit.words, { display: "inline-block" });
+      }
+
       const tl = gsap.timeline({ defaults: { ease: "power3.out" } });
 
       tl.fromTo(
@@ -269,21 +318,31 @@ export function Landing() {
         { opacity: 0, y: -10, scale: 0.9 },
         { opacity: 1, y: 0, scale: 1, duration: 0.5, ease: "back.out(1.7)" },
       )
-        /* The model leads now, so it comes in first and the button follows it
-           rather than the other way round. */
         .fromTo(
-          heroGraphicRef.current,
-          { opacity: 0, scale: 0.94 },
-          { opacity: 1, scale: 1, duration: 1.1, ease: "power2.out" },
+          headlineSplit ? headlineSplit.words : heroHeadlineRef.current,
+          { opacity: 0, y: 40, rotateX: -40, transformOrigin: "50% 100%" },
+          { opacity: 1, y: 0, rotateX: 0, duration: 0.8, stagger: 0.08, ease: "power4.out" },
+          "-=0.25",
+        )
+        .fromTo(
+          heroParagraphRef.current,
+          { opacity: 0, y: 16 },
+          { opacity: 1, y: 0, duration: 0.5 },
+          "-=0.4",
+        )
+        .fromTo(
+          // Collect only the refs that are actually mounted (secondary button
+          // is absent when the user is already signed in).
+          [heroBtnPrimaryRef.current, heroBtnSecondaryRef.current, heroBtnGhostRef.current].filter(Boolean),
+          { opacity: 0, y: 14 },
+          { opacity: 1, y: 0, duration: 0.45, stagger: 0.08 },
           "-=0.3",
         )
         .fromTo(
-          // Only the refs actually mounted — the secondary link is absent once
-          // someone is signed in.
-          [heroBtnPrimaryRef.current, heroBtnSecondaryRef.current].filter(Boolean),
-          { opacity: 0, y: 14 },
-          { opacity: 1, y: 0, duration: 0.45, stagger: 0.08 },
-          "-=0.55",
+          heroGraphicRef.current,
+          { opacity: 0, scale: 0.96 },
+          { opacity: 1, scale: 1, duration: 1.1, ease: "power2.out" },
+          "-=1.0",
         )
         .fromTo(
           heroSpotlightRef.current,
@@ -332,9 +391,12 @@ export function Landing() {
       const magneticCleanups: Array<() => void> = [];
       if (typeof window !== "undefined" && window.matchMedia("(pointer: fine)").matches) {
         magneticCleanups.push(attachMagneticHover(heroBtnPrimaryRef.current, 0.3));
+        magneticCleanups.push(attachMagneticHover(heroBtnSecondaryRef.current, 0.3));
+        magneticCleanups.push(attachMagneticHover(heroBtnGhostRef.current, 0.3));
       }
 
       return () => {
+        headlineSplit?.revert();
         if (sectionEl && handlePointerMove && handlePointerLeave) {
           sectionEl.removeEventListener("pointermove", handlePointerMove);
           sectionEl.removeEventListener("pointerleave", handlePointerLeave);
@@ -348,27 +410,42 @@ export function Landing() {
   return (
     <>
       {/* ── Hero ─────────────────────────────────────────── */}
-      {/* No clip here — the shell clips at the viewport instead. Clipping this
-          section cut the 3D model off at the container edge, which on a wide
-          screen is well inside the visible area. */}
       <section
         ref={heroRef}
         className="relative mx-auto max-w-7xl px-4 pb-16 pt-14 sm:px-6 sm:pt-20 lg:px-8"
       >
-        {/* Optional background video, set by an organiser. Renders nothing when
-            none is configured, so the 3D scene below stays the default. */}
-        <HeroVideo />
-        {/*
-          Centred hero: the model is the headline.
+        {/* Mobile + tablet: 3D graphic sits between the h1 and the paragraph.
+            Absolutely positioned so no div shifts — content stays in normal flow.
+            z-0 so text layers above it naturally.
+            10% inset on every side (rather than a fixed top/height) makes the
+            box resolve to 80% of the section's own width and height — since
+            the section's height is auto (driven by the in-flow content) and
+            this element is out of flow, top+bottom percentages resolve against
+            that resolved height once layout completes, so the graphic scales
+            with the section instead of being pinned to a fixed pixel band. */}
+        <div
+          className="pointer-events-none absolute inset-[10%] z-0 lg:hidden"
+          style={{ opacity: 0.5 }}
+          aria-hidden
+        >
+          <Hero3D className="h-full w-full" />
+        </div>
 
-          There were two Hero3D instances before — one absolutely positioned for
-          phones, one hung in the top-right corner for desktop with a calc()
-          offset to keep it inside the viewport — because the corner had to stay
-          clear of the h1 and the buttons. With the copy gone the model sits in
-          normal flow in the middle, which needs neither the duplicate nor the
-          offset, and cannot be cut at any width.
-        */}
-        <div className="flex flex-col items-center text-center">
+        {/* Desktop: top-right corner, float + parallax via GSAP */}
+        <div
+          ref={heroGraphicRef}
+          className="pointer-events-none absolute -top-10 right-[-6%] hidden h-[620px] w-[60%] lg:block"
+          style={{ opacity: 0 }}
+          aria-hidden
+        >
+          <div ref={heroGraphicFloatRef} className="h-full w-full">
+            <div ref={heroGraphicParallaxRef} className="h-full w-full">
+              <Hero3D className="h-full w-full" />
+            </div>
+          </div>
+        </div>
+
+        <div className="relative max-w-3xl">
           <span
             ref={heroPillRef}
             className="inline-flex items-center gap-2 rounded-full border border-gold/25 bg-gold/8 px-3 py-1.5"
@@ -381,33 +458,25 @@ export function Landing() {
             </span>
           </span>
 
-          {/* Height scales with the viewport so the model fills the space the
-              headline used to take, without pushing the button below the fold. */}
-          <div
-            ref={heroGraphicRef}
-            className="pointer-events-none relative mt-6 h-[clamp(230px,44vw,500px)] w-full"
-            style={{ opacity: 0 }}
-            aria-hidden
+          <h1
+            ref={heroHeadlineRef}
+            className="display mt-6 text-[clamp(44px,9vw,86px)]"
+            style={{ perspective: "600px" }}
           >
-            <div ref={heroGraphicFloatRef} className="h-full w-full">
-              <div ref={heroGraphicParallaxRef} className="h-full w-full">
-                <Hero3D className="h-full w-full" />
-              </div>
-            </div>
-          </div>
+            Find your
+            <br />
+            <span className="text-gold">stride.</span>
+          </h1>
 
-          <div className="mt-8 flex flex-col items-center gap-4">
-            <Link
-              ref={heroBtnPrimaryRef}
-              to={user ? "/calendar" : "/signup"}
-              className={buttonClass(
-                "gold",
-                "lg",
-                "sweep px-10 py-5 text-[18px] sm:px-14 sm:py-6 sm:text-[20px]",
-              )}
-            >
-              {user ? "See the calendar" : "Join Us"}
-              <svg viewBox="0 0 24 24" className="size-5" fill="none" aria-hidden>
+          <p ref={heroParagraphRef} className="mt-6 max-w-xl text-[17px] leading-relaxed text-ink-2">
+            A running club that actually runs on time. Pick a session, sign the waiver, pay once,
+            and turn up with a ticket in your pocket.
+          </p>
+
+          <div ref={heroButtonsRef} className="mt-9 flex flex-wrap items-center gap-3">
+            <Link ref={heroBtnPrimaryRef} to="/calendar" className={buttonClass("gold", "lg", "sweep")}>
+              See the calendar
+              <svg viewBox="0 0 24 24" className="size-4" fill="none" aria-hidden>
                 <path
                   d="M5 12h14m-6-6 6 6-6 6"
                   stroke="currentColor"
@@ -417,133 +486,152 @@ export function Landing() {
                 />
               </svg>
             </Link>
-
-            {/* Quiet second option for anyone not ready to sign up. A text link
-                rather than a button, so the big one stays the only real call. */}
             {!user && (
-              <Link
-                ref={heroBtnSecondaryRef}
-                to="/calendar"
-                className="tap text-[13.5px] text-ink-3 transition-colors hover:text-gold"
-              >
-                or see what's on →
+              <Link ref={heroBtnSecondaryRef} to="/signup" className={buttonClass("outline", "lg")}>
+                Join the club
               </Link>
             )}
+            <Link ref={heroBtnGhostRef} to="/leaderboard" className={buttonClass("ghost", "lg")}>
+              This week's board
+            </Link>
           </div>
         </div>
 
-      </section>
-
-      {/* ── Next up ───────────────────────────────────────── */}
-      {/*
-        Its own section, deliberately outside the hero.
-
-        It used to sit inside it, and HeroVideo covers the hero with an
-        absolutely positioned layer — so on a phone, where the hero is short,
-        this card lay across most of the video. Moving it below means the clip
-        is only ever behind the model and the button.
-      */}
-      <section className="mx-auto max-w-7xl px-4 pt-4 sm:px-6 lg:px-8">
-      {/* Next event spotlight */}
-      <div ref={heroSpotlightRef} className="mt-14">
-        {loading ? (
-          <Card className="p-6">
-            <Skeleton className="h-4 w-28" />
-            <Skeleton className="mt-4 h-10 w-2/3" />
-            <Skeleton className="mt-3 h-4 w-1/3" />
-          </Card>
-        ) : next ? (
-          <Tilt max={4} lift={5} glare={false}>
-          {/* card-glow, so the next session reads as a distinct object over the
-                hero video rather than a translucent panel floating in it. */}
-            <Card className="speedlines card-glow group relative overflow-hidden">
-            {/* The next event's own cover behind the spotlight, so the first
-                thing on the page shows the session rather than a gradient. */}
-            <EventCoverBackdrop url={next.cover_url} scrim="card" />
-            <div
-              className="pointer-events-none absolute -right-16 -top-24 size-72 rounded-full opacity-[0.15] blur-3xl"
-              style={{ background: "var(--color-gold)" }}
-              aria-hidden
-            />
-            <div className="relative flex flex-col gap-6 p-6 sm:p-8 lg:flex-row lg:items-end lg:justify-between">
-              <div className="min-w-0">
-                <p className="eyebrow text-gold">Next up</p>
-                <h2 className="display mt-3 text-[clamp(26px,3.6vw,40px)]">{next.title}</h2>
-                <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-[14px] text-ink-2">
-                  <span className="flex items-center gap-1.5">
-                    <span className="text-gold" aria-hidden>
-                      <DisciplineIcon type={next.type} className="size-4" />
+        {/* Next event spotlight */}
+        <div ref={heroSpotlightRef} className="mt-14">
+          {loading ? (
+            <Card className="p-6">
+              <Skeleton className="h-4 w-28" />
+              <Skeleton className="mt-4 h-10 w-2/3" />
+              <Skeleton className="mt-3 h-4 w-1/3" />
+            </Card>
+          ) : next ? (
+            <Tilt max={4} lift={5} glare={false}>
+            <Card className="speedlines relative overflow-hidden">
+              <div
+                className="pointer-events-none absolute -right-16 -top-24 size-72 rounded-full opacity-[0.15] blur-3xl"
+                style={{ background: "var(--color-gold)" }}
+                aria-hidden
+              />
+              <div className="relative flex flex-col gap-6 p-6 sm:p-8 lg:flex-row lg:items-end lg:justify-between">
+                <div className="min-w-0">
+                  <p className="eyebrow text-gold">Next up</p>
+                  <h2 className="display mt-3 text-[clamp(26px,3.6vw,40px)]">{next.title}</h2>
+                  <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-[14px] text-ink-2">
+                    <span className="flex items-center gap-1.5">
+                      <span className="text-gold" aria-hidden>
+                        <DisciplineIcon type={next.type} className="size-4" />
+                      </span>
+                      {next.type}
                     </span>
-                    {next.type}
-                  </span>
+                    <span>{fullDate(next.date_time)}</span>
+                    <span>{eventTime(next.date_time)}</span>
+                    <span className="text-ink-3">{next.location}</span>
+                  </div>
                 </div>
-                <EventMeta event={next} className="mt-2.5" />
-              </div>
 
-              <div className="flex flex-wrap items-end gap-x-6 gap-y-4 lg:shrink-0">
-                <div>
-                  <p className="eyebrow whitespace-nowrap">Starts in</p>
-                  <p className="display tnum mt-1.5 whitespace-nowrap text-[32px] text-gold">
-                    {countdown(next.date_time) ?? "now"}
-                  </p>
+                <div className="flex flex-wrap items-end gap-x-6 gap-y-4 lg:shrink-0">
+                  <div>
+                    <p className="eyebrow whitespace-nowrap">Starts in</p>
+                    <p className="display tnum mt-1.5 whitespace-nowrap text-[32px] text-gold">
+                      {countdown(next.date_time) ?? "now"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="eyebrow">Entry</p>
+                    <p className="display mt-1.5 whitespace-nowrap text-[32px]">
+                      {next.price === 0 ? "Free" : inr(next.price)}
+                    </p>
+                  </div>
+                  <Link
+                    to={`/events/${next.id}`}
+                    className={buttonClass("gold", "md", "mb-1 w-full sm:w-auto")}
+                  >
+                    Take a spot
+                  </Link>
                 </div>
-                <div>
-                  <p className="eyebrow">Entry</p>
-                  <p className="display mt-1.5 whitespace-nowrap text-[32px]">
-                    {next.price === 0 ? "Free" : inr(next.price)}
-                  </p>
-                </div>
-                <Link
-                  to={`/events/${next.id}`}
-                  className={buttonClass("gold", "md", "mb-1 w-full sm:w-auto")}
-                >
-                  Take a spot
-                </Link>
               </div>
-            </div>
-          </Card>
-          </Tilt>
-        ) : (
-          <Card className="p-8 text-center">
-            <p className="text-sm text-ink-2">
-              No published events right now — the organisers are drafting the next block.
-            </p>
-          </Card>
-        )}
-      </div>
+            </Card>
+            </Tilt>
+          ) : (
+            <Card className="p-8 text-center">
+              <p className="text-sm text-ink-2">
+                No published events right now — the organisers are drafting the next block.
+              </p>
+            </Card>
+          )}
+        </div>
       </section>
 
+      {/* ── Pillars ──────────────────────────────────────── */}
+      <section className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
+        <div className="grid gap-4 sm:grid-cols-3">
+          {PILLARS.map((p, i) => (
+            <motion.div
+              key={p.title}
+              initial={{ opacity: 0, y: 14 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true, margin: "-60px" }}
+              transition={{ duration: 0.45, delay: i * 0.08, ease: [0.16, 1, 0.3, 1] }}
+              className="h-full"
+            >
+              <PillarCard pillar={p} />
+            </motion.div>
+          ))}
+        </div>
+      </section>
 
-
-      {/* ── Club, in three numbers ───────────────────────── */}
-      {/* A hairline row rather than four tilting cards. The numbers are the
-          only part anyone reads, and on a page whose job is to get somebody to
-          join, four more cards was four more things to look at. */}
-      <Reveal>
+      {/* ── More events ──────────────────────────────────── */}
+      {rest.length > 0 && (
         <section className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
-          <div className="rule-gold mb-8" />
-          <div className="grid grid-cols-3 gap-4">
+          <div className="mb-6 flex items-end justify-between gap-4">
+            <div>
+              <p className="eyebrow mb-2 text-gold">Also on the board</p>
+              <h2 className="display text-[clamp(24px,3vw,32px)]">Coming up</h2>
+            </div>
+            <Link
+              to="/events"
+              className="text-[13px] font-medium text-ink-3 transition-colors hover:text-gold"
+            >
+              All events →
+            </Link>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {rest.map((e, i) => (
+              <EventCard key={e.id} event={e} index={i} />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* ── By the numbers ─────────── */}
+      <Reveal>
+        <section className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
+          <div className="datastrip mb-10" />
+          <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
             {[
-              { label: "Sessions", value: allEvents.length, suffix: "" },
-              { label: "Open now", value: upcoming.length, suffix: "" },
-              { label: "Club km", value: Math.round(clubKm), suffix: "" },
+              { label: "Sessions on the board", value: allEvents.length, suffix: "" },
+              { label: "Published & open", value: upcoming.length, suffix: "" },
+              { label: "Disciplines", value: disciplines, suffix: "" },
+              { label: "Club distance", value: Math.round(clubKm), suffix: " km" },
             ].map((s) => (
-              <div key={s.label} className="text-center sm:text-left">
-                <p className="display foil text-[clamp(30px,6vw,52px)] leading-none">
-                  <AnimatedNumber value={s.value} format={(v) => `${Math.round(v)}${s.suffix}`} />
-                </p>
-                <p className="eyebrow mt-2">{s.label}</p>
-              </div>
+              <Tilt key={s.label} max={8} lift={9}>
+                <Card
+                  hover
+                  className="hud edge-gold flex h-full min-h-[112px] flex-col justify-center rounded-[12px] p-4 sm:min-h-0 sm:p-6"
+                >
+                  <TiltLayer depth={26}>
+                    <p className="display foil text-[28px] leading-none sm:text-[40px]">
+                      <AnimatedNumber value={s.value} format={(v) => `${Math.round(v)}${s.suffix}`} />
+                    </p>
+                  </TiltLayer>
+                  <p className="eyebrow mt-2 sm:mt-3">{s.label}</p>
+                </Card>
+              </Tilt>
             ))}
           </div>
         </section>
       </Reveal>
-
-      {/* ── Inside the club ──────────────────────────────── */}
-      {/* High up on purpose. This is what someone is actually deciding about,
-          and it used to be absent from the page entirely — the club's own
-          features were only discoverable after signing up. */}
-      <ClubFeatures />
 
       {/* ── How it works — scroll-driven sticky section ───── */}
       {/*
@@ -655,8 +743,8 @@ export function Landing() {
       <section className="mx-auto max-w-7xl px-4 py-14 sm:px-6 lg:px-8">
         <Reveal>
           <div className="datastrip mb-10" />
-          <p className="eyebrow mb-2 text-gold">How you join</p>
-          <h2 className="display text-[clamp(26px,3.6vw,38px)]">Two ways to join.</h2>
+          <p className="eyebrow mb-2 text-gold">Where you fit</p>
+          <h2 className="display text-[clamp(26px,3.6vw,38px)]">Three ways to be here.</h2>
         </Reveal>
 
         {/* 2-Column viewport split: left side reserved for future content, cards on the right */}
@@ -667,11 +755,12 @@ export function Landing() {
             <RunnerScene className="h-full w-full" />
           </div>
 
-          {/* Right column — the two ways in */}
+          {/* Right Column — Cards Grid Alignment (2 square cards on top, 1 full-width card underneath) */}
           <div className="grid gap-4">
             
-            {/* Member and Volunteer. The third card told visitors they were
-                allowed to browse, which they were already doing.
+            {/* Top row: Member and Volunteer side by side. Visitor is the
+                full-width card below — it used to appear in this array too, so
+                it rendered twice on the page.
                 No `aspect-square`: forcing a square on a ~570px column left a
                 large dead gap between the heading and the bullets, and made
                 these two cards look unrelated to the wider one underneath. */}
@@ -681,13 +770,13 @@ export function Landing() {
                   role: "Member",
                   tint: "var(--color-paid)",
                   line: "You want to run.",
-                  perks: ["Register for any session", "Pay once, carry a QR ticket", "Vote on the routes"],
+                  perks: ["Register for any published session", "Pay once, carry a QR ticket", "Post, comment and vote on routes"],
                 },
                 {
                   role: "Volunteer",
                   tint: "var(--color-free)",
                   line: "You want to marshal.",
-                  perks: ["Entry comped, every event", "Gold bib, junction calls", "Post to the gallery"],
+                  perks: ["Entry comped on every event", "Gold bib and the junction calls", "Post photos to the club gallery"],
                 },
               ].map((r, i) => (
                 <Reveal key={r.role} delay={i * 0.07}>
@@ -723,27 +812,222 @@ export function Landing() {
               ))}
             </div>
 
+            {/* Bottom Row: Card 3 spanning full width */}
+            <Reveal delay={0.14}>
+              <Tilt max={7} lift={9}>
+                <Card hover className="hud edge-gold p-6">
+                  <span
+                    className="inline-flex items-center gap-2 rounded-full px-2.5 py-1"
+                    style={{
+                      background: "color-mix(in oklab, var(--color-ink-3) 14%, transparent)",
+                      color: "var(--color-ink-3)",
+                    }}
+                  >
+                    <span className="size-1.5 rounded-full" style={{ background: "var(--color-ink-3)" }} />
+                    <span className="text-[10px] font-bold uppercase tracking-[0.14em]">
+                      Visitor
+                    </span>
+                  </span>
+                  <p className="display mt-4 text-[20px]">You're just looking.</p>
+                  <ul className="mt-4 grid gap-2.5 sm:grid-cols-3">
+                    {[
+                      "Browse the calendar and gallery",
+                      "See polls and the leaderboard",
+                      "No account needed to look around",
+                    ].map((perk) => (
+                      <li key={perk} className="flex gap-2.5 text-[13px] leading-relaxed text-ink-2">
+                        <span className="mt-1.5 size-1 shrink-0 rounded-full bg-gold" aria-hidden />
+                        {perk}
+                      </li>
+                    ))}
+                  </ul>
+                </Card>
+              </Tilt>
+            </Reveal>
+
           </div>
         </div>
       </section>
 
-      {/* ── Founders ─────────────────────────────────────── */}
-      {/* Before the contact section on purpose: knowing who runs the thing is
-          what makes someone want to get in touch. Renders nothing until an
-          organiser adds people at /admin/founders. */}
-      <Founders />
+      {/* ── Community channels ───────────────────────────── */}
+      {/* Sits mid-page, straight after "where you fit": someone who has just read
+          how the club works is the person most likely to join a channel. */}
+      <CommunityLinks />
 
+      {/* ── Gallery preview ──────────────────────────────── */}
+      {photos.length > 0 && (
+        <section className="mx-auto max-w-7xl px-4 py-14 sm:px-6 lg:px-8">
+          <Reveal>
+            <div className="datastrip mb-10" />
+            <div className="flex flex-wrap items-end justify-between gap-4">
+              <div>
+                <p className="eyebrow mb-2 text-gold">From the club</p>
+                <h2 className="display text-[clamp(26px,3.6vw,38px)]">Lately, in pictures</h2>
+              </div>
+              <Link to="/gallery" className="text-[13px] font-medium text-ink-3 hover:text-gold">
+                Full gallery →
+              </Link>
+            </div>
+          </Reveal>
 
+          <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {photos.slice(0, 4).map((ph, i) => (
+              <Reveal key={ph.id} delay={i * 0.06}>
+                <Tilt max={9} lift={10}>
+                  <Link
+                    to="/gallery"
+                    className="group block overflow-hidden rounded-[var(--radius-card)] border border-white/8"
+                  >
+                    <img
+                      src={ph.url}
+                      alt={ph.caption ?? "Club photo"}
+                      loading="lazy"
+                      className="aspect-[4/3] w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                    />
+                  </Link>
+                </Tilt>
+              </Reveal>
+            ))}
+          </div>
+        </section>
+      )}
 
+      {/* ── This week's board ────────────────────────────── */}
+      {board.length > 0 && (
+        <section className="mx-auto max-w-7xl px-4 py-14 sm:px-6 lg:px-8">
+          <Reveal>
+            <div className="datastrip mb-10" />
+            <div className="flex flex-wrap items-end justify-between gap-4">
+              <div>
+                <p className="eyebrow mb-2 text-gold">This week</p>
+                <h2 className="display text-[clamp(26px,3.6vw,38px)]">Who's putting the miles in</h2>
+              </div>
+              <Link to="/leaderboard" className="text-[13px] font-medium text-ink-3 hover:text-gold">
+                Full board →
+              </Link>
+            </div>
+          </Reveal>
+
+          <Reveal delay={0.05}>
+            <Card className="hud mt-8 overflow-hidden p-0">
+              <ol>
+                {board.slice(0, 5).map((r, i) => (
+                  <li
+                    key={r.user_id}
+                    className="flex items-center gap-4 border-b border-white/5 px-5 py-3.5 last:border-0"
+                  >
+                    <span className="display tnum w-7 text-center text-[15px] text-gold">
+                      {i + 1}
+                    </span>
+                    <Avatar name={r.name} size={32} />
+                    <span className="min-w-0 flex-1 truncate text-[13.5px] font-medium text-ink">
+                      {r.name}
+                    </span>
+                    <span className="tnum text-[13px] font-semibold text-ink">
+                      {r.weekly_distance_km.toFixed(1)}
+                      <span className="ml-0.5 text-[11px] font-normal text-ink-3">km</span>
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            </Card>
+          </Reveal>
+        </section>
+      )}
+
+      {/* ── Terms and conditions ─────────────────────────────
+          Replaces the old "Turn up fifteen minutes early" section. The four
+          cards still carry the on-the-day practicalities, but the heading and
+          copy now point at the actual agreement, and the refund line comes
+          from lib/policies so it cannot disagree with the refund page. */}
+      <section className="mx-auto max-w-7xl px-4 py-14 sm:px-6 lg:px-8">
+        <Reveal>
+          <div className="datastrip mb-10" />
+          <div className="grid gap-8 lg:grid-cols-[1fr_1.1fr] lg:items-center">
+            <div>
+              <p className="eyebrow mb-2 text-gold">Terms and conditions</p>
+              <h2 className="display text-[clamp(26px,3.6vw,38px)]">
+                What you're agreeing to.
+              </h2>
+              <p className="mt-5 text-[15px] leading-relaxed text-ink-2">
+                Register for a session and you confirm you're medically fit to take part, and that
+                you take part at your own risk. There's a briefing fifteen minutes before every
+                start — the route, the junctions, where the marshals will be.
+              </p>
+              <p className="mt-3 text-[15px] leading-relaxed text-ink-2">
+                {REFUND_ONE_LINER} If the club cancels, everyone is refunded in full.
+              </p>
+              <div className="mt-7 flex flex-wrap gap-3">
+                <Link to="/terms" className={buttonClass("gold", "md")}>
+                  Read the full terms
+                </Link>
+                <Link to="/refunds" className={buttonClass("outline", "md")}>
+                  Refund policy
+                </Link>
+                <Link to="/privacy" className={buttonClass("ghost", "md")}>
+                  Privacy
+                </Link>
+              </div>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              {[
+                { Icon: ClockIcon, t: "Briefing at −15", b: "Route, junctions, bag drop." },
+                { Icon: PinIcon, t: "Marshalled corners", b: "Gold bibs. Follow their calls." },
+                { Icon: TicketIcon, t: "Scan and go", b: "QR at the start line." },
+                {
+                  Icon: SparkIcon,
+                  t: `Refunds to −${REFUND_WINDOW_HOURS}h`,
+                  b: "Full refund before then.",
+                },
+              ].map((x, i) => (
+                <Reveal key={x.t} delay={i * 0.05}>
+                  <Tilt max={7} lift={8}>
+                    <Card hover className="hud edge-gold h-full p-5">
+                      <span className="grid size-9 place-items-center rounded-xl border border-gold/25 bg-gold/8 text-gold">
+                        <x.Icon className="size-4" />
+                      </span>
+                      <p className="mt-3 text-[14px] font-semibold text-ink">{x.t}</p>
+                      <p className="mt-1 text-[12.5px] text-ink-3">{x.b}</p>
+                    </Card>
+                  </Tilt>
+                </Reveal>
+              ))}
+            </div>
+          </div>
+        </Reveal>
+      </section>
 
       <CollaboratorScroller />
 
-      {/* ── The ask ──────────────────────────────────────── */}
-      {/* One join panel, last. There used to be this and a mid-page banner and
-          a separate closing card; on a page this short, one is enough. Renders
-          nothing for anyone already signed in. */}
-      <JoinBanner />
-
+      {/* ── Closing CTA ──────────────────────────────────── */}
+      {!user && (
+        <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
+          <Card className="relative overflow-hidden p-8 text-center sm:p-12">
+            <div
+              className="pointer-events-none absolute inset-x-0 -bottom-32 h-64 opacity-[0.16] blur-3xl"
+              style={{ background: "var(--color-gold)" }}
+              aria-hidden
+            />
+            <div className="relative">
+              <h2 className="display text-[clamp(28px,4vw,44px)]">
+                Next run leaves without you.
+              </h2>
+              <p className="mx-auto mt-4 max-w-md text-[15px] text-ink-2">
+                Join as a member to register and pay, or as a volunteer to marshal for free.
+              </p>
+              <div className="mt-8 flex flex-wrap justify-center gap-3">
+                <Link to="/signup" className={buttonClass("gold", "lg")}>
+                  Create your account
+                </Link>
+                <Link to="/login" className={buttonClass("outline", "lg")}>
+                  I have one
+                </Link>
+              </div>
+            </div>
+          </Card>
+        </section>
+      )}
     </>
   );
 }
