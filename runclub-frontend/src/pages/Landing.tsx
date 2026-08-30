@@ -24,7 +24,6 @@ import { buttonClass, Card, Skeleton } from "../components/ui";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { countdown, inr, isPast } from "../lib/format";
-import { REFUND_ONE_LINER } from "../lib/policies";
 import { useFetch } from "../lib/useFetch";
 
 /**
@@ -722,30 +721,6 @@ export function Landing() {
 
 
 
-
-      {/* ── Terms, as a single line ──────────────────────── */}
-      {/* Was a two-column section with a heading, two paragraphs, three buttons
-          and four cards. The obligation is to make the terms reachable, not to
-          reprint them on the home page — so this is one line and the links. */}
-      <section className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
-        <div className="rule-gold mb-7" />
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-[13px] leading-relaxed text-ink-3">
-            You take part at your own risk. {REFUND_ONE_LINER}
-          </p>
-          <div className="flex shrink-0 flex-wrap gap-x-4 gap-y-2">
-            <Link to="/terms" className="text-[13px] text-gold transition-opacity hover:opacity-70">
-              Club terms
-            </Link>
-            <Link to="/refunds" className="text-[13px] text-gold transition-opacity hover:opacity-70">
-              Refunds
-            </Link>
-            <Link to="/privacy" className="text-[13px] text-gold transition-opacity hover:opacity-70">
-              Privacy
-            </Link>
-          </div>
-        </div>
-      </section>
 
       <CollaboratorScroller />
 
