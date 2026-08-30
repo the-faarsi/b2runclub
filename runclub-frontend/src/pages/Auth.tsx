@@ -125,7 +125,7 @@ export function Login() {
             autoComplete="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder="you@runclub.com"
+            placeholder="your@email.com"
           />
         </Field>
 
@@ -273,7 +273,7 @@ export function Signup() {
             autoComplete="name"
             value={form.name}
             onChange={set("name")}
-            placeholder="Priya Nair"
+            placeholder="Your full name"
           />
         </Field>
 
@@ -285,7 +285,7 @@ export function Signup() {
             autoComplete="email"
             value={form.email}
             onChange={set("email")}
-            placeholder="you@runclub.com"
+            placeholder="your@email.com"
           />
         </Field>
 
@@ -315,7 +315,7 @@ export function Signup() {
             id="emergency"
             value={form.emergency_contact}
             onChange={set("emergency_contact")}
-            placeholder="+91 99999 88888"
+            placeholder="Phone number of a family member or friend"
             autoComplete="tel"
           />
         </Field>
@@ -431,7 +431,7 @@ export function ForgotPassword() {
                 autoComplete="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@runclub.com"
+                placeholder="your@email.com"
               />
             </Field>
 

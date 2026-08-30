@@ -432,73 +432,85 @@ export function Landing() {
           </div>
         </div>
 
-        {/* Next event spotlight */}
-        <div ref={heroSpotlightRef} className="mt-14">
-          {loading ? (
-            <Card className="p-6">
-              <Skeleton className="h-4 w-28" />
-              <Skeleton className="mt-4 h-10 w-2/3" />
-              <Skeleton className="mt-3 h-4 w-1/3" />
-            </Card>
-          ) : next ? (
-            <Tilt max={4} lift={5} glare={false}>
-            {/* card-glow, so the next session reads as a distinct object over the
-                  hero video rather than a translucent panel floating in it. */}
-              <Card className="speedlines card-glow group relative overflow-hidden">
-              {/* The next event's own cover behind the spotlight, so the first
-                  thing on the page shows the session rather than a gradient. */}
-              <EventCoverBackdrop url={next.cover_url} scrim="card" />
-              <div
-                className="pointer-events-none absolute -right-16 -top-24 size-72 rounded-full opacity-[0.15] blur-3xl"
-                style={{ background: "var(--color-gold)" }}
-                aria-hidden
-              />
-              <div className="relative flex flex-col gap-6 p-6 sm:p-8 lg:flex-row lg:items-end lg:justify-between">
-                <div className="min-w-0">
-                  <p className="eyebrow text-gold">Next up</p>
-                  <h2 className="display mt-3 text-[clamp(26px,3.6vw,40px)]">{next.title}</h2>
-                  <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-[14px] text-ink-2">
-                    <span className="flex items-center gap-1.5">
-                      <span className="text-gold" aria-hidden>
-                        <DisciplineIcon type={next.type} className="size-4" />
-                      </span>
-                      {next.type}
-                    </span>
-                  </div>
-                  <EventMeta event={next} className="mt-2.5" />
-                </div>
+      </section>
 
-                <div className="flex flex-wrap items-end gap-x-6 gap-y-4 lg:shrink-0">
-                  <div>
-                    <p className="eyebrow whitespace-nowrap">Starts in</p>
-                    <p className="display tnum mt-1.5 whitespace-nowrap text-[32px] text-gold">
-                      {countdown(next.date_time) ?? "now"}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="eyebrow">Entry</p>
-                    <p className="display mt-1.5 whitespace-nowrap text-[32px]">
-                      {next.price === 0 ? "Free" : inr(next.price)}
-                    </p>
-                  </div>
-                  <Link
-                    to={`/events/${next.id}`}
-                    className={buttonClass("gold", "md", "mb-1 w-full sm:w-auto")}
-                  >
-                    Take a spot
-                  </Link>
+      {/* ── Next up ───────────────────────────────────────── */}
+      {/*
+        Its own section, deliberately outside the hero.
+
+        It used to sit inside it, and HeroVideo covers the hero with an
+        absolutely positioned layer — so on a phone, where the hero is short,
+        this card lay across most of the video. Moving it below means the clip
+        is only ever behind the model and the button.
+      */}
+      <section className="mx-auto max-w-7xl px-4 pt-4 sm:px-6 lg:px-8">
+      {/* Next event spotlight */}
+      <div ref={heroSpotlightRef} className="mt-14">
+        {loading ? (
+          <Card className="p-6">
+            <Skeleton className="h-4 w-28" />
+            <Skeleton className="mt-4 h-10 w-2/3" />
+            <Skeleton className="mt-3 h-4 w-1/3" />
+          </Card>
+        ) : next ? (
+          <Tilt max={4} lift={5} glare={false}>
+          {/* card-glow, so the next session reads as a distinct object over the
+                hero video rather than a translucent panel floating in it. */}
+            <Card className="speedlines card-glow group relative overflow-hidden">
+            {/* The next event's own cover behind the spotlight, so the first
+                thing on the page shows the session rather than a gradient. */}
+            <EventCoverBackdrop url={next.cover_url} scrim="card" />
+            <div
+              className="pointer-events-none absolute -right-16 -top-24 size-72 rounded-full opacity-[0.15] blur-3xl"
+              style={{ background: "var(--color-gold)" }}
+              aria-hidden
+            />
+            <div className="relative flex flex-col gap-6 p-6 sm:p-8 lg:flex-row lg:items-end lg:justify-between">
+              <div className="min-w-0">
+                <p className="eyebrow text-gold">Next up</p>
+                <h2 className="display mt-3 text-[clamp(26px,3.6vw,40px)]">{next.title}</h2>
+                <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-[14px] text-ink-2">
+                  <span className="flex items-center gap-1.5">
+                    <span className="text-gold" aria-hidden>
+                      <DisciplineIcon type={next.type} className="size-4" />
+                    </span>
+                    {next.type}
+                  </span>
                 </div>
+                <EventMeta event={next} className="mt-2.5" />
               </div>
-            </Card>
-            </Tilt>
-          ) : (
-            <Card className="p-8 text-center">
-              <p className="text-sm text-ink-2">
-                No published events right now — the organisers are drafting the next block.
-              </p>
-            </Card>
-          )}
-        </div>
+
+              <div className="flex flex-wrap items-end gap-x-6 gap-y-4 lg:shrink-0">
+                <div>
+                  <p className="eyebrow whitespace-nowrap">Starts in</p>
+                  <p className="display tnum mt-1.5 whitespace-nowrap text-[32px] text-gold">
+                    {countdown(next.date_time) ?? "now"}
+                  </p>
+                </div>
+                <div>
+                  <p className="eyebrow">Entry</p>
+                  <p className="display mt-1.5 whitespace-nowrap text-[32px]">
+                    {next.price === 0 ? "Free" : inr(next.price)}
+                  </p>
+                </div>
+                <Link
+                  to={`/events/${next.id}`}
+                  className={buttonClass("gold", "md", "mb-1 w-full sm:w-auto")}
+                >
+                  Take a spot
+                </Link>
+              </div>
+            </div>
+          </Card>
+          </Tilt>
+        ) : (
+          <Card className="p-8 text-center">
+            <p className="text-sm text-ink-2">
+              No published events right now — the organisers are drafting the next block.
+            </p>
+          </Card>
+        )}
+      </div>
       </section>
 
 

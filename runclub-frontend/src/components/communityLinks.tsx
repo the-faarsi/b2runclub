@@ -1,7 +1,7 @@
 import { motion, useReducedMotion } from "framer-motion";
 import { useCallback } from "react";
 import { api } from "../lib/api";
-import { cn } from "../lib/format";
+import { cn, instagramHandle, instagramHref } from "../lib/format";
 import { useFetch } from "../lib/useFetch";
 import { InstagramIcon, MailIcon, StravaIcon, WhatsAppIcon } from "./icons";
 import { Card, Skeleton } from "./ui";
@@ -68,10 +68,10 @@ export function CommunityLinks() {
     channels.push({
       key: "instagram",
       label: "Instagram",
-      handle: `@${club.instagram}`,
+      handle: `@${instagramHandle(club.instagram)}`,
       blurb:
         "Photos from the road and the trail, session announcements, and the odd finish-line face.",
-      href: `https://instagram.com/${club.instagram}`,
+      href: instagramHref(club.instagram),
       cta: "Follow the page",
       tint: "#e1306c",
       Icon: InstagramIcon,

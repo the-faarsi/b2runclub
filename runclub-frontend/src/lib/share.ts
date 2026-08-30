@@ -29,7 +29,7 @@ export function eventToIcs(event: ClubEvent, assumedHours = 2): string {
     "CALSCALE:GREGORIAN",
     "METHOD:PUBLISH",
     "BEGIN:VEVENT",
-    `UID:${event.id}@bsquared.run`,
+    `UID:${event.id}@b2club.in`,
     `DTSTAMP:${icsStamp(new Date())}`,
     `DTSTART:${icsStamp(start)}`,
     `DTEND:${icsStamp(end)}`,

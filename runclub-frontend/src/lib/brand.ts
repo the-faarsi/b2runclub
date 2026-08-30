@@ -14,20 +14,29 @@
  */
 
 /** Full legal-ish name, for waivers, invoices and anything formal. */
-export const CLUB_NAME = "B Squared Run Club";
+export const CLUB_NAME = "B2 Club";
 
 /** Short name for prose. */
-export const CLUB_SHORT = "B Squared";
+export const CLUB_SHORT = "B2 Club";
 
 /** Wordmark, uppercased in the header. */
-export const CLUB_WORDMARK = "B SQUARED";
+export const CLUB_WORDMARK = "B2 CLUB";
 
 /** Monogram inside the gold plate. */
-export const CLUB_MONOGRAM = "B²";
+export const CLUB_MONOGRAM = "B2";
 
 /**
  * Filename-safe slug for exports. Downloads used to be named "b-squared-…",
  * which outlived a rename and put the old name on every file an organiser sent
  * to an accountant.
  */
-export const CLUB_SLUG = "bsquared";
+export const CLUB_SLUG = "b2club";
+
+/**
+ * The club's one-line tagline, for the About headline and the footer blurb.
+ *
+ * Here rather than typed into each of them, for the same reason the name is:
+ * the previous one ("A running club that actually runs on time.") had drifted
+ * into four files plus a database default, and changing it meant finding them.
+ */
+export const CLUB_TAGLINE = "Fitness meets friendship.";

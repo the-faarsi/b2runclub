@@ -196,3 +196,23 @@ export const ROLE_META: Record<string, { label: string; tint: string }> = {
   VOLUNTEER: { label: "Volunteer", tint: "text-[color:var(--color-free)]" },
   VISITOR: { label: "Visitor", tint: "text-ink-3" },
 };
+
+/**
+ * Normalises whatever was pasted into the Instagram field to a bare handle.
+ *
+ * Accepts a full profile URL, an @handle, or a plain handle, because that is
+ * what people actually paste — a real record here held
+ * "https://www.instagram.com/sp.aquatechie?utm_source=ig_web_button_share_sheet",
+ * which rendered as "@https://www.instagram.com/..." and linked to
+ * instagram.com/https://... Query strings are dropped with the rest of the URL.
+ */
+export function instagramHandle(value: string): string {
+  const raw = value.trim();
+  const fromUrl = raw.match(/instagram\.com\/([^/?#\s]+)/i);
+  return (fromUrl ? fromUrl[1] : raw).replace(/^@+/, "");
+}
+
+/** Profile URL for whatever form the handle was stored in. */
+export function instagramHref(value: string): string {
+  return `https://instagram.com/${instagramHandle(value)}`;
+}

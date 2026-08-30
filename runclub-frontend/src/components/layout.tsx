@@ -3,8 +3,8 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
-import { CLUB_MONOGRAM, CLUB_NAME, CLUB_WORDMARK } from "../lib/brand";
-import { cn, relativeTime, ROLE_META } from "../lib/format";
+import { CLUB_MONOGRAM, CLUB_NAME, CLUB_TAGLINE, CLUB_WORDMARK } from "../lib/brand";
+import { cn, instagramHandle, instagramHref, relativeTime, ROLE_META } from "../lib/format";
 import type { Notification } from "../lib/types";
 import { useFetch } from "../lib/useFetch";
 import { CreatorsCredit } from "./creatorsLogo";
@@ -24,12 +24,7 @@ export function Logo({ compact = false }: { compact?: boolean }) {
         <span className="display text-[13px] leading-none">{CLUB_MONOGRAM}</span>
       </span>
       {!compact && (
-        <span className="display text-[17px] tracking-[-0.02em]">
-          {CLUB_WORDMARK}
-          <span className="ml-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-ink-3">
-            RC
-          </span>
-        </span>
+        <span className="display text-[17px] tracking-[-0.02em]">{CLUB_WORDMARK}</span>
       )}
     </Link>
   );
@@ -638,8 +633,8 @@ export function Footer() {
   if (club?.instagram) {
     contact.push({
       key: "instagram",
-      label: `@${club.instagram}`,
-      href: `https://instagram.com/${club.instagram}`,
+      label: `@${instagramHandle(club.instagram)}`,
+      href: instagramHref(club.instagram),
       Icon: InstagramIcon,
     });
   }
@@ -685,8 +680,7 @@ export function Footer() {
           <div>
             <Logo compact />
             <p className="mt-4 max-w-xs text-[13px] leading-relaxed text-ink-3">
-              A running club that meets early, marshals its own corners and always ends with
-              coffee. Bring water.
+              {CLUB_TAGLINE} We meet early, marshal our own corners and always end with coffee.
             </p>
           </div>
 

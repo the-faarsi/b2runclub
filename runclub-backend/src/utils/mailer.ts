@@ -24,7 +24,7 @@ const SMTP_HOST = process.env.SMTP_HOST;
 const SMTP_PORT = Number.parseInt(process.env.SMTP_PORT || "587", 10);
 const SMTP_USER = process.env.SMTP_USER;
 const SMTP_PASS = process.env.SMTP_PASS;
-const MAIL_FROM = process.env.MAIL_FROM || "B Squared Run Club <no-reply@bsquared.run>";
+const MAIL_FROM = process.env.MAIL_FROM || "B2 Club <no-reply@b2club.in>";
 
 /** True when real SMTP credentials are present. */
 export const mailerConfigured = Boolean(SMTP_HOST && SMTP_USER && SMTP_PASS);
@@ -120,25 +120,25 @@ export function testEmail(input: { name: string; host: string }): Mail {
       <p style="margin:0 0 6px;color:${GOLD};font-size:11px;font-weight:700;letter-spacing:0.16em;text-transform:uppercase;">Test message</p>
       <h1 style="margin:0 0 14px;color:${INK};font-size:24px;line-height:1.2;font-weight:800;letter-spacing:-0.03em;">Email is working</h1>
       <p style="margin:0 0 18px;color:#a5aab5;font-size:14px;line-height:1.6;">
-        Hi ${input.name}, this was sent from the B Squared backend through
+        Hi ${input.name}, this was sent from the B2 Club backend through
         <strong style="color:${INK};">${input.host}</strong>. If it reached your inbox, event
         reminders and password-reset links will too.
       </p>
       <p style="margin:0;color:#6d737f;font-size:12px;line-height:1.6;">
         Nobody else received this. Sent because an organiser pressed "Send a test email".
       </p>`,
-        "B Squared email is working",
+        "B2 Club email is working",
     );
 
     const text = [
         "Email is working",
         "",
         `Hi ${input.name},`,
-        `This was sent from the B Squared backend through ${input.host}.`,
+        `This was sent from the B2 Club backend through ${input.host}.`,
         "If it reached your inbox, event reminders and password-reset links will too.",
     ].join("\n");
 
-    return { to: "", subject: "B Squared — test email", html, text };
+    return { to: "", subject: "B2 Club — test email", html, text };
 }
 
 /** Verifies the SMTP connection — used by the admin diagnostics endpoint. */
@@ -165,7 +165,7 @@ function shell(bodyHtml: string, preheader: string) {
     // Outlook and Apple Mail. No external CSS, no web fonts.
     return `<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
-<title>B Squared Run Club</title></head>
+<title>B2 Club</title></head>
 <body style="margin:0;padding:0;background:${VOID};">
 <div style="display:none;font-size:1px;color:${VOID};max-height:0;overflow:hidden;">${preheader}</div>
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${VOID};padding:28px 12px;">
@@ -173,13 +173,13 @@ function shell(bodyHtml: string, preheader: string) {
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:${SURFACE};border:1px solid rgba(255,255,255,0.08);border-radius:16px;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
     <tr><td style="padding:22px 26px 0;">
       <table role="presentation" cellpadding="0" cellspacing="0"><tr>
-        <td style="background:${GOLD};border-radius:9px;width:32px;height:32px;text-align:center;vertical-align:middle;font-weight:800;color:#161000;font-size:15px;">B²</td>
-        <td style="padding-left:10px;font-weight:800;letter-spacing:-0.02em;color:${INK};font-size:16px;">B SQUARED <span style="color:#6d737f;font-size:10px;letter-spacing:0.18em;">RC</span></td>
+        <td style="background:${GOLD};border-radius:9px;width:32px;height:32px;text-align:center;vertical-align:middle;font-weight:800;color:#161000;font-size:15px;">B2</td>
+        <td style="padding-left:10px;font-weight:800;letter-spacing:-0.02em;color:${INK};font-size:16px;">B2 CLUB</td>
       </tr></table>
     </td></tr>
     <tr><td style="padding:20px 26px 28px;">${bodyHtml}</td></tr>
     <tr><td style="padding:16px 26px 22px;border-top:1px solid rgba(255,255,255,0.08);color:#6d737f;font-size:11px;line-height:1.6;">
-      You're getting this because you registered for a B Squared Run Club session.<br>
+      You're getting this because you registered for a B2 Club session.<br>
       Every run starts with one step. Bring water.
     </td></tr>
   </table>
@@ -208,7 +208,7 @@ export function passwordResetEmail(input: {
       <p style="margin:20px 0 0;color:#6d737f;font-size:12px;line-height:1.6;">
         If you didn't ask for this, you can ignore it — your password stays as it is.
       </p>`,
-        "Set a new B Squared password"
+        "Set a new B2 Club password"
     );
 
     const text = [
@@ -222,7 +222,7 @@ export function passwordResetEmail(input: {
         "If you didn't ask for this, ignore it — your password stays as it is.",
     ].join("\n");
 
-    return { to: "", subject: "Reset your B Squared password", html, text };
+    return { to: "", subject: "Reset your B2 Club password", html, text };
 }
 
 export function reminderEmail(input: {

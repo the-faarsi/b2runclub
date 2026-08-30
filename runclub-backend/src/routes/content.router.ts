@@ -350,7 +350,7 @@ router.delete(
 
 const CLUB_DEFAULTS = {
     id: "singleton",
-    headline: "A running club that actually runs on time.",
+    headline: "Fitness meets friendship.",
     about: "",
     mission: "",
     founded: null as string | null,
@@ -663,6 +663,22 @@ function optional(v: unknown): string | null {
     return typeof v === "string" && v.trim() ? v.trim() : null;
 }
 
+/**
+ * Reduces an Instagram value to a bare handle before storing it.
+ *
+ * Organisers paste whatever is in their address bar, and a stored
+ * "https://www.instagram.com/name?utm_source=ig_web_button_share_sheet" gets
+ * rendered as "@https://www.instagram.com/..." with a link to
+ * instagram.com/https://... The client normalises on read too, for rows written
+ * before this existed.
+ */
+function instagramHandle(v: unknown): string | null {
+    const raw = optional(v);
+    if (!raw) return null;
+    const fromUrl = raw.match(/instagram\.com\/([^/?#\s]+)/i);
+    return (fromUrl ? fromUrl[1] : raw).replace(/^@+/, "") || null;
+}
+
 // 10. List founders — public, drives the home page section.
 router.get("/founders", async (_req: AuthRequest, res: Response): Promise<void> => {
     try {
@@ -697,9 +713,7 @@ router.post("/founders", requireRole(["ADMIN"]), (req: AuthRequest, res: Respons
                     name: name.trim(),
                     role: role?.trim() || "",
                     bio: bio?.trim() || "",
-                    // A pasted handle often keeps its @; store it bare so the
-                    // client can build the URL without guessing.
-                    instagram: optional(instagram)?.replace(/^@/, "") ?? null,
+                    instagram: instagramHandle(instagram),
                     strava: optional(strava),
                     sort_order: Number.parseInt(sort_order, 10) || 0,
                     photo_url: file ? await storeImage(file) : optional(photo_url),
@@ -743,9 +757,7 @@ router.patch("/founders/:id", requireRole(["ADMIN"]), (req: AuthRequest, res: Re
             }
             if (role !== undefined) data.role = String(role).trim();
             if (bio !== undefined) data.bio = String(bio).trim();
-            if (instagram !== undefined) {
-                data.instagram = optional(instagram)?.replace(/^@/, "") ?? null;
-            }
+            if (instagram !== undefined) data.instagram = instagramHandle(instagram);
             if (strava !== undefined) data.strava = optional(strava);
             if (sort_order !== undefined) {
                 data.sort_order = Number.parseInt(String(sort_order), 10) || 0;
