@@ -589,14 +589,33 @@ router.post("/:id/register", requireRole(["MEMBER", "VOLUNTEER"]), async (req: A
         }
 
         let razorpayOrderId: string | null = null;
+        // One rounding, used for both the order and the response. They were
+        // computed separately, so a price like 99.99 sent 9999 paise to Razorpay
+        // while telling the client 9999.000000000002.
+        const amountPaise = Math.round(event.price * 100);
 
         if (paymentStatus === "PENDING") {
+            /**
+             * Razorpay rejects orders under 100 paise (₹1). Caught here so the
+             * member sees why rather than an opaque gateway error, and so no
+             * registration row is created for an order that cannot exist.
+             *
+             * Reachable: an organiser can set any price above zero, and
+             * anything from 0.01 to 0.99 lands in this gap.
+             */
+            if (amountPaise < 100) {
+                res.status(400).json({
+                    error: `Entry is ${event.price}, which is below the ₹1 minimum a card payment can take. Ask an organiser to make it free or at least ₹1.`,
+                });
+                return;
+            }
+
             // Create Razorpay Order
             if (isRazorpayMock) {
                 razorpayOrderId = `order_mock_${Math.random().toString(36).substring(2, 11)}`;
             } else {
                 const orderOptions = {
-                    amount: Math.round(event.price * 100), // In Indian Paisa
+                    amount: amountPaise, // In Indian Paisa
                     currency: "INR",
                     receipt: `event_registration_${Date.now()}`,
                     notes: {
@@ -604,8 +623,25 @@ router.post("/:id/register", requireRole(["MEMBER", "VOLUNTEER"]), async (req: A
                         userId,
                     },
                 };
-                const order = await (razorpay.orders as any).create(orderOptions);
-                razorpayOrderId = (order as any).id;
+                try {
+                    const order = await (razorpay.orders as any).create(orderOptions);
+                    razorpayOrderId = (order as any).id;
+                } catch (err: any) {
+                    /**
+                     * Separated from the handler's catch-all so a rejected key or
+                     * a gateway outage does not read as "Registration failed".
+                     * Razorpay puts the useful text in error.description.
+                     */
+                    const detail = err?.error?.description || err?.message || "unknown error";
+                    const status = err?.statusCode === 401 ? 401 : 502;
+                    res.status(status).json({
+                        error:
+                            status === 401
+                                ? "The club's payment credentials were rejected. An organiser needs to check them."
+                                : `Could not reach the payment gateway: ${detail}`,
+                    });
+                    return;
+                }
             }
         }
 
@@ -625,7 +661,7 @@ router.post("/:id/register", requireRole(["MEMBER", "VOLUNTEER"]), async (req: A
             message: paymentStatus === "FREE" ? "Registration completed successfully (Free)" : "Registration initiated",
             registration,
             razorpay_key_id: isRazorpayMock ? "mock_key_id" : razorpayKeyId,
-            amount: event.price * 100,
+            amount: amountPaise,
         });
     } catch (error: any) {
         res.status(500).json({ error: error.message || "Registration failed" });
