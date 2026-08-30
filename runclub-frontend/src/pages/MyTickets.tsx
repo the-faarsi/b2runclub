@@ -59,7 +59,22 @@ export function MyTickets() {
    */
   const payNow = async (reg: Registration) => {
     let orderId = reg.razorpay_order_id;
-    const keyId = publishableKey();
+    /*
+     * Prefer the key the backend reports over the build-time env var.
+     *
+     * VITE_RAZORPAY_KEY_ID has to be set at build time and kept in step with
+     * the backend's RAZORPAY_KEY_ID by hand. It was unset on the hosted
+     * frontend, so publishableKey() returned null, isMockPayment(null, …)
+     * answered true for a perfectly real order, and this fell through to the
+     * dev-only simulation route — which production refuses. A member who
+     * closed the payment window could never pay from this page.
+     *
+     * /api/payments/config already returns the key id (public by design, and
+     * fetched above), so it cannot drift from the secret it pairs with. The
+     * env var stays as a fallback for a frontend pointed at a backend that
+     * predates that endpoint.
+     */
+    const keyId = payCfg?.key_id ?? publishableKey();
 
     if (!orderId || isMockPayment(keyId, orderId)) {
       // No real credentials at all? Settle the mock order through the dev-only
