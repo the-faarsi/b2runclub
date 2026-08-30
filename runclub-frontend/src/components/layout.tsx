@@ -680,7 +680,7 @@ export function Footer() {
           <div>
             <Logo compact />
             <p className="mt-4 max-w-xs text-[13px] leading-relaxed text-ink-3">
-              {CLUB_TAGLINE} We meet early, marshal our own corners and always end with coffee.
+              {CLUB_TAGLINE}
             </p>
           </div>
 
