@@ -282,7 +282,6 @@ function navItems(isAdmin: boolean, canRegister: boolean, isClubMember: boolean)
     { to: "/events", label: "Events" },
     { to: "/gallery", label: "Gallery" },
     { to: "/polls", label: "Polls" },
-    { to: "/leaderboard", label: "Leaderboard" },
   ];
   // The forum is club-only — visitors and signed-out users never see the link.
   if (isClubMember) items.splice(3, 0, { to: "/forum", label: "Forum" });
@@ -725,7 +724,6 @@ export function Footer() {
             <FooterLink to="/calendar">Calendar</FooterLink>
             <FooterLink to="/events">Events</FooterLink>
             <FooterLink to="/gallery">Gallery</FooterLink>
-            <FooterLink to="/leaderboard">Leaderboard</FooterLink>
           </FooterColumn>
 
           <FooterColumn title="Policies">

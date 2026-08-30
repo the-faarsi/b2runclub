@@ -22,7 +22,6 @@ import { Gallery } from "./pages/Gallery";
 import { Events } from "./pages/Events";
 import { Forum } from "./pages/Forum";
 import { Landing } from "./pages/Landing";
-import { Leaderboard } from "./pages/Leaderboard";
 import { MyTickets } from "./pages/MyTickets";
 import { NotFound } from "./pages/NotFound";
 import { Polls } from "./pages/Polls";
@@ -96,7 +95,6 @@ export default function App() {
         <Route path="/events" element={<Events />} />
         <Route path="/events/:id" element={<EventDetail />} />
         <Route path="/polls" element={<Polls />} />
-        <Route path="/leaderboard" element={<Leaderboard />} />
         {/* Gallery is view-only for members and visitors; posting is gated in the page. */}
         <Route path="/gallery" element={<Gallery />} />
         <Route path="/about" element={<About />} />

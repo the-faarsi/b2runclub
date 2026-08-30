@@ -42,7 +42,7 @@ const ROLE_EXPLAINER: Record<AssignableRole, string> = {
     "Marshals events and registers for free — entry is comped automatically on every future registration.",
   MEMBER: "Registers for events and pays the entry fee. Can post, comment and vote.",
   VISITOR:
-    "Read-only. Can browse events, polls and the leaderboard, but cannot register, post or vote.",
+    "Read-only. Can browse events and polls, but cannot register, post or vote.",
 };
 
 /** One labelled fact in the expanded detail grid. */
