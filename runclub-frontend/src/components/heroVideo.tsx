@@ -47,8 +47,41 @@ export function HeroVideo() {
 
   const ytId = kind === "youtube" ? youtubeId(src) : null;
 
+  /*
+   * Feathered edges, so the clip dissolves into the page instead of sitting in
+   * a rectangle.
+   *
+   * Only the bottom used to fade, via the dark gradient below — the left, right
+   * and top edges ended on a hard line, and because the hero is a max-w-7xl
+   * column rather than full-bleed, those two vertical seams landed in the middle
+   * of the screen on a wide display.
+   *
+   * The mask is on the wrapper rather than the video, so the darkening overlay
+   * fades with it. Masking only the video would leave the overlay covering the
+   * full box, which reads as a slightly-darker-than-the-page rectangle — the
+   * same problem in a subtler form.
+   *
+   * One radial layer, not two composited linear ones: `mask-composite` needs a
+   * different keyword on WebKit (`source-in`) than everywhere else
+   * (`intersect`), and getting that pair wrong hides the video completely in
+   * Safari. An ellipse fades all four edges on its own.
+   *
+   * `farthest-side` rather than a percentage radius. A radial gradient's
+   * percentage radii are measured against the box's full width and height, so
+   * the 120% I first wrote put the left and right edges at only ~42% along the
+   * gradient — still solid black in the mask — and the fade played out beyond
+   * the element where there is nothing to fade. `farthest-side` makes 100% land
+   * exactly on each edge, so `transparent 100%` means transparent at the border.
+   */
+  const featherMask =
+    "radial-gradient(farthest-side ellipse at 50% 50%, #000 38%, rgba(0,0,0,0.5) 76%, transparent 100%)";
+
   return (
-    <div aria-hidden className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
+    <div
+      aria-hidden
+      className="pointer-events-none absolute inset-0 -z-10 overflow-hidden"
+      style={{ maskImage: featherMask, WebkitMaskImage: featherMask }}
+    >
       {kind === "youtube" && ytId ? (
         calm ? (
           <img
@@ -101,15 +134,15 @@ export function HeroVideo() {
         />
       )}
 
-      {/* Readability, but lighter than it was. With the headline gone the only
-          text over this is the pill and the button, both of which carry their
-          own background — so the clip can actually be seen. It still fades to
-          --color-void at the bottom so the section dissolves into the page. */}
+      {/* Readability. Kept light — the only text over this is the pill and the
+          button, both of which carry their own background. It no longer has to
+          reach solid --color-void at the bottom, because the mask above now
+          feathers the whole layer out and the page shows through by itself. */}
       <div
         className="absolute inset-0"
         style={{
           background:
-            "linear-gradient(to bottom, rgba(8,9,11,0.55) 0%, rgba(8,9,11,0.4) 45%, var(--color-void) 100%)",
+            "linear-gradient(to bottom, rgba(8,9,11,0.5) 0%, rgba(8,9,11,0.36) 45%, rgba(8,9,11,0.68) 100%)",
         }}
       />
     </div>
