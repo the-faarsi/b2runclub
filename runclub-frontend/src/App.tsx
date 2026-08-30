@@ -10,11 +10,13 @@ import { ForgotPassword, Login, ResetPassword, Signup } from "./pages/Auth";
 import { AdminDashboard } from "./pages/admin/Dashboard";
 import { ManageEvents } from "./pages/admin/ManageEvents";
 import { ManageCollaborators } from "./pages/admin/ManageCollaborators";
+import { ManageFounders } from "./pages/admin/ManageFounders";
 import { DatabaseAdmin } from "./pages/admin/Database";
 import { ManageMembers } from "./pages/admin/ManageMembers";
 import { ManagePolls } from "./pages/admin/ManagePolls";
 import { Calendar } from "./pages/Calendar";
 import { About } from "./pages/About";
+import { PrivacyPage, RefundPage, TermsPage, VolunteerTermsPage } from "./pages/Policy";
 import { EventDetail } from "./pages/EventDetail";
 import { Gallery } from "./pages/Gallery";
 import { Events } from "./pages/Events";
@@ -30,7 +32,21 @@ import { RaceDay } from "./pages/RaceDay";
 /** Chrome-wrapped routes. */
 function Shell() {
   return (
-    <div className="flex min-h-screen flex-col">
+    /*
+     * overflow-x-clip at the shell, not on individual sections.
+     *
+     * Several decorative layers deliberately bleed sideways — the hero's 3D
+     * graphic, PageScene backdrops, the creators' glow — and any of them can
+     * widen the document and produce a horizontal scrollbar. Clipping each
+     * section was worse than the scrollbar: it cut the hero model off at the
+     * 1280px container edge, which on a wide screen is nowhere near the edge of
+     * the picture. Clipping here means nothing is trimmed until it actually
+     * leaves the viewport.
+     *
+     * `clip` rather than `hidden` on purpose: `hidden` on one axis makes the
+     * other axis a scroll container, which would break the sticky navbar.
+     */
+    <div className="flex min-h-screen flex-col overflow-x-clip">
       <ScrollProgress />
       <Navbar />
       <div className="flex-1">
@@ -84,6 +100,23 @@ export default function App() {
         {/* Gallery is view-only for members and visitors; posting is gated in the page. */}
         <Route path="/gallery" element={<Gallery />} />
         <Route path="/about" element={<About />} />
+
+        {/* Policies are public: someone deciding whether to join needs to read
+            the terms and the refund rules before they have an account. */}
+        <Route path="/terms" element={<TermsPage />} />
+        <Route path="/privacy" element={<PrivacyPage />} />
+        <Route path="/refunds" element={<RefundPage />} />
+
+        {/* Volunteer terms are for marshals. Admins can see it too — they are
+            the ones who brief volunteers on it. */}
+        <Route
+          path="/volunteer-terms"
+          element={
+            <Guard roles={["VOLUNTEER", "ADMIN"]}>
+              <VolunteerTermsPage />
+            </Guard>
+          }
+        />
 
         {/* Forum is club-only: VISITOR and signed-out users are turned away. */}
         <Route
@@ -152,6 +185,14 @@ export default function App() {
           element={
             <Guard roles={["ADMIN"]}>
               <ManageCollaborators />
+            </Guard>
+          }
+        />
+        <Route
+          path="/admin/founders"
+          element={
+            <Guard roles={["ADMIN"]}>
+              <ManageFounders />
             </Guard>
           }
         />

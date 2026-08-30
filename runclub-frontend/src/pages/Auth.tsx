@@ -1,5 +1,6 @@
 import { motion } from "framer-motion";
 import { useCallback, useState, type ReactNode } from "react";
+import { CLUB_NAME } from "../lib/brand";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { Logo } from "../components/layout";
 import { PageScene } from "../components/scene3d";
@@ -39,7 +40,7 @@ function AuthLayout({ children, aside }: { children: ReactNode; aside: ReactNode
         />
         <Logo />
         {aside}
-        <p className="text-xs text-ink-3">B Squared Run Club · {new Date().getFullYear()}</p>
+        <p className="text-xs text-ink-3">{CLUB_NAME} · {new Date().getFullYear()}</p>
       </div>
 
       {/* Right: the form */}
@@ -124,7 +125,7 @@ export function Login() {
             autoComplete="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder="you@runclub.com"
+            placeholder="your@email.com"
           />
         </Field>
 
@@ -272,7 +273,7 @@ export function Signup() {
             autoComplete="name"
             value={form.name}
             onChange={set("name")}
-            placeholder="Priya Nair"
+            placeholder="Your full name"
           />
         </Field>
 
@@ -284,7 +285,7 @@ export function Signup() {
             autoComplete="email"
             value={form.email}
             onChange={set("email")}
-            placeholder="you@runclub.com"
+            placeholder="your@email.com"
           />
         </Field>
 
@@ -314,7 +315,7 @@ export function Signup() {
             id="emergency"
             value={form.emergency_contact}
             onChange={set("emergency_contact")}
-            placeholder="+91 99999 88888"
+            placeholder="Phone number of a family member or friend"
             autoComplete="tel"
           />
         </Field>
@@ -430,7 +431,7 @@ export function ForgotPassword() {
                 autoComplete="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@runclub.com"
+                placeholder="your@email.com"
               />
             </Field>
 

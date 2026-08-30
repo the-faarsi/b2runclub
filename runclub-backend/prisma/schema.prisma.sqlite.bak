@@ -1,0 +1,439 @@
+// file: runclub-backend/prisma/schema.prisma
+generator client {
+  provider = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+// User role representation: "ADMIN", "MEMBER", "VOLUNTEER", "VISITOR"
+// Event status representation: "DRAFT", "PUBLISHED", "ARCHIVED"
+// Payment status representation: "PENDING", "PAID", "FAILED", "FREE"
+
+// USER SERVICE Data
+model User {
+  id            String   @id @default(uuid())
+  email         String   @unique
+  password_hash String
+  name          String
+  role          String   @default("MEMBER")
+  created_at    DateTime @default(now())
+  emergency_contact String?
+  strava_id     String?
+
+  events_created  Event[] // Admin connection
+  registrations  EventRegistration[]
+  posts          Post[]
+  votes          PollVote[]
+  notifications  Notification[]
+  comments       Comment[]
+  photos         Photo[]
+  reset_tokens   PasswordResetToken[]
+  results        EventResult[]
+  feedback       EventFeedback[]
+  shift_assignments ShiftAssignment[]
+  splits         CheckpointSplit[]
+  health_workouts HealthWorkout[]
+  strava_account  StravaAccount?
+}
+
+// HEALTH SYNC Data
+// Workouts a member has imported from their phone's health app.
+//
+// This is an import rather than a live sync on purpose: HealthKit is an on-device
+// iOS API with no server endpoint, and Google retired the Fit REST API in favour
+// of Android-native Health Connect. Neither can be read from a web backend, so a
+// file the member exports themselves is the only route that actually works
+// without shipping a native app.
+model HealthWorkout {
+  id            String   @id @default(uuid())
+  user_id       String
+  user          User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  /// "apple_health" or "gpx" — where the row came from.
+  source        String
+  /// Stable id derived from the workout itself, so re-importing the same export
+  /// updates rather than duplicating.
+  external_id   String
+  activity_type String
+  started_at    DateTime
+  duration_secs Int
+  distance_km   Float?
+  energy_kcal   Float?
+  /// e.g. "Apple Watch" — useful when a member has several sources.
+  device        String?
+  created_at    DateTime @default(now())
+
+  @@unique([user_id, external_id])
+  @@index([user_id, started_at])
+}
+
+// AUTH RECOVERY Data
+// Only a hash of the token is stored, so a database leak cannot be used to reset
+// anyone's password — the raw token exists solely in the emailed link.
+model PasswordResetToken {
+  id         String    @id @default(uuid())
+  user_id    String
+  token_hash String    @unique
+  expires_at DateTime
+  used_at    DateTime?
+  created_at DateTime  @default(now())
+
+  user       User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+}
+
+// GALLERY SERVICE Data
+// Uploaded by admins and volunteers; read-only for everyone else.
+model Photo {
+  id          String   @id @default(uuid())
+  // Path served by the static /uploads route, or an external URL.
+  url         String
+  caption     String?
+  // Optional tie to an event, so the gallery can be grouped by session.
+  event_id    String?
+  event       Event?   @relation(fields: [event_id], references: [id])
+  created_at  DateTime @default(now())
+
+  uploader_id String
+  uploader    User     @relation(fields: [uploader_id], references: [id])
+}
+
+// CLUB CONTENT Data
+// A single row holding the About page copy, edited by admins.
+model ClubInfo {
+  id            String   @id @default("singleton")
+  headline      String   @default("")
+  about         String   @default("")
+  mission       String   @default("")
+  founded       String?
+  home_base     String?
+  contact_email String?
+  instagram     String?
+  strava_club   String?
+  /// Invite URL for the club's WhatsApp community. Editable because WhatsApp
+  /// invite links can be reset by a group admin, which retires the old one.
+  whatsapp      String?
+  /// Looping background video for the home page hero. A URL rather than an
+  /// upload: a usable hero clip is several megabytes, and the deployment caps
+  /// request bodies at 4.5MB, so uploading one through the API would fail for
+  /// exactly the files people actually have. Null falls back to the 3D scene.
+  hero_video_url String?
+  updated_at    DateTime @updatedAt
+}
+
+// Partners and sponsors shown in the home page scroller.
+model Collaborator {
+  id         String   @id @default(uuid())
+  name       String
+  // The shout-out revealed on hover.
+  blurb      String   @default("")
+  logo_url   String?
+  website    String?
+  tier       String   @default("PARTNER") // PARTNER, SPONSOR, COMMUNITY
+  sort_order Int      @default(0)
+  created_at DateTime @default(now())
+}
+
+/// The people who started the club, shown on the home page and editable by
+/// admins. A separate table from Collaborator rather than another tier on it:
+/// a founder needs a photo, a role and a bio, while a collaborator needs a logo
+/// and a website, and overloading one model would leave half its columns null
+/// in both directions.
+model Founder {
+  id         String   @id @default(uuid())
+  name       String
+  /// "Founder", "Founder & Head Coach" — free text, since clubs invent titles.
+  role       String   @default("")
+  bio        String   @default("")
+  photo_url  String?
+  /// Handle, not a URL, matching how ClubInfo.instagram is stored.
+  instagram  String?
+  /// Club or athlete URL, or a bare id.
+  strava     String?
+  sort_order Int      @default(0)
+  created_at DateTime @default(now())
+}
+
+// EVENT SERVICE Data
+model Event {
+  id          String   @id @default(uuid())
+  title       String
+  type        String   // Run, Cycle, Party etc.
+  date_time   DateTime
+  location    String
+  price       Float
+  status      String @default("DRAFT")
+
+  /// Free-text brief shown on the event page. Optional.
+  description String?
+  /// Maximum attendees. Null means no limit, which is the default so existing
+  /// events keep behaving exactly as they did before capacity existed.
+  capacity    Int?
+
+  /// Cover image used as the event backdrop. Kept in step with the Postgres
+  /// schema so a local SQLite checkout matches the deployed shape.
+  cover_url   String?
+
+  admin_id    String
+  created_by  User     @relation(fields: [admin_id], references: [id])
+
+  // Route detail, populated from an uploaded GPX.
+  route_gpx_url     String?
+  route_distance_km Float?
+  route_elevation_m Int?
+
+  registrations EventRegistration[]
+  reminders     EventReminder[]
+  results       EventResult[]
+  feedback      EventFeedback[]
+  shifts        EventShift[]
+  checkpoints   Checkpoint[]
+  photos        Photo[]
+}
+
+// RESULTS Data — recorded by an organiser after the event.
+model EventResult {
+  id          String   @id @default(uuid())
+  event_id    String
+  user_id     String
+  /// Net finish time in seconds. Null for a DNF that still gets a row.
+  finish_secs Int?
+  distance_km Float?
+  position    Int?
+  status      String   @default("FINISHED") // FINISHED, DNF, DNS
+  notes       String?
+  created_at  DateTime @default(now())
+
+  event       Event    @relation(fields: [event_id], references: [id], onDelete: Cascade)
+  user        User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([event_id, user_id])
+}
+
+// FEEDBACK Data — one response per person per event.
+model EventFeedback {
+  id         String   @id @default(uuid())
+  event_id   String
+  user_id    String
+  rating     Int
+  comment    String?
+  created_at DateTime @default(now())
+
+  event      Event    @relation(fields: [event_id], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([event_id, user_id])
+}
+
+// VOLUNTEER SHIFTS Data — marshal posts an organiser needs covered.
+model EventShift {
+  id            String   @id @default(uuid())
+  event_id      String
+  title         String
+  location_note String?
+  /// How many volunteers this post needs.
+  capacity      Int      @default(1)
+  sort_order    Int      @default(0)
+  created_at    DateTime @default(now())
+
+  event         Event    @relation(fields: [event_id], references: [id], onDelete: Cascade)
+  assignments   ShiftAssignment[]
+}
+
+model ShiftAssignment {
+  id         String   @id @default(uuid())
+  shift_id   String
+  user_id    String
+  created_at DateTime @default(now())
+
+  shift      EventShift @relation(fields: [shift_id], references: [id], onDelete: Cascade)
+  user       User       @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([shift_id, user_id])
+}
+
+// LIVE TRACKING Data — marshals tap runners through as they pass a post.
+model Checkpoint {
+  id         String   @id @default(uuid())
+  event_id   String
+  name       String
+  /// Distance into the route, for ordering and pace maths.
+  distance_km Float?
+  sort_order Int      @default(0)
+  created_at DateTime @default(now())
+
+  event      Event    @relation(fields: [event_id], references: [id], onDelete: Cascade)
+  splits     CheckpointSplit[]
+}
+
+model CheckpointSplit {
+  id            String   @id @default(uuid())
+  checkpoint_id String
+  user_id       String
+  recorded_at   DateTime @default(now())
+  recorded_by   String?
+
+  checkpoint    Checkpoint @relation(fields: [checkpoint_id], references: [id], onDelete: Cascade)
+  user          User       @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([checkpoint_id, user_id])
+}
+
+// EMAIL REMINDER Data
+// An organiser picks one or more offsets per event ("24 hours before"), and each
+// registrant gets one email per offset.
+model EventReminder {
+  id           String   @id @default(uuid())
+  event_id     String
+  // Hours before the start time that this reminder fires.
+  hours_before Int
+  created_at   DateTime @default(now())
+
+  event        Event    @relation(fields: [event_id], references: [id], onDelete: Cascade)
+  deliveries   ReminderDelivery[]
+
+  // One reminder per offset per event; stops duplicate rows being created.
+  @@unique([event_id, hours_before])
+}
+
+// One row per person per reminder. The unique constraint is what guarantees a
+// restart, a re-run or an overlapping sweep can never send the same email twice.
+model ReminderDelivery {
+  id          String   @id @default(uuid())
+  reminder_id String
+  user_id     String
+  sent_at     DateTime @default(now())
+  // "SENT" or "FAILED" — failures are recorded so a retry is a deliberate act.
+  status      String   @default("SENT")
+  error       String?
+
+  reminder    EventReminder @relation(fields: [reminder_id], references: [id], onDelete: Cascade)
+
+  @@unique([reminder_id, user_id])
+}
+
+// PAYMENT & REGISTRATION SERVICE Data
+model EventRegistration {
+  id                  String        @id @default(uuid())
+  event_id            String
+  user_id             String
+  razorpay_order_id   String?       @unique // Referenced in payment flow
+  razorpay_payment_id String?
+  status              String        @default("PENDING") // Updated by webhook
+  role_at_event       String        @default("MEMBER") // Track participant role
+  waiver_signed       Boolean       @default(false)
+  // Set when an admin bars this person from the event. Kept separate from
+  // `status` so a block never destroys the payment state — unblocking restores
+  // the registration exactly as it was.
+  blocked_at          DateTime?
+  // Set when the QR ticket is scanned at the start line.
+  attended_at         DateTime?
+  checked_in_by       String?
+  // Razorpay refund detail, so a refunded entry is auditable.
+  refund_id           String?
+  refunded_at         DateTime?
+  refund_amount       Float?
+
+  event               Event         @relation(fields: [event_id], references: [id])
+  user                User          @relation(fields: [user_id], references: [id])
+}
+
+// FORUM & COMMUNITY SERVICE Data
+model Post {
+  id              String   @id @default(uuid())
+  title           String
+  content         String
+  is_announcement Boolean  @default(false) // For Admin announcements
+  created_at      DateTime @default(now())
+
+  author_id       String
+  author          User     @relation(fields: [author_id], references: [id])
+  comments        Comment[]
+}
+
+// POLLS SERVICE Data
+model Poll {
+  id         String   @id @default(uuid())
+  title      String
+  active     Boolean  @default(true)
+  options    PollOption[]
+  votes      PollVote[]
+}
+
+model PollOption {
+  id         String @id @default(uuid())
+  poll_id    String
+  option_text String
+
+  poll       Poll   @relation(fields: [poll_id], references: [id])
+  votes      PollVote[]
+}
+
+model PollVote {
+  id          String @id @default(uuid())
+  poll_id     String
+  option_id   String
+  user_id     String
+
+  // Unique composite constraint prevents multiple votes
+  @@unique([user_id, poll_id]) 
+
+  poll        Poll   @relation(fields: [poll_id], references: [id])
+  option      PollOption @relation(fields: [option_id], references: [id])
+  user        User   @relation(fields: [user_id], references: [id])
+}
+
+model Notification {
+  id         String   @id @default(uuid())
+  user_id    String
+  message    String
+  is_read    Boolean  @default(false)
+  link       String?
+  created_at DateTime @default(now())
+
+  user       User     @relation(fields: [user_id], references: [id])
+}
+
+model Comment {
+  id         String   @id @default(uuid())
+  post_id    String
+  user_id    String
+  content    String
+  created_at DateTime @default(now())
+
+  post       Post     @relation(fields: [post_id], references: [id])
+  user       User     @relation(fields: [user_id], references: [id])
+}
+
+// STRAVA Data
+// One connected Strava athlete per member, established through OAuth.
+//
+// Tokens live here rather than on User so they are easy to drop wholesale when
+// someone disconnects, and so a stray `select` on User can never leak them.
+model StravaAccount {
+  id            String   @id @default(uuid())
+  user_id       String   @unique
+  user          User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  /// Strava's own numeric athlete id.
+  athlete_id    String   @unique
+  access_token  String
+  /// Access tokens last ~6 hours; this is what buys a new one.
+  refresh_token String
+  expires_at    DateTime
+  scope         String?
+
+  // Profile snapshot from the token exchange, so the UI can name the account
+  // without an extra API call on every render.
+  firstname     String?
+  lastname      String?
+  username      String?
+  avatar_url    String?
+  city          String?
+  country       String?
+
+  connected_at   DateTime @default(now())
+  last_synced_at DateTime?
+}

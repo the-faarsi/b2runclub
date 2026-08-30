@@ -1,5 +1,6 @@
 import { motion } from "framer-motion";
 import { useEffect, useState } from "react";
+import { CLUB_NAME } from "../lib/brand";
 import { Link } from "react-router-dom";
 import { api, ApiError } from "../lib/api";
 import { useAuth } from "../lib/auth";
@@ -14,8 +15,10 @@ import {
   ticketReady,
 } from "../lib/format";
 import { DUR, EASE } from "../lib/motion";
+import { REFUND_ONE_LINER, REFUND_WINDOW_HOURS } from "../lib/policies";
 import { CheckoutDismissed, isMockPayment, openCheckout } from "../lib/razorpay";
 import { downloadQr, extractQrDataUrl } from "../lib/share";
+import { EventCoverBackdrop } from "./eventCover";
 import type { ClubEvent, Registration } from "../lib/types";
 import { ClockIcon, DisciplineIcon, DownloadIcon, PinIcon } from "./icons";
 import { Confetti, Spotlight } from "./motion";
@@ -58,8 +61,13 @@ export function EventCard({
     >
       <Tilt className="h-full" max={8} lift={9}>
       <Spotlight className="h-full rounded-[var(--radius-card)]">
-        <Card hover className="group h-full overflow-hidden edge-gold">
-          <Link to={`/events/${event.id}`} className="flex h-full flex-col p-5">
+        <Card hover className="group relative h-full overflow-hidden edge-gold">
+          {/* The organiser's cover, as the card's own background. Heavily
+              scrimmed — small text runs across the whole face here, unlike the
+              detail hero where it sits in one corner. */}
+          <EventCoverBackdrop url={event.cover_url} scrim="card" />
+
+          <Link to={`/events/${event.id}`} className="relative flex h-full flex-col p-5">
             <div className="flex items-start gap-4" style={{ transformStyle: "preserve-3d" }}>
               {/* Calendar chip — floats above the card surface */}
               <div
@@ -355,8 +363,25 @@ export function RegisterDialog({
             checked={waiver}
             onChange={setWaiver}
             label="I sign the liability waiver"
-            description="I confirm I am medically fit to take part, and I accept that B Squared Run Club is not liable for injury or loss during the event."
+            description={`I confirm I am medically fit to take part, and I accept that ${CLUB_NAME} is not liable for injury or loss during the event.`}
           />
+        </div>
+
+        {/* Refund terms shown before payment, not after. The wording comes from
+            lib/policies so it cannot drift from the refund page. */}
+        <div className="rounded-xl border border-gold/20 bg-gold/[0.04] p-4">
+          <p className="eyebrow mb-1.5 text-gold">Before you pay</p>
+          <p className="text-[13px] leading-relaxed text-ink-2">
+            {REFUND_ONE_LINER} Inside {REFUND_WINDOW_HOURS} hours the fee isn't refundable. If the
+            club cancels, you're refunded in full.{" "}
+            <Link
+              to="/refunds"
+              target="_blank"
+              className="font-medium text-gold underline-offset-2 hover:underline"
+            >
+              Full refund policy
+            </Link>
+          </p>
         </div>
 
         {error && (
@@ -484,7 +509,7 @@ export function TicketModal({
                       B<span className="ml-px text-[12px] leading-none">2</span>
                     </span>
                   </div>
-                  <p className="eyebrow mt-4">B Squared Run Club</p>
+                  <p className="eyebrow mt-4">{CLUB_NAME}</p>
                   <p className="mt-1 text-[13px] text-ink-3">Turning your ticket over…</p>
                 </div>
               </div>

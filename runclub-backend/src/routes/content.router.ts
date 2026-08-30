@@ -1,26 +1,29 @@
 import { Router, Response } from "express";
-import crypto from "crypto";
-import fs from "fs";
-import path from "path";
 import multer from "multer";
 import prisma from "../utils/prisma";
 import { AuthRequest, requireRole } from "../middleware/auth";
 import { parseGpx, summariseRoute } from "../utils/gpx";
+import {
+    createDirectUpload,
+    deleteObject,
+    putObject,
+    readObjectText,
+    safeFilename,
+} from "../utils/storage";
 
 const router = Router();
 
 /* ── Uploads ──────────────────────────────────────────────────
- * Images land on local disk and are served by the static /uploads
- * route registered in server.ts. For anything beyond a single box
- * this should move to object storage (S3/R2) — the stored value is
- * just a URL, so swapping the destination needs no schema change.
+ * Bytes go through utils/storage, which writes to local disk or to Vercel Blob
+ * depending on the environment. The stored value is just a URL either way, so
+ * nothing downstream cares which driver ran.
+ *
+ * multer uses memoryStorage rather than diskStorage: the file has to be a Buffer
+ * we can hand to whichever driver is active, and on serverless there is nowhere
+ * on disk to put it.
  */
 
-export const UPLOAD_DIR = path.resolve(process.cwd(), "uploads");
-
-if (!fs.existsSync(UPLOAD_DIR)) {
-    fs.mkdirSync(UPLOAD_DIR, { recursive: true });
-}
+export { UPLOAD_DIR } from "../utils/storage";
 
 const ALLOWED_MIME: Record<string, string> = {
     "image/jpeg": ".jpg",
@@ -31,20 +34,184 @@ const ALLOWED_MIME: Record<string, string> = {
 };
 
 const upload = multer({
-    storage: multer.diskStorage({
-        destination: (_req, _file, cb) => cb(null, UPLOAD_DIR),
-        // Never trust the client filename: generate our own to avoid path
-        // traversal and collisions.
-        filename: (_req, file, cb) => {
-            const ext = ALLOWED_MIME[file.mimetype] ?? ".bin";
-            cb(null, `${Date.now()}-${crypto.randomBytes(8).toString("hex")}${ext}`);
-        },
-    }),
+    storage: multer.memoryStorage(),
     limits: { fileSize: 8 * 1024 * 1024, files: 1 }, // 8MB per image
     fileFilter: (_req, file, cb) => {
         if (ALLOWED_MIME[file.mimetype]) return cb(null, true);
         cb(new Error("Only JPEG, PNG, WebP, GIF or AVIF images are allowed"));
     },
+});
+
+const ALLOWED_VIDEO_MIME: Record<string, string> = {
+    "video/mp4": ".mp4",
+    "video/webm": ".webm",
+    // iPhones record .mov; browsers play the H.264 inside it, so it is worth
+    // accepting rather than making an organiser convert it first.
+    "video/quicktime": ".mov",
+};
+
+/**
+ * Ceiling for a hero video, whichever route it takes.
+ *
+ * Declared here rather than beside the signing route below because the multer
+ * instance evaluates it at module load — referencing it later would throw
+ * "Cannot access before initialization" the moment this file is imported.
+ */
+export const MAX_VIDEO_BYTES = 200 * 1024 * 1024;
+
+/**
+ * Separate multer instance for the hero video.
+ *
+ * This is the fallback route. A serverless host rejects request bodies over a
+ * few megabytes before any of this runs, so in production a video of real size
+ * goes browser → storage via a signed URL instead (see /uploads/video/sign).
+ * This path is what runs locally, where Express has no such limit.
+ */
+const videoUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: MAX_VIDEO_BYTES, files: 1 },
+    fileFilter: (_req, file, cb) => {
+        if (ALLOWED_VIDEO_MIME[file.mimetype]) return cb(null, true);
+        cb(new Error("Only MP4, WebM or MOV videos are allowed"));
+    },
+});
+
+/** multer's in-memory file shape, narrowed to what these handlers use. */
+type MemFile = { buffer: Buffer; mimetype: string; originalname: string };
+
+/** Stores an uploaded image and returns the URL to persist. */
+async function storeImage(file: MemFile): Promise<string> {
+    const ext = ALLOWED_MIME[file.mimetype] ?? ".bin";
+    return putObject(safeFilename(ext), file.buffer, file.mimetype);
+}
+
+/**
+ * 0. Store an image and return its URL. Admins and volunteers only.
+ *
+ * Exists because an event cover has to be uploadable *before* the event does —
+ * there is no id to attach it to yet, so the pattern used for GPX
+ * (POST /events/:id/route) does not work. The client uploads here first, then
+ * sends the returned URL as `cover_url` on the create call, which keeps the
+ * event routes as plain JSON instead of converting them to multipart.
+ *
+ * Nothing here is tied to events, so any future "pick an image" field can reuse
+ * it rather than growing another endpoint.
+ */
+router.post(
+    "/uploads/image",
+    requireRole(["ADMIN", "VOLUNTEER"]),
+    (req: AuthRequest, res: Response) => {
+        upload.single("image")(req as any, res as any, async (err: any) => {
+            try {
+                if (err) {
+                    res.status(400).json({ error: err.message || "Upload rejected" });
+                    return;
+                }
+                const file = (req as any).file as MemFile | undefined;
+                if (!file) {
+                    res.status(400).json({ error: "Attach an image file" });
+                    return;
+                }
+                const url = await storeImage(file);
+                res.status(201).json({ url });
+            } catch (error: any) {
+                res.status(500).json({ error: error.message || "Failed to store the image" });
+            }
+        });
+    },
+);
+
+/**
+ * 0a. Ask for permission to upload a video straight to storage. Admins only.
+ *
+ * The client sends the filename, type and size; it gets back either a signed
+ * URL to PUT the bytes to, or `mode: "proxy"` meaning post through the API
+ * instead. Only the second route is subject to the platform's request-body
+ * limit, so this is what makes a 50MB upload possible at all in production.
+ */
+router.post(
+    "/uploads/video/sign",
+    requireRole(["ADMIN"]),
+    async (req: AuthRequest, res: Response): Promise<void> => {
+        try {
+            const { content_type, size } = req.body ?? {};
+
+            const ext = ALLOWED_VIDEO_MIME[String(content_type)];
+            if (!ext) {
+                res.status(400).json({ error: "Only MP4, WebM or MOV videos are allowed" });
+                return;
+            }
+
+            const bytes = Number(size);
+            if (!Number.isFinite(bytes) || bytes <= 0) {
+                res.status(400).json({ error: "A file size is required" });
+                return;
+            }
+            if (bytes > MAX_VIDEO_BYTES) {
+                res.status(400).json({
+                    error: `That video is ${(bytes / 1024 / 1024).toFixed(0)}MB. The limit is ${
+                        MAX_VIDEO_BYTES / 1024 / 1024
+                    }MB.`,
+                });
+                return;
+            }
+
+            const filename = safeFilename(ext);
+            const direct = await createDirectUpload(filename);
+
+            if (!direct) {
+                // disk or blob driver: no signing available, so the client posts
+                // through the API. Works locally; on a serverless host the
+                // platform will refuse anything sizeable.
+                res.json({ mode: "proxy" });
+                return;
+            }
+
+            res.json({
+                mode: "direct",
+                upload_url: direct.uploadUrl,
+                token: direct.token,
+                public_url: direct.publicUrl,
+            });
+        } catch (error: any) {
+            res.status(500).json({ error: error.message || "Could not prepare the upload" });
+        }
+    },
+);
+
+/**
+ * 0b. Store a video and return its URL. Admins only.
+ *
+ * Sibling of the image route above, kept separate because the accepted types
+ * and the size limit are different by an order of magnitude, and a single
+ * endpoint would have to accept video-sized bodies for image uploads too.
+ */
+router.post("/uploads/video", requireRole(["ADMIN"]), (req: AuthRequest, res: Response) => {
+    videoUpload.single("video")(req as any, res as any, async (err: any) => {
+        try {
+            if (err) {
+                // multer's own message for an oversized file is "File too large",
+                // which does not say what the limit is.
+                const tooBig = err.code === "LIMIT_FILE_SIZE";
+                res.status(400).json({
+                    error: tooBig
+                        ? `That video is over ${MAX_VIDEO_BYTES / 1024 / 1024}MB.`
+                        : err.message || "Upload rejected",
+                });
+                return;
+            }
+            const file = (req as any).file as MemFile | undefined;
+            if (!file) {
+                res.status(400).json({ error: "Attach a video file" });
+                return;
+            }
+            const ext = ALLOWED_VIDEO_MIME[file.mimetype] ?? ".mp4";
+            const url = await putObject(safeFilename(ext), file.buffer, file.mimetype);
+            res.status(201).json({ url });
+        } catch (error: any) {
+            res.status(500).json({ error: error.message || "Failed to store the video" });
+        }
+    });
 });
 
 /* ── Gallery ──────────────────────────────────────────────── */
@@ -98,10 +265,10 @@ router.post(
                     return;
                 }
 
-                const file = (req as any).file as { filename: string } | undefined;
+                const file = (req as any).file as MemFile | undefined;
                 const { caption, event_id, url: externalUrl } = req.body ?? {};
 
-                const url = file ? `/uploads/${file.filename}` : externalUrl;
+                const url = file ? await storeImage(file) : externalUrl;
                 if (!url) {
                     res.status(400).json({ error: "Attach an image file or provide a url" });
                     return;
@@ -167,16 +334,10 @@ router.delete(
 
             await prisma.photo.delete({ where: { id: photo.id } });
 
-            // Remove the file too, but only for our own uploads and only after
-            // the row is gone — a stale file is harmless, a missing row is not.
-            if (photo.url.startsWith("/uploads/")) {
-                const filename = path.basename(photo.url);
-                const full = path.join(UPLOAD_DIR, filename);
-                // Guard against traversal via a crafted stored path.
-                if (full.startsWith(UPLOAD_DIR + path.sep)) {
-                    fs.promises.unlink(full).catch(() => undefined);
-                }
-            }
+            // Remove the file too, but only after the row is gone — a stale file
+            // is harmless, a missing row is not. deleteObject ignores anything it
+            // did not store (an externally linked URL) and never throws.
+            void deleteObject(photo.url);
 
             res.json({ message: "Photo removed" });
         } catch (error: any) {
@@ -189,7 +350,7 @@ router.delete(
 
 const CLUB_DEFAULTS = {
     id: "singleton",
-    headline: "A running club that actually runs on time.",
+    headline: "Fitness meets friendship.",
     about: "",
     mission: "",
     founded: null as string | null,
@@ -224,6 +385,7 @@ router.put("/club", requireRole(["ADMIN"]), async (req: AuthRequest, res: Respon
             "instagram",
             "strava_club",
             "whatsapp",
+            "hero_video_url",
         ] as const;
 
         const data: Record<string, string | null> = {};
@@ -355,7 +517,7 @@ router.post(
                     return;
                 }
 
-                const file = (req as any).file as { filename: string } | undefined;
+                const file = (req as any).file as MemFile | undefined;
                 const { name, blurb, website, tier, sort_order, logo_url } = req.body ?? {};
 
                 if (!name?.trim()) {
@@ -376,7 +538,7 @@ router.post(
                         website: website?.trim() || null,
                         tier: finalTier,
                         sort_order: Number.parseInt(sort_order, 10) || 0,
-                        logo_url: file ? `/uploads/${file.filename}` : logo_url?.trim() || null,
+                        logo_url: file ? await storeImage(file) : logo_url?.trim() || null,
                     },
                 });
 
@@ -411,7 +573,7 @@ router.patch(
                     return;
                 }
 
-                const file = (req as any).file as { filename: string } | undefined;
+                const file = (req as any).file as MemFile | undefined;
                 const { name, blurb, website, tier, sort_order, logo_url } = req.body ?? {};
 
                 // Present-but-empty is a real instruction to clear a field, so
@@ -443,7 +605,7 @@ router.patch(
 
                 // A newly uploaded file wins over a pasted URL.
                 const replacedLogo = existing.logo_url;
-                if (file) data.logo_url = `/uploads/${file.filename}`;
+                if (file) data.logo_url = await storeImage(file);
                 else if (logo_url !== undefined) data.logo_url = String(logo_url).trim() || null;
 
                 const collaborator = await prisma.collaborator.update({
@@ -452,14 +614,8 @@ router.patch(
                 });
 
                 // Only bin the previous upload once the row actually points elsewhere.
-                if (
-                    replacedLogo?.startsWith("/uploads/") &&
-                    collaborator.logo_url !== replacedLogo
-                ) {
-                    const full = path.join(UPLOAD_DIR, path.basename(replacedLogo));
-                    if (full.startsWith(UPLOAD_DIR + path.sep)) {
-                        fs.promises.unlink(full).catch(() => undefined);
-                    }
+                if (replacedLogo && collaborator.logo_url !== replacedLogo) {
+                    void deleteObject(replacedLogo);
                 }
 
                 res.json({ message: `${collaborator.name} updated`, collaborator });
@@ -486,16 +642,164 @@ router.delete(
 
             await prisma.collaborator.delete({ where: { id: row.id } });
 
-            if (row.logo_url?.startsWith("/uploads/")) {
-                const full = path.join(UPLOAD_DIR, path.basename(row.logo_url));
-                if (full.startsWith(UPLOAD_DIR + path.sep)) {
-                    fs.promises.unlink(full).catch(() => undefined);
-                }
-            }
+            void deleteObject(row.logo_url);
 
             res.json({ message: `${row.name} removed` });
         } catch (error: any) {
             res.status(500).json({ error: error.message || "Failed to remove the collaborator" });
+        }
+    }
+);
+
+/* ── Founders ─────────────────────────────────────────────────
+ * Same shape as the collaborator routes above — multipart so one client form
+ * covers both create and edit, every field optional on PATCH so a photo-only
+ * edit does not blank the bio, and the replaced photo is deleted after the row
+ * is written.
+ */
+
+/** Trims a string field, mapping blank to null. Shared by create and edit. */
+function optional(v: unknown): string | null {
+    return typeof v === "string" && v.trim() ? v.trim() : null;
+}
+
+/**
+ * Reduces an Instagram value to a bare handle before storing it.
+ *
+ * Organisers paste whatever is in their address bar, and a stored
+ * "https://www.instagram.com/name?utm_source=ig_web_button_share_sheet" gets
+ * rendered as "@https://www.instagram.com/..." with a link to
+ * instagram.com/https://... The client normalises on read too, for rows written
+ * before this existed.
+ */
+function instagramHandle(v: unknown): string | null {
+    const raw = optional(v);
+    if (!raw) return null;
+    const fromUrl = raw.match(/instagram\.com\/([^/?#\s]+)/i);
+    return (fromUrl ? fromUrl[1] : raw).replace(/^@+/, "") || null;
+}
+
+// 10. List founders — public, drives the home page section.
+router.get("/founders", async (_req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const rows = await prisma.founder.findMany({
+            orderBy: [{ sort_order: "asc" }, { created_at: "asc" }],
+        });
+        res.json(rows);
+    } catch (error: any) {
+        res.status(500).json({ error: error.message || "Failed to fetch founders" });
+    }
+});
+
+// 11. Add a founder — admin only. Photo may be uploaded or linked.
+router.post("/founders", requireRole(["ADMIN"]), (req: AuthRequest, res: Response) => {
+    upload.single("photo")(req as any, res as any, async (err: any) => {
+        try {
+            if (err) {
+                res.status(400).json({ error: err.message || "Upload rejected" });
+                return;
+            }
+
+            const file = (req as any).file as MemFile | undefined;
+            const { name, role, bio, instagram, strava, sort_order, photo_url } = req.body ?? {};
+
+            if (!name?.trim()) {
+                res.status(400).json({ error: "A founder name is required" });
+                return;
+            }
+
+            const founder = await prisma.founder.create({
+                data: {
+                    name: name.trim(),
+                    role: role?.trim() || "",
+                    bio: bio?.trim() || "",
+                    instagram: instagramHandle(instagram),
+                    strava: optional(strava),
+                    sort_order: Number.parseInt(sort_order, 10) || 0,
+                    photo_url: file ? await storeImage(file) : optional(photo_url),
+                },
+            });
+
+            res.status(201).json({ message: `${founder.name} added`, founder });
+        } catch (error: any) {
+            res.status(500).json({ error: error.message || "Failed to add the founder" });
+        }
+    });
+});
+
+// 12. Edit a founder — admin only.
+router.patch("/founders/:id", requireRole(["ADMIN"]), (req: AuthRequest, res: Response) => {
+    upload.single("photo")(req as any, res as any, async (err: any) => {
+        try {
+            if (err) {
+                res.status(400).json({ error: err.message || "Upload rejected" });
+                return;
+            }
+
+            const existing = await prisma.founder.findUnique({
+                where: { id: req.params.id as string },
+            });
+            if (!existing) {
+                res.status(404).json({ error: "Founder not found" });
+                return;
+            }
+
+            const file = (req as any).file as MemFile | undefined;
+            const { name, role, bio, instagram, strava, sort_order, photo_url } = req.body ?? {};
+
+            const data: Record<string, unknown> = {};
+            if (name !== undefined) {
+                if (!String(name).trim()) {
+                    res.status(400).json({ error: "A founder name is required" });
+                    return;
+                }
+                data.name = String(name).trim();
+            }
+            if (role !== undefined) data.role = String(role).trim();
+            if (bio !== undefined) data.bio = String(bio).trim();
+            if (instagram !== undefined) data.instagram = instagramHandle(instagram);
+            if (strava !== undefined) data.strava = optional(strava);
+            if (sort_order !== undefined) {
+                data.sort_order = Number.parseInt(String(sort_order), 10) || 0;
+            }
+            if (file) data.photo_url = await storeImage(file);
+            else if (photo_url !== undefined) data.photo_url = optional(photo_url);
+
+            const founder = await prisma.founder.update({ where: { id: existing.id }, data });
+
+            // After the write, so a failed update cannot leave the row pointing
+            // at a file that no longer exists.
+            if (existing.photo_url && founder.photo_url !== existing.photo_url) {
+                void deleteObject(existing.photo_url);
+            }
+
+            res.json({ message: `${founder.name} updated`, founder });
+        } catch (error: any) {
+            res.status(500).json({ error: error.message || "Failed to update the founder" });
+        }
+    });
+});
+
+// 13. Remove a founder — admin only.
+router.delete(
+    "/founders/:id",
+    requireRole(["ADMIN"]),
+    async (req: AuthRequest, res: Response): Promise<void> => {
+        try {
+            const row = await prisma.founder.findUnique({
+                where: { id: req.params.id as string },
+            });
+            if (!row) {
+                res.status(404).json({ error: "Founder not found" });
+                return;
+            }
+
+            await prisma.founder.delete({ where: { id: row.id } });
+            void deleteObject(row.photo_url);
+
+            res.json({ message: `${row.name} removed` });
+        } catch (error: any) {
+            res.status(500).json({ error: error.message || "Failed to remove the founder" });
         }
     }
 );
@@ -506,14 +810,8 @@ router.delete(
  * haversine formula — enough for a route summary, and no new dependency.
  */
 
-const GPX_DIR = UPLOAD_DIR;
-
 const gpxUpload = multer({
-    storage: multer.diskStorage({
-        destination: (_req, _file, cb) => cb(null, GPX_DIR),
-        filename: (_req, _file, cb) =>
-            cb(null, `${Date.now()}-${crypto.randomBytes(6).toString("hex")}.gpx`),
-    }),
+    storage: multer.memoryStorage(),
     limits: { fileSize: 5 * 1024 * 1024, files: 1 },
     fileFilter: (_req, file, cb) => {
         const ok =
@@ -534,28 +832,33 @@ router.post("/events/:id/route", requireRole(["ADMIN"]), (req: AuthRequest, res:
                 res.status(400).json({ error: err.message || "Upload rejected" });
                 return;
             }
-            const file = (req as any).file as { filename: string; path: string } | undefined;
+            const file = (req as any).file as MemFile | undefined;
             if (!file) {
                 res.status(400).json({ error: "Attach a .gpx file" });
                 return;
             }
 
-            const xml = await fs.promises.readFile(file.path, "utf8");
+            // Parsed before storing, so a file with no usable track never gets
+            // written at all — previously it was saved and then deleted again.
+            const xml = file.buffer.toString("utf8");
             const points = parseGpx(xml);
 
             if (points.length < 2) {
-                // Remove the useless file rather than leaving it on disk.
-                await fs.promises.unlink(file.path).catch(() => undefined);
                 res.status(400).json({ error: "No track points found in that GPX file" });
                 return;
             }
 
             const summary = summariseRoute(points);
+            const storedUrl = await putObject(
+                safeFilename(".gpx"),
+                file.buffer,
+                "application/gpx+xml",
+            );
 
             const event = await prisma.event.update({
                 where: { id: req.params.id as string },
                 data: {
-                    route_gpx_url: `/uploads/${file.filename}`,
+                    route_gpx_url: storedUrl,
                     route_distance_km: summary.distance_km,
                     route_elevation_m: summary.elevation_m,
                 },
@@ -584,14 +887,9 @@ router.get("/events/:id/route", async (req: AuthRequest, res: Response): Promise
             return;
         }
 
-        const filename = path.basename(event.route_gpx_url);
-        const full = path.join(UPLOAD_DIR, filename);
-        if (!full.startsWith(UPLOAD_DIR + path.sep)) {
-            res.status(400).json({ error: "Invalid route path" });
-            return;
-        }
-
-        const xml = await fs.promises.readFile(full, "utf8");
+        // Reads from disk or over HTTP depending on which driver stored it, so
+        // routes attached before a storage switch still render.
+        const xml = await readObjectText(event.route_gpx_url);
         const points = parseGpx(xml);
         if (points.length < 2) {
             res.status(400).json({ error: "Route file has no usable track" });

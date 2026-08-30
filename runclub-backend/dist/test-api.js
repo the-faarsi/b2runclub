@@ -6,9 +6,16 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const server_1 = __importDefault(require("./server"));
 const prisma_1 = __importDefault(require("./utils/prisma"));
 const crypto_1 = __importDefault(require("crypto"));
+const secrets_1 = require("./utils/secrets");
 const PORT = 3333;
 const BASE_URL = `http://localhost:${PORT}`;
-const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET || "CreateAStrongSecret";
+/**
+ * Read through the same validated module the server uses. Signing with a literal
+ * fallback would make the webhook test use a different secret than the server
+ * verifies with, so it would fail for a reason unrelated to the code under test.
+ */
+const webhookSecret = secrets_1.RAZORPAY_WEBHOOK_SECRET ?? "";
+const webhooksTestable = webhookSecret.length > 0;
 async function runTests() {
     console.log("=== STARTING RUN CLUB BACKEND INTEGRATION TESTS ===");
     // Start server

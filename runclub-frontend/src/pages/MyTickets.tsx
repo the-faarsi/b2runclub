@@ -2,6 +2,7 @@ import { motion } from "framer-motion";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { CancelRegistrationDialog } from "../components/cancelDialog";
+import { EventCoverBackdrop } from "../components/eventCover";
 import { TicketModal } from "../components/events";
 import { DisciplineIcon } from "../components/icons";
 import { Page, PageHeader } from "../components/layout";
@@ -287,8 +288,10 @@ export function MyTickets() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.35, delay: Math.min(i * 0.05, 0.25) }}
               >
-                <Card hover className="p-5">
-                  <div className="flex flex-wrap items-center gap-4">
+                <Card hover className="group relative overflow-hidden p-5">
+                  {/* The event's cover behind your ticket. */}
+                  <EventCoverBackdrop url={ev?.cover_url} scrim="row" />
+                  <div className="relative flex flex-wrap items-center gap-4">
                     {parts && (
                       <div
                         className={`grid shrink-0 place-items-center rounded-xl border px-3 py-2 text-center ${

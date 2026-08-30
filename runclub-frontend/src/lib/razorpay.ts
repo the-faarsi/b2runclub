@@ -6,6 +6,8 @@
  * our origin the whole time.
  */
 
+import { CLUB_NAME } from "./brand";
+
 const CHECKOUT_SRC = "https://checkout.razorpay.com/v1/checkout.js";
 
 /** The backend substitutes these when RAZORPAY_KEY_ID is still the placeholder. */
@@ -120,7 +122,7 @@ export function openCheckout(opts: OpenOptions): Promise<CheckoutResult> {
       order_id: opts.orderId,
       amount: opts.amountPaise,
       currency: "INR",
-      name: "B Squared Run Club",
+      name: CLUB_NAME,
       description: opts.eventTitle,
       prefill: {
         name: opts.userName,

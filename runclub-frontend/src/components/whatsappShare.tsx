@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { CLUB_NAME } from "../lib/brand";
+
 import { Button, Modal } from "./ui";
 import type { Post } from "../lib/types";
 
@@ -23,8 +25,8 @@ export function announcementMessage(post: Post, origin: string): string {
 
   return [
     post.is_announcement
-      ? "*📣 New announcement — B² Run Club*"
-      : "*🏃 New post — B² Run Club*",
+      ? `*📣 New announcement — ${CLUB_NAME}*`
+      : `*🏃 New post — ${CLUB_NAME}*`,
     "",
     `*${post.title.trim()}*`,
     "",

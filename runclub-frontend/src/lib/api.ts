@@ -14,6 +14,7 @@ import type {
   EventStatus,
   FeedbackSummary,
   FinancialOverview,
+  Founder,
   HealthImportResult,
   HealthSummary,
   Leaderboard,
@@ -266,6 +267,8 @@ export const api = {
     description?: string | null;
     /** Null or omitted means unlimited places. */
     capacity?: number | null;
+    /** Already-stored URL from `uploadImage`. */
+    cover_url?: string | null;
     /** Hours-before offsets to email registrants at. */
     reminder_offsets?: number[];
   }) =>
@@ -282,6 +285,75 @@ export const api = {
       method: "PUT",
       body: input,
     }),
+
+  /**
+   * Stores an image and returns its URL, for fields that need a picture before
+   * the record exists — an event cover is chosen while the event is still being
+   * created, so there is no id to attach it to yet.
+   */
+  /**
+   * Stores a hero video and returns its URL.
+   *
+   * Asks the server to sign an upload first. If it can, the bytes go straight
+   * from the browser to object storage and never touch the API — which is the
+   * only way a 50MB file gets through, since a serverless host rejects request
+   * bodies over a few megabytes before our code runs at all.
+   *
+   * Falls back to posting through the API when signing is unavailable (local
+   * disk storage), where Express imposes no such limit.
+   *
+   * `onProgress` reports 0–1 for the direct route. XHR rather than fetch purely
+   * because fetch still cannot report upload progress, and a 50MB upload with no
+   * feedback looks broken.
+   */
+  async uploadVideo(
+    file: File,
+    onProgress?: (fraction: number) => void,
+  ): Promise<{ url: string }> {
+    const permit = await request<
+      | { mode: "direct"; upload_url: string; token: string; public_url: string }
+      | { mode: "proxy" }
+    >("/api/content/uploads/video/sign", {
+      method: "POST",
+      body: { content_type: file.type, size: file.size },
+    });
+
+    if (permit.mode === "proxy") {
+      const form = new FormData();
+      form.append("video", file);
+      return upload<{ url: string }>("/api/content/uploads/video", form);
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("PUT", permit.upload_url, true);
+      // No Authorization header on purpose. The signed URL already carries the
+      // permit as `?token=`, which is what the storage API reads for this route,
+      // and supabase-js does not send one either — passing the upload token as a
+      // bearer credential risks the gateway rejecting it as a bad JWT.
+      xhr.setRequestHeader("Content-Type", file.type);
+      xhr.setRequestHeader("cache-control", "max-age=3600");
+      // Names are already random, so a collision means something is wrong.
+      xhr.setRequestHeader("x-upsert", "false");
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable && onProgress) onProgress(e.loaded / e.total);
+      };
+      xhr.onload = () =>
+        xhr.status >= 200 && xhr.status < 300
+          ? resolve()
+          : reject(new Error(`Storage rejected the upload (${xhr.status}). ${xhr.responseText.slice(0, 160)}`));
+      xhr.onerror = () => reject(new Error("Network error while uploading to storage"));
+      xhr.send(file);
+    });
+
+    return { url: permit.public_url };
+  },
+
+  uploadImage: (file: File) => {
+    const form = new FormData();
+    form.append("image", file);
+    return upload<{ url: string }>("/api/content/uploads/image", form);
+  },
 
   deleteEvent: (id: string) =>
     request<{ message: string }>(`/api/events/${id}`, { method: "DELETE" }),
@@ -454,6 +526,10 @@ export const api = {
 
   clubInfo: () => request<ClubInfo>("/api/content/club"),
 
+  /**
+   * Admin edit of the club record. Only the keys sent are written, and an empty
+   * string clears a nullable field — which is how the hero video is removed.
+   */
   saveClubInfo: (input: Partial<Omit<ClubInfo, "id" | "updated_at">>) =>
     request<{ message: string; club: ClubInfo }>("/api/content/club", {
       method: "PUT",
@@ -519,6 +595,69 @@ export const api = {
 
   deleteCollaborator: (id: string) =>
     request<{ message: string }>(`/api/content/collaborators/${id}`, { method: "DELETE" }),
+
+  /* ── founders ───────────────────────────────────────────── */
+
+  founders: () => request<Founder[]>("/api/content/founders"),
+
+  addFounder: (input: {
+    name: string;
+    role?: string;
+    bio?: string;
+    instagram?: string;
+    strava?: string;
+    sort_order?: number;
+    photoFile?: File;
+    photo_url?: string;
+  }) => {
+    const form = new FormData();
+    form.append("name", input.name);
+    if (input.role) form.append("role", input.role);
+    if (input.bio) form.append("bio", input.bio);
+    if (input.instagram) form.append("instagram", input.instagram);
+    if (input.strava) form.append("strava", input.strava);
+    if (input.sort_order !== undefined) form.append("sort_order", String(input.sort_order));
+    if (input.photoFile) form.append("photo", input.photoFile);
+    if (input.photo_url) form.append("photo_url", input.photo_url);
+    return upload<{ message: string; founder: Founder }>("/api/content/founders", form);
+  },
+
+  /**
+   * Only the keys present are written, so a photo-only edit leaves the bio
+   * alone. An empty string clears a field — hence `!== undefined` rather than
+   * truthiness.
+   */
+  updateFounder: (
+    id: string,
+    input: {
+      name?: string;
+      role?: string;
+      bio?: string;
+      instagram?: string;
+      strava?: string;
+      sort_order?: number;
+      photoFile?: File;
+      photo_url?: string;
+    },
+  ) => {
+    const form = new FormData();
+    if (input.name !== undefined) form.append("name", input.name);
+    if (input.role !== undefined) form.append("role", input.role);
+    if (input.bio !== undefined) form.append("bio", input.bio);
+    if (input.instagram !== undefined) form.append("instagram", input.instagram);
+    if (input.strava !== undefined) form.append("strava", input.strava);
+    if (input.sort_order !== undefined) form.append("sort_order", String(input.sort_order));
+    if (input.photoFile) form.append("photo", input.photoFile);
+    if (input.photo_url !== undefined) form.append("photo_url", input.photo_url);
+    return upload<{ message: string; founder: Founder }>(
+      `/api/content/founders/${id}`,
+      form,
+      "PATCH",
+    );
+  },
+
+  deleteFounder: (id: string) =>
+    request<{ message: string }>(`/api/content/founders/${id}`, { method: "DELETE" }),
 
   /* ── admin ──────────────────────────────────────────────── */
 

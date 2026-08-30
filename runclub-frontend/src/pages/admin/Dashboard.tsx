@@ -23,8 +23,11 @@ import {
   Skeleton,
   useToast,
 } from "../../components/ui";
+import { HeroVideoPanel } from "../../components/heroVideoPanel";
 import { MailerPanel } from "../../components/mailerPanel";
-import { api, downloadText } from "../../lib/api";
+import { api } from "../../lib/api";
+import { CLUB_SLUG } from "../../lib/brand";
+import { buildXlsx, downloadXlsx } from "../../lib/xlsx";
 import { compact, eventDate, inr, isPast } from "../../lib/format";
 import { useFetch } from "../../lib/useFetch";
 
@@ -100,37 +103,56 @@ export function AdminDashboard() {
     };
   }, [eventsForTurnout]);
 
-  /** One CSV covering every event, for accounting. */
+  /**
+   * One workbook covering every event, for accounting.
+   *
+   * Real .xlsx rather than the CSV this used to emit: the dates now arrive as
+   * dates instead of text Excel re-guesses per locale, and the header is bold
+   * and frozen.
+   */
   const exportAll = async () => {
     setExporting(true);
     try {
       const parts = await Promise.all(
         (events.data ?? []).map(async (e) => {
           const rows = await api.roster(e.id);
-          return rows.map((r) =>
-            [
-              `"${e.title.replace(/"/g, '""')}"`,
-              new Date(e.date_time).toISOString(),
-              `"${r.name.replace(/"/g, '""')}"`,
-              `"${r.email.replace(/"/g, '""')}"`,
-              r.role_at_event,
-              r.waiver_signed,
-              r.status,
-              r.payment_id,
-            ].join(","),
-          );
+          return rows.map((r) => [
+            e.title,
+            // A real Date, so Excel sorts and filters it as one.
+            new Date(e.date_time),
+            r.name,
+            r.email,
+            r.role_at_event,
+            r.waiver_signed ? "Yes" : "No",
+            r.status,
+            r.payment_id,
+          ]);
         }),
       );
-      const body = parts.flat();
-      if (body.length === 0) {
+      const rows = parts.flat();
+      if (rows.length === 0) {
         toast("No registrations to export yet.", "info");
         return;
       }
-      const csv =
-        "Event,Event Date,Name,Email,Role,Waiver Signed,Payment Status,Payment ID\n" +
-        body.join("\n");
-      downloadText(`b-squared-all-rosters-${new Date().toISOString().slice(0, 10)}.csv`, csv);
-      toast(`Exported ${body.length} registrations.`, "ok");
+      const blob = buildXlsx({
+        header: [
+          "Event",
+          "Event Date",
+          "Name",
+          "Email",
+          "Role",
+          "Waiver Signed",
+          "Payment Status",
+          "Payment ID",
+        ],
+        rows,
+        sheetName: "All rosters",
+      });
+      downloadXlsx(
+        `${CLUB_SLUG}-all-rosters-${new Date().toISOString().slice(0, 10)}.xlsx`,
+        blob,
+      );
+      toast(`Exported ${rows.length} registrations.`, "ok");
     } catch (err) {
       toast(err instanceof Error ? err.message : "Export failed", "err");
     } finally {
@@ -214,6 +236,9 @@ export function AdminDashboard() {
             </Link>
             <Link to="/admin/collaborators" className={buttonClass("ghost", "md")}>
               Collaborators
+            </Link>
+            <Link to="/admin/founders" className={buttonClass("ghost", "md")}>
+              Founders
             </Link>
           </div>
         }
@@ -487,9 +512,12 @@ export function AdminDashboard() {
             </ChartCard>
           </div>
 
-          {/* Email settings — reminders and reset links depend on this being live */}
-          <div className="mt-5">
+          {/* Site settings. Two panels side by side on wide screens — both are
+              configuration rather than reporting, so they read as a pair. */}
+          <div className="mt-5 grid gap-5 lg:grid-cols-2">
+            {/* Email settings — reminders and reset links depend on this being live */}
             <MailerPanel />
+            <HeroVideoPanel />
           </div>
         </>
       ) : null}

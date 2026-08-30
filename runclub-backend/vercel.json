@@ -1,0 +1,12 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "npm run build && npx prisma migrate deploy && node dist/seed.js",
+  "installCommand": "npm install",
+  "rewrites": [{ "source": "/(.*)", "destination": "/api" }],
+  "crons": [
+    {
+      "path": "/api/cron/reminders",
+      "schedule": "30 1 * * *"
+    }
+  ]
+}

@@ -2,7 +2,7 @@
 @import "@fontsource-variable/inter";
 
 /* ─────────────────────────────────────────────────────────────
-   B SQUARED — black & gold design tokens
+   B2 CLUB — black & gold design tokens
    Dark-first athletic system. Gold is UI chrome only (buttons,
    focus, links) — it is too light for the dark-surface mark band.
    Data marks use the banded gold step + the fixed status palette,
@@ -178,6 +178,43 @@
       0 32px 64px -28px rgb(0 0 0 / 0.85);
   }
 
+  /*
+   * Gold ring and halo, for a card that must not sink into whatever is behind
+   * it. Used by the "Next up" spotlight, which sits over the hero video: a
+   * plain .card is bg-surface/80 with a white/8 border, and against moving
+   * footage that reads as a translucent smudge with no edge at all.
+   *
+   * The glow is a box-shadow on the element itself rather than a pseudo-element
+   * ring, because the spotlight card sets overflow-hidden to clip its cover
+   * image — which would clip an ::after halo too. An element's own box-shadow
+   * is not affected by its overflow.
+   *
+   * Also raises the background to near-opaque. The point is separation, and a
+   * ring around a card you can still see the video through only half solves it.
+   */
+  .card-glow {
+    border-color: rgb(233 185 73 / 0.42);
+    background-color: color-mix(in oklab, var(--color-surface) 95%, transparent);
+    box-shadow:
+      0 0 0 1px rgb(233 185 73 / 0.28),
+      0 0 24px -2px rgb(233 185 73 / 0.3),
+      0 0 72px -12px rgb(233 185 73 / 0.24),
+      0 1px 0 0 rgb(255 255 255 / 0.05) inset,
+      0 26px 52px -26px rgb(0 0 0 / 0.75);
+    transition:
+      border-color 0.4s var(--ease-out-expo),
+      box-shadow 0.4s var(--ease-out-expo);
+  }
+  .card-glow:hover {
+    border-color: rgb(233 185 73 / 0.6);
+    box-shadow:
+      0 0 0 1px rgb(233 185 73 / 0.4),
+      0 0 30px -2px rgb(233 185 73 / 0.42),
+      0 0 90px -12px rgb(233 185 73 / 0.3),
+      0 1px 0 0 rgb(255 255 255 / 0.07) inset,
+      0 30px 60px -26px rgb(0 0 0 / 0.8);
+  }
+
   /* Uppercase micro-label — the athletic tell. */
   .eyebrow {
     @apply text-[11px] font-semibold uppercase tracking-[0.16em] text-ink-3;
@@ -299,6 +336,27 @@
   }
   .flip[data-calm="true"] .flip-inner {
     transition-duration: 0.01ms;
+  }
+  /* Hover and keyboard focus flip it too, which the founder cards want. The QR
+     ticket drives the flip from state alone and sets neither attribute, so it is
+     unaffected. */
+  .flip[data-hoverflip="true"]:hover .flip-inner,
+  .flip[data-hoverflip="true"]:focus-within .flip-inner {
+    transform: rotateY(180deg);
+  }
+  /* By default the front face stays in flow and sets the card's height, with the
+     back absolutely positioned over it — right for the ticket, whose front has
+     real content. A founder card is a fixed-height box and needs both faces to
+     fill it, so this opts the front into stretching as well. Without it the
+     front collapsed to 36px and the card had a hole in it. */
+  .flip[data-stretch="true"] .flip-inner {
+    /* Both faces are absolute under data-stretch, so nothing is left in flow to
+       give this height — without it the whole card collapsed to 2px. */
+    height: 100%;
+  }
+  .flip[data-stretch="true"] .flip-face {
+    position: absolute;
+    inset: 0;
   }
   .flip-face {
     backface-visibility: hidden;

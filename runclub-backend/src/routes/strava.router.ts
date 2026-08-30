@@ -272,7 +272,7 @@ router.get("/leaderboard", async (_req: AuthRequest, res: Response): Promise<voi
     try {
         const leaderboard = await getAthleteStats();
         res.json({
-            club_name: "B Squared Run Club",
+            club_name: "B2 Club",
             leaderboard,
             /**
              * Told plainly so the client never presents generated numbers as real

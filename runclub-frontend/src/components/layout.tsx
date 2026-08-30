@@ -3,33 +3,28 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
-import { cn, relativeTime, ROLE_META } from "../lib/format";
+import { CLUB_MONOGRAM, CLUB_NAME, CLUB_TAGLINE, CLUB_WORDMARK } from "../lib/brand";
+import { cn, instagramHandle, instagramHref, relativeTime, ROLE_META } from "../lib/format";
 import type { Notification } from "../lib/types";
 import { useFetch } from "../lib/useFetch";
 import { CreatorsCredit } from "./creatorsLogo";
+import { InstagramIcon, MailIcon, StravaIcon, WhatsAppIcon } from "./icons";
 import { Avatar, buttonClass } from "./ui";
 
 /* ── Wordmark ─────────────────────────────────────────────── */
 
 export function Logo({ compact = false }: { compact?: boolean }) {
   return (
-    <Link to="/" className="group flex items-center gap-2.5" aria-label="B Squared Run Club">
-      {/* B² monogram — solid gold plate, ink glyph */}
+    <Link to="/" className="group flex items-center gap-2.5" aria-label={CLUB_NAME}>
+      {/* Monogram — solid gold plate, ink glyph */}
       <span
         className="grid size-8 shrink-0 place-items-center rounded-[9px] bg-gold text-[color:var(--color-gold-ink)] transition-transform duration-300 group-hover:scale-105"
         aria-hidden
       >
-        <span className="display flex items-start text-[15px] leading-none">
-          B<span className="ml-px text-[9px] leading-none">2</span>
-        </span>
+        <span className="display text-[13px] leading-none">{CLUB_MONOGRAM}</span>
       </span>
       {!compact && (
-        <span className="display text-[17px] tracking-[-0.02em]">
-          B SQUARED
-          <span className="ml-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-ink-3">
-            RC
-          </span>
-        </span>
+        <span className="display text-[17px] tracking-[-0.02em]">{CLUB_WORDMARK}</span>
       )}
     </Link>
   );
@@ -517,7 +512,55 @@ export function Navbar() {
 
 /* ── Page furniture ───────────────────────────────────────── */
 
-export function Page({ children, className }: { children: ReactNode; className?: string }) {
+/**
+ * Back control shown at the top of every page.
+ *
+ * Lives in <Page> rather than <PageHeader> on purpose: the two pages where a
+ * back link matters most — an event's detail page and race day — do not use
+ * PageHeader at all. The landing page does not use <Page>, so it is excluded
+ * without needing a special case.
+ *
+ * Falls back to a link home when there is no history to pop, which is what
+ * happens on a deep link, a hard refresh, or a fresh tab opened from an email.
+ * A `navigate(-1)` there either does nothing or leaves the site entirely.
+ */
+function BackControl() {
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  // `idx` is null until React Router has pushed at least one entry of its own.
+  const canGoBack = (location as { key?: string }).key !== "default";
+
+  return (
+    <button
+      onClick={() => (canGoBack ? navigate(-1) : navigate("/"))}
+      className="group mb-5 inline-flex items-center gap-1.5 text-[13px] font-medium text-ink-3 transition-colors hover:text-gold"
+    >
+      <svg viewBox="0 0 24 24" className="size-4" fill="none" aria-hidden>
+        <path
+          d="M19 12H5m0 0 6-6m-6 6 6 6"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="transition-transform duration-200 group-hover:-translate-x-0.5"
+        />
+      </svg>
+      {canGoBack ? "Back" : "Home"}
+    </button>
+  );
+}
+
+export function Page({
+  children,
+  className,
+  back = true,
+}: {
+  children: ReactNode;
+  className?: string;
+  /** Off for pages that are themselves an entry point, e.g. sign-in. */
+  back?: boolean;
+}) {
   return (
     <motion.main
       // Routes swing in on the X axis — a slight 3D hinge rather than a slide.
@@ -527,6 +570,7 @@ export function Page({ children, className }: { children: ReactNode; className?:
       style={{ perspective: 1400, transformStyle: "preserve-3d" }}
       className={cn("relative mx-auto w-full max-w-7xl px-4 pb-24 pt-8 sm:px-6 lg:px-8", className)}
     >
+      {back && <BackControl />}
       {children}
     </motion.main>
   );
@@ -571,45 +615,168 @@ export function Footer() {
    */
   const loadClub = useCallback(() => api.clubInfo(), []);
   const { data: club } = useFetch(loadClub);
+  // Gates the volunteer-terms link below. The route is guarded independently,
+  // so hiding it here is about not advertising a page you cannot open.
+  const { role } = useAuth();
 
+  /* Where the club can actually be reached. Built from the editable club record,
+     so a channel is simply absent until an organiser fills it in. */
+  const contact: { key: string; label: string; href: string; Icon: FooterIcon }[] = [];
+  if (club?.contact_email) {
+    contact.push({
+      key: "email",
+      label: club.contact_email,
+      href: `mailto:${club.contact_email}`,
+      Icon: MailIcon,
+    });
+  }
+  if (club?.instagram) {
+    contact.push({
+      key: "instagram",
+      label: `@${instagramHandle(club.instagram)}`,
+      href: instagramHref(club.instagram),
+      Icon: InstagramIcon,
+    });
+  }
+  if (club?.strava_club) {
+    contact.push({
+      key: "strava",
+      label: "Strava club",
+      // A bare id becomes a club URL; a full URL is used as given.
+      href: /^https?:\/\//i.test(club.strava_club)
+        ? club.strava_club
+        : `https://www.strava.com/clubs/${club.strava_club}`,
+      Icon: StravaIcon,
+    });
+  }
+  if (club?.whatsapp) {
+    contact.push({
+      key: "whatsapp",
+      label: "WhatsApp group",
+      href: club.whatsapp,
+      Icon: WhatsAppIcon,
+    });
+  }
+
+  /*
+   * Four labelled columns rather than the three flat rows this used to be.
+   *
+   * The old version put the club mark, the contact address, two page links and
+   * the words "Bring water." on one justified row, then policies on a second and
+   * the creators' credit on a third — so nothing was grouped, and on a phone it
+   * collapsed into an unlabelled list of eleven links in no particular order.
+   */
   return (
-    <footer className="border-t border-white/8 py-8">
-      <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center gap-3">
-          <Logo compact />
-          <p className="text-xs text-ink-3">
-            B Squared Run Club · {new Date().getFullYear()}
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-4">
-          {club?.contact_email && (
-            <a
-              href={`mailto:${club.contact_email}`}
-              className="text-xs text-ink-2 transition-colors hover:text-gold"
-            >
-              {club.contact_email}
-            </a>
-          )}
-          <Link to="/about" className="text-xs text-ink-3 transition-colors hover:text-gold">
-            About the club
-          </Link>
-          <Link to="/gallery" className="text-xs text-ink-3 transition-colors hover:text-gold">
-            Gallery
-          </Link>
-          <p className="text-xs text-ink-3">Bring water.</p>
-        </div>
-      </div>
+    /* overflow-x-clip, not hidden: the creators' mark carries a .creator-glow
+       inset at -60% -30%, so the glow reaches 30% past the logo box on each side
+       — deliberately, so the gradient is transparent before its own edge. That
+       bleed was widening the document by 14px at 768 and 6px at 1024+, giving
+       every page in the app a horizontal scrollbar. `clip` stops the horizontal
+       growth while still allowing the vertical bleed, which `hidden` would cut. */
+    <footer className="mt-8 overflow-x-clip border-t border-white/8">
+      <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
+        <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-[1.4fr_1fr_1fr_1fr]">
+          {/* Identity */}
+          <div>
+            <Logo compact />
+            <p className="mt-4 max-w-xs text-[13px] leading-relaxed text-ink-3">
+              {CLUB_TAGLINE}
+            </p>
+          </div>
 
-      {/* Creators' credit — distinct from the club's own mark above, so it gets
-          its own rule and a quieter position. <Footer> is mounted inside
-          <Shell>, which wraps every chrome route, so this shows for visitors,
-          members, volunteers and admins alike. */}
-      <div className="mx-auto mt-7 max-w-7xl px-4 sm:px-6 lg:px-8">
-        <div className="hairline mb-5" />
-        <div className="flex justify-center sm:justify-start">
+          <FooterColumn title="The club">
+            <FooterLink to="/about">About the club</FooterLink>
+            <FooterLink to="/calendar">Calendar</FooterLink>
+            <FooterLink to="/events">Events</FooterLink>
+            <FooterLink to="/gallery">Gallery</FooterLink>
+            <FooterLink to="/leaderboard">Leaderboard</FooterLink>
+          </FooterColumn>
+
+          <FooterColumn title="Contact">
+            {contact.length === 0 ? (
+              /* Nothing configured. A visitor gets the neutral line; an
+                 organiser gets told where to fix it, because "Details coming
+                 soon" reads like a design choice rather than an empty field —
+                 which is exactly how it went unnoticed in production while
+                 looking fine locally. */
+              role === "ADMIN" ? (
+                <li>
+                  <Link
+                    to="/about"
+                    className="tap text-[13px] text-gold transition-opacity hover:opacity-75"
+                  >
+                    Add contact details →
+                  </Link>
+                </li>
+              ) : (
+                <li className="text-[13px] text-ink-3">Details coming soon.</li>
+              )
+            ) : (
+              contact.map((c) => (
+                <li key={c.key}>
+                  <a
+                    href={c.href}
+                    target={c.href.startsWith("mailto:") ? undefined : "_blank"}
+                    rel="noreferrer"
+                    className="tap inline-flex items-center gap-2 text-[13px] text-ink-3 transition-colors hover:text-gold"
+                  >
+                    <c.Icon className="size-3.5 shrink-0" />
+                    <span className="truncate">{c.label}</span>
+                  </a>
+                </li>
+              ))
+            )}
+          </FooterColumn>
+
+          <FooterColumn title="Policies">
+            <FooterLink to="/terms">Club terms</FooterLink>
+            <FooterLink to="/refunds">Refund policy</FooterLink>
+            <FooterLink to="/privacy">Privacy policy</FooterLink>
+            {/* Only marshals and organisers can open this route, so only they see it. */}
+            {(role === "VOLUNTEER" || role === "ADMIN") && (
+              <li>
+                <Link
+                  to="/volunteer-terms"
+                  className="tap text-[13px] text-[color:var(--color-free)] transition-opacity hover:opacity-75"
+                >
+                  Volunteer terms
+                </Link>
+              </li>
+            )}
+          </FooterColumn>
+        </div>
+
+        {/* Bottom bar: copyright and the creators' credit, which is distinct from
+            the club's own mark and so kept quiet and separate. */}
+        <div className="hairline mt-10 mb-6" />
+        <div className="flex flex-col-reverse items-start gap-5 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-xs text-ink-3">
+            © {new Date().getFullYear()} {CLUB_NAME}. All rights reserved.
+          </p>
           <CreatorsCredit />
         </div>
       </div>
     </footer>
+  );
+}
+
+type FooterIcon = (p: { className?: string }) => JSX.Element;
+
+function FooterColumn({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div>
+      <p className="eyebrow mb-3.5 text-ink-2">{title}</p>
+      <ul className="space-y-2.5">{children}</ul>
+    </div>
+  );
+}
+
+function FooterLink({ to, children }: { to: string; children: ReactNode }) {
+  return (
+    <li>
+      <Link to={to} className="tap text-[13px] text-ink-3 transition-colors hover:text-gold">
+        {children}
+      </Link>
+    </li>
   );
 }

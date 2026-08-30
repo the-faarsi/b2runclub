@@ -10,6 +10,8 @@ import {
   UsersIcon,
   WhatsAppIcon,
 } from "../components/icons";
+import { CLUB_SHORT, CLUB_TAGLINE } from "../lib/brand";
+
 import { Page, PageHeader } from "../components/layout";
 import { PageScene } from "../components/scene3d";
 import { Reveal } from "../components/motion";
@@ -35,9 +37,9 @@ import { useFetch } from "../lib/useFetch";
 /* Shown when an organiser hasn't written the copy yet, so the page is never
  * blank for visitors. Admins see a prompt to replace it. */
 const PLACEHOLDER = {
-  headline: "A running club that actually runs on time.",
+  headline: CLUB_TAGLINE,
   about:
-    "B Squared is a community running club. We meet for road runs, trail sessions and the occasional ride, and we finish with coffee. Everyone is welcome, whatever your pace.",
+    `${CLUB_SHORT} is a community running club. We meet for road runs, trail sessions and the occasional ride, and we finish with coffee. Everyone is welcome, whatever your pace.`,
   mission: "Show up, run together, look after each other.",
 };
 
@@ -84,7 +86,7 @@ export function About() {
       <PageHeader
         eyebrow="About the club"
         title="Who we are"
-        description="What B Squared is, how it runs, and how to find us."
+        description={`What ${CLUB_SHORT} is, how it runs, and how to find us.`}
         action={
           isAdmin ? (
             <Button onClick={() => setEditing(true)}>Edit club details</Button>
@@ -362,7 +364,7 @@ function EditClubModal({
             id="ci-headline"
             value={form.headline}
             onChange={set("headline")}
-            placeholder="A running club that actually runs on time."
+            placeholder={CLUB_TAGLINE}
             maxLength={120}
           />
         </Field>
@@ -412,7 +414,7 @@ function EditClubModal({
               type="email"
               value={form.contact_email}
               onChange={set("contact_email")}
-              placeholder="hello@bsquared.run"
+              placeholder="hello@b2club.in"
             />
           </Field>
           <Field
@@ -424,7 +426,7 @@ function EditClubModal({
               id="ci-ig"
               value={form.instagram}
               onChange={set("instagram")}
-              placeholder="@bsquaredrun"
+              placeholder="b2club_"
             />
           </Field>
         </div>

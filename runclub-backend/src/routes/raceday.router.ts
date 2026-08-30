@@ -42,12 +42,12 @@ router.post("/check-in", requireRole(CREW), async (req: AuthRequest, res: Respon
                 const parsed = typeof qr_payload === "string" ? JSON.parse(qr_payload) : qr_payload;
                 regId = parsed.reg_id || parsed.registrationId || parsed.registration_id;
             } catch {
-                res.status(400).json({ error: "That QR code isn't a B Squared ticket" });
+                res.status(400).json({ error: "That QR code isn't a B2 Club ticket" });
                 return;
             }
 
             if (!regId) {
-                res.status(400).json({ error: "That QR code isn't a B Squared ticket" });
+                res.status(400).json({ error: "That QR code isn't a B2 Club ticket" });
                 return;
             }
         }

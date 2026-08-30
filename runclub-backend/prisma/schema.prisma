@@ -5,7 +5,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
 }
 
 // User role representation: "ADMIN", "MEMBER", "VOLUNTEER", "VISITOR"
@@ -115,6 +115,11 @@ model ClubInfo {
   /// Invite URL for the club's WhatsApp community. Editable because WhatsApp
   /// invite links can be reset by a group admin, which retires the old one.
   whatsapp      String?
+  /// Looping background video for the home page hero. A URL rather than an
+  /// upload: a usable hero clip is several megabytes, and the deployment caps
+  /// request bodies at 4.5MB, so uploading one through the API would fail for
+  /// exactly the files people actually have. Null falls back to the 3D scene.
+  hero_video_url String?
   updated_at    DateTime @updatedAt
 }
 
@@ -127,6 +132,26 @@ model Collaborator {
   logo_url   String?
   website    String?
   tier       String   @default("PARTNER") // PARTNER, SPONSOR, COMMUNITY
+  sort_order Int      @default(0)
+  created_at DateTime @default(now())
+}
+
+/// The people who started the club, shown on the home page and editable by
+/// admins. A separate table from Collaborator rather than another tier on it:
+/// a founder needs a photo, a role and a bio, while a collaborator needs a logo
+/// and a website, and overloading one model would leave half its columns null
+/// in both directions.
+model Founder {
+  id         String   @id @default(uuid())
+  name       String
+  /// "Founder", "Founder & Head Coach" — free text, since clubs invent titles.
+  role       String   @default("")
+  bio        String   @default("")
+  photo_url  String?
+  /// Handle, not a URL, matching how ClubInfo.instagram is stored.
+  instagram  String?
+  /// Club or athlete URL, or a bare id.
+  strava     String?
   sort_order Int      @default(0)
   created_at DateTime @default(now())
 }
@@ -146,6 +171,12 @@ model Event {
   /// Maximum attendees. Null means no limit, which is the default so existing
   /// events keep behaving exactly as they did before capacity existed.
   capacity    Int?
+
+  /// Cover image, used as the backdrop on the event page and on its card.
+  /// Stored as a plain URL so it works with whichever storage driver wrote it
+  /// — an upload or an externally hosted image. Null keeps the previous look,
+  /// so events created before this existed are unaffected.
+  cover_url   String?
 
   admin_id    String
   created_by  User     @relation(fields: [admin_id], references: [id])

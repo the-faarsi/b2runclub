@@ -3,24 +3,120 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.SEAT_FILTER = exports.INVALID = void 0;
+exports.parseCapacity = parseCapacity;
+exports.seatsTaken = seatsTaken;
+exports.capacityOf = capacityOf;
 const express_1 = require("express");
 const prisma_1 = __importDefault(require("../utils/prisma"));
 const auth_1 = require("../middleware/auth");
 const razorpay_1 = __importDefault(require("razorpay"));
+const reminders_1 = require("../utils/reminders");
+const secrets_1 = require("../utils/secrets");
 const router = (0, express_1.Router)();
-// Razorpay SDK setup
-const razorpayKeyId = process.env.RAZORPAY_KEY_ID || "rzp_test_YourTestKeyId";
-const razorpayKeySecret = process.env.RAZORPAY_KEY_SECRET || "YourTestKeySecret";
+// Razorpay SDK setup. Both values are validated at startup; the placeholders are
+// only here to satisfy the constructor when Razorpay is deliberately unconfigured,
+// in which case isRazorpayMock short-circuits every call.
+const razorpayKeyId = secrets_1.RAZORPAY_KEY_ID ?? "unconfigured";
 const razorpay = new razorpay_1.default({
     key_id: razorpayKeyId,
-    key_secret: razorpayKeySecret,
+    key_secret: secrets_1.RAZORPAY_KEY_SECRET ?? "unconfigured",
 });
-// Helper: check if we should mock Razorpay API calls
-const isRazorpayMock = !process.env.RAZORPAY_KEY_ID || process.env.RAZORPAY_KEY_ID === "rzp_test_YourTestKeyId";
+const isRazorpayMock = secrets_1.RAZORPAY_MOCK_MODE;
+/** Sentinel distinguishing "the caller sent something invalid" from "unlimited". */
+exports.INVALID = Symbol("invalid-capacity");
+/**
+ * Normalises a capacity value from a request body.
+ *
+ * Returns `undefined` when the field was omitted (leave it alone), `null` for an
+ * explicit blank meaning unlimited, a positive integer, or INVALID.
+ */
+function parseCapacity(raw) {
+    if (raw === undefined)
+        return undefined;
+    if (raw === null || raw === "")
+        return null;
+    const n = Number(raw);
+    if (!Number.isInteger(n) || n < 1)
+        return exports.INVALID;
+    return n;
+}
+/**
+ * Filter defining which registrations consume a place. Shared by the single-event
+ * count and the grouped count used for lists, so the two can never disagree.
+ *
+ *  - A blocked entry frees its place: an organiser barring someone should open the
+ *    spot back up.
+ *  - FAILED covers failed and refunded payments, which likewise release it.
+ *  - PENDING *does* hold a place, so a rush of half-finished checkouts cannot
+ *    oversell the event.
+ *  - Volunteers are excluded entirely. They are crew rather than participants and
+ *    are exempt from the cap on registration, so counting them would let a marshal
+ *    consume a runner's place — inconsistent with letting them past the check.
+ */
+// Not `as const`: Prisma's generated filter types take a mutable string[], so a
+// readonly tuple is rejected.
+exports.SEAT_FILTER = {
+    blocked_at: null,
+    status: { in: ["PAID", "FREE", "PENDING"] },
+    role_at_event: { not: "VOLUNTEER" },
+};
+/** How many participant places an event has given away. */
+async function seatsTaken(eventId) {
+    return prisma_1.default.eventRegistration.count({
+        where: { event_id: eventId, ...exports.SEAT_FILTER },
+    });
+}
+/** Capacity view for an event, safe to expose publicly. */
+async function capacityOf(event) {
+    if (event.capacity === null) {
+        return { capacity: null, taken: await seatsTaken(event.id), spots_left: null, full: false };
+    }
+    const taken = await seatsTaken(event.id);
+    return {
+        capacity: event.capacity,
+        taken,
+        spots_left: Math.max(0, event.capacity - taken),
+        full: taken >= event.capacity,
+    };
+}
+/**
+ * Normalises a `reminder_offsets` payload into a validated, de-duplicated,
+ * descending list of hours. Returns null when the caller omitted the field, so
+ * an update can distinguish "leave alone" from "set to none".
+ */
+function parseOffsets(raw) {
+    if (raw === undefined)
+        return null;
+    if (!Array.isArray(raw))
+        return [];
+    const cleaned = raw
+        .map((v) => Number.parseInt(String(v), 10))
+        .filter((n) => Number.isFinite(n) && reminders_1.ALLOWED_OFFSETS.includes(n));
+    return [...new Set(cleaned)].sort((a, b) => b - a);
+}
+/** Replaces an event's reminders with exactly `offsets`. */
+async function syncReminders(eventId, offsets) {
+    const existing = await prisma_1.default.eventReminder.findMany({ where: { event_id: eventId } });
+    const keep = new Set(offsets);
+    // Removing a reminder drops its delivery log too (cascade), which is fine:
+    // the reminder no longer exists, so there is nothing to be idempotent about.
+    const toDelete = existing.filter((r) => !keep.has(r.hours_before));
+    if (toDelete.length) {
+        await prisma_1.default.eventReminder.deleteMany({
+            where: { id: { in: toDelete.map((r) => r.id) } },
+        });
+    }
+    const have = new Set(existing.map((r) => r.hours_before));
+    const toCreate = offsets.filter((h) => !have.has(h));
+    for (const hours_before of toCreate) {
+        await prisma_1.default.eventReminder.create({ data: { event_id: eventId, hours_before } });
+    }
+}
 // 1. Create Event (Admin only)
 router.post("/", (0, auth_1.requireRole)(["ADMIN"]), async (req, res) => {
     try {
-        const { title, type, date_time, location, price, status } = req.body;
+        const { title, type, date_time, location, price, status, description, capacity } = req.body;
         const adminId = req.user.id;
         if (!title || !type || !date_time || !location || price === undefined) {
             res.status(400).json({ error: "Missing required fields for event creation" });
@@ -29,6 +125,11 @@ router.post("/", (0, auth_1.requireRole)(["ADMIN"]), async (req, res) => {
         const eventPrice = parseFloat(price);
         if (isNaN(eventPrice) || eventPrice < 0) {
             res.status(400).json({ error: "Invalid price value" });
+            return;
+        }
+        const eventCapacity = parseCapacity(capacity);
+        if (eventCapacity === exports.INVALID) {
+            res.status(400).json({ error: "Capacity must be a whole number of 1 or more, or blank for unlimited" });
             return;
         }
         const eventStatus = status || "DRAFT";
@@ -45,9 +146,18 @@ router.post("/", (0, auth_1.requireRole)(["ADMIN"]), async (req, res) => {
                 price: eventPrice,
                 status: eventStatus,
                 admin_id: adminId,
+                description: description?.trim() || null,
+                capacity: eventCapacity,
             },
         });
-        res.status(211).json({ message: "Event created successfully", event });
+        const offsets = parseOffsets(req.body.reminder_offsets);
+        if (offsets?.length)
+            await syncReminders(event.id, offsets);
+        res.status(211).json({
+            message: "Event created successfully",
+            event,
+            reminder_offsets: offsets ?? [],
+        });
     }
     catch (error) {
         res.status(500).json({ error: error.message || "Failed to create event" });
@@ -71,13 +181,122 @@ router.get("/", async (req, res) => {
                 orderBy: { date_time: "asc" },
             });
         }
-        res.json(events);
+        /**
+         * Attach capacity to every row so a list can show "3 spots left" or grey
+         * out a full event without a request per card. One grouped count covers the
+         * whole page rather than N queries.
+         */
+        const capped = events.filter((e) => e.capacity !== null);
+        const counts = new Map();
+        if (capped.length > 0) {
+            const grouped = await prisma_1.default.eventRegistration.groupBy({
+                by: ["event_id"],
+                where: { event_id: { in: capped.map((e) => e.id) }, ...exports.SEAT_FILTER },
+                _count: { _all: true },
+            });
+            for (const row of grouped)
+                counts.set(row.event_id, row._count._all);
+        }
+        res.json(events.map((e) => {
+            if (e.capacity === null) {
+                return { ...e, taken: null, spots_left: null, full: false };
+            }
+            const taken = counts.get(e.id) ?? 0;
+            return {
+                ...e,
+                taken,
+                spots_left: Math.max(0, e.capacity - taken),
+                full: taken >= e.capacity,
+            };
+        }));
     }
     catch (error) {
         res.status(500).json({ error: error.message || "Failed to fetch events" });
     }
 });
-// 3. Get Single Event
+// 3. Get the signed-in user's own registrations (with event details).
+// Registered before "/:id" for clarity; the ticket and roster routes only ever
+// expose a single registration or an admin CSV, so this is the read the member
+// UI needs to list its own tickets.
+router.get("/me/registrations", (0, auth_1.requireRole)(["MEMBER", "VOLUNTEER", "ADMIN"]), async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const registrations = await prisma_1.default.eventRegistration.findMany({
+            where: { user_id: userId },
+            include: { event: true },
+            orderBy: { event: { date_time: "desc" } },
+        });
+        res.json(registrations);
+    }
+    catch (error) {
+        res.status(500).json({ error: error.message || "Failed to fetch registrations" });
+    }
+});
+/**
+ * 3b. Cancel a registration — give up a spot on an event.
+ *
+ * A member may cancel their own registration while nothing has been captured
+ * (PENDING or FREE). A PAID entry needs a refund, so only an admin can remove
+ * it; admins may cancel on anyone's behalf. Blocked registrations are the
+ * admin's to manage via the block endpoint.
+ */
+router.delete("/registration/:id", (0, auth_1.requireRole)(["MEMBER", "VOLUNTEER", "ADMIN"]), async (req, res) => {
+    try {
+        const registrationId = req.params.id;
+        const isAdmin = req.user.role === "ADMIN";
+        const registration = await prisma_1.default.eventRegistration.findUnique({
+            where: { id: registrationId },
+            include: { event: true },
+        });
+        if (!registration) {
+            res.status(404).json({ error: "Registration not found" });
+            return;
+        }
+        if (registration.user_id !== req.user.id && !isAdmin) {
+            res.status(403).json({ error: "You can only cancel your own registration" });
+            return;
+        }
+        // Once the event has started there is nothing left to cancel, and
+        // removing the row would rewrite attendance history.
+        if (registration.event.date_time.getTime() <= Date.now()) {
+            res.status(400).json({
+                error: "This event has already started — cancellation is no longer possible",
+            });
+            return;
+        }
+        if (registration.blocked_at && !isAdmin) {
+            res.status(403).json({
+                error: "An organiser has removed you from this event. Contact them for details.",
+            });
+            return;
+        }
+        if (registration.status === "PAID" && !isAdmin) {
+            res.status(400).json({
+                error: "Paid entries need a refund — ask an organiser to cancel this for you.",
+            });
+            return;
+        }
+        await prisma_1.default.eventRegistration.delete({ where: { id: registrationId } });
+        // An admin cancelling someone else's spot should tell them.
+        if (isAdmin && registration.user_id !== req.user.id) {
+            await prisma_1.default.notification.create({
+                data: {
+                    user_id: registration.user_id,
+                    message: `An organiser cancelled your registration for "${registration.event.title}".`,
+                },
+            });
+        }
+        res.json({
+            message: `Registration for "${registration.event.title}" cancelled`,
+            event_id: registration.event_id,
+            refund_due: registration.status === "PAID",
+        });
+    }
+    catch (error) {
+        res.status(500).json({ error: error.message || "Failed to cancel registration" });
+    }
+});
+// 4. Get Single Event
 router.get("/:id", async (req, res) => {
     try {
         const id = req.params.id;
@@ -93,7 +312,7 @@ router.get("/:id", async (req, res) => {
             res.status(403).json({ error: "Access denied to unpublished event" });
             return;
         }
-        res.json(event);
+        res.json({ ...event, ...(await capacityOf(event)) });
     }
     catch (error) {
         res.status(500).json({ error: error.message || "Failed to fetch event" });
@@ -103,7 +322,7 @@ router.get("/:id", async (req, res) => {
 router.put("/:id", (0, auth_1.requireRole)(["ADMIN"]), async (req, res) => {
     try {
         const id = req.params.id;
-        const { title, type, date_time, location, price, status } = req.body;
+        const { title, type, date_time, location, price, status, description, capacity } = req.body;
         const event = await prisma_1.default.event.findUnique({ where: { id } });
         if (!event) {
             res.status(404).json({ error: "Event not found" });
@@ -133,11 +352,50 @@ router.put("/:id", (0, auth_1.requireRole)(["ADMIN"]), async (req, res) => {
             }
             dataToUpdate.status = status;
         }
+        if (description !== undefined) {
+            dataToUpdate.description = description?.trim() || null;
+        }
+        if (capacity !== undefined) {
+            const parsed = parseCapacity(capacity);
+            if (parsed === exports.INVALID) {
+                res.status(400).json({
+                    error: "Capacity must be a whole number of 1 or more, or blank for unlimited",
+                });
+                return;
+            }
+            /**
+             * Refuse to set a cap below the number of places already given away.
+             * Silently accepting it would leave the event over its own limit with
+             * no way to reconcile — the organiser has to cancel entries first.
+             */
+            if (typeof parsed === "number") {
+                const taken = await seatsTaken(id);
+                if (parsed < taken) {
+                    res.status(400).json({
+                        error: `${taken} people already hold a place, so the cap can't be set to ${parsed}. Cancel some registrations first.`,
+                        taken,
+                    });
+                    return;
+                }
+            }
+            dataToUpdate.capacity = parsed;
+        }
         const updatedEvent = await prisma_1.default.event.update({
             where: { id },
             data: dataToUpdate,
         });
-        res.json({ message: "Event updated successfully", event: updatedEvent });
+        const offsets = parseOffsets(req.body.reminder_offsets);
+        if (offsets !== null)
+            await syncReminders(id, offsets);
+        const reminders = await prisma_1.default.eventReminder.findMany({
+            where: { event_id: id },
+            orderBy: { hours_before: "desc" },
+        });
+        res.json({
+            message: "Event updated successfully",
+            event: updatedEvent,
+            reminder_offsets: reminders.map((r) => r.hours_before),
+        });
     }
     catch (error) {
         res.status(500).json({ error: error.message || "Failed to update event" });
@@ -167,7 +425,10 @@ router.post("/:id/register", (0, auth_1.requireRole)(["MEMBER", "VOLUNTEER"]), a
         const eventId = req.params.id;
         const userId = req.user.id;
         const userRole = req.user.role;
-        const { waiver_signed, emergency_contact } = req.body;
+        // `req.body` is undefined when a client posts with no JSON body at all;
+        // destructuring it directly turned that into a 500 instead of the 400 the
+        // waiver check below is meant to give.
+        const { waiver_signed, emergency_contact } = req.body ?? {};
         // Check emergency contact is provided (from request or check database)
         const user = await prisma_1.default.user.findUnique({ where: { id: userId } });
         const finalEmergencyContact = emergency_contact || user?.emergency_contact;
@@ -195,11 +456,39 @@ router.post("/:id/register", (0, auth_1.requireRole)(["MEMBER", "VOLUNTEER"]), a
             where: { event_id: eventId, user_id: userId },
         });
         if (existingRegistration) {
+            // A blocked row also lands here, which stops a barred member from
+            // simply registering again — but it needs its own explanation.
+            if (existingRegistration.blocked_at) {
+                res.status(403).json({
+                    error: "An organiser has removed you from this event. Contact them for details.",
+                });
+                return;
+            }
             res.status(400).json({
                 error: "You are already registered for this event",
                 registration: existingRegistration,
             });
             return;
+        }
+        /**
+         * Capacity check, after the already-registered check so somebody who is
+         * already on the list is never told the event is full.
+         *
+         * Volunteers are exempt: they are crew rather than participants, and a
+         * full event still needs marshals. Blocking a marshal because the runner
+         * places sold out would be the wrong outcome.
+         */
+        if (event.capacity !== null && userRole !== "VOLUNTEER") {
+            const taken = await seatsTaken(eventId);
+            if (taken >= event.capacity) {
+                res.status(409).json({
+                    error: "This event is full.",
+                    full: true,
+                    capacity: event.capacity,
+                    taken,
+                });
+                return;
+            }
         }
         // Update emergency contact on User model if provided in this request
         if (emergency_contact && emergency_contact !== user?.emergency_contact) {

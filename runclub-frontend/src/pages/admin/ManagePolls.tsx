@@ -67,7 +67,7 @@ export function ManagePolls() {
             <Link to="/admin/members" className={buttonClass("ghost", "md")}>
               Members
             </Link>
-            <Button onClick={() => setCreating(true)}>New poll</Button>
+            <Button onClick={() => setCreating(true)}>+ New poll</Button>
           </div>
         }
       />
@@ -92,7 +92,7 @@ export function ManagePolls() {
             icon={<span aria-hidden>◉</span>}
             title="No polls yet"
             body="Create one to settle the next route argument."
-            action={<Button size="sm" onClick={() => setCreating(true)}>New poll</Button>}
+            action={<Button size="sm" onClick={() => setCreating(true)}>+ New poll</Button>}
           />
         </Card>
       ) : (
