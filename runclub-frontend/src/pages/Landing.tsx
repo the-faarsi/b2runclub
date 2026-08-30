@@ -16,7 +16,7 @@ import { EventCoverBackdrop, EventMeta } from "../components/eventCover";
 import { CollaboratorScroller } from "../components/collaborators";
 import { Founders } from "../components/founders";
 import { HeroVideo } from "../components/heroVideo";
-import { Hero3D, RunnerScene } from "../components/scene3d";
+import { RunnerScene } from "../components/scene3d";
 import { DisciplineIcon } from "../components/icons";
 import { AnimatedNumber, Reveal } from "../components/motion";
 import { Tilt } from "../components/tilt";
@@ -255,9 +255,6 @@ export function Landing() {
   const heroPillRef = useRef<HTMLSpanElement>(null);
   const heroBtnPrimaryRef = useRef<HTMLAnchorElement>(null);
   const heroBtnSecondaryRef = useRef<HTMLAnchorElement>(null);
-  const heroGraphicRef = useRef<HTMLDivElement>(null);
-  const heroGraphicFloatRef = useRef<HTMLDivElement>(null);
-  const heroGraphicParallaxRef = useRef<HTMLDivElement>(null);
   const heroSpotlightRef = useRef<HTMLDivElement>(null);
 
   useGSAP(
@@ -269,14 +266,6 @@ export function Landing() {
         { opacity: 0, y: -10, scale: 0.9 },
         { opacity: 1, y: 0, scale: 1, duration: 0.5, ease: "back.out(1.7)" },
       )
-        /* The model leads now, so it comes in first and the button follows it
-           rather than the other way round. */
-        .fromTo(
-          heroGraphicRef.current,
-          { opacity: 0, scale: 0.94 },
-          { opacity: 1, scale: 1, duration: 1.1, ease: "power2.out" },
-          "-=0.3",
-        )
         .fromTo(
           // Only the refs actually mounted — the secondary link is absent once
           // someone is signed in.
@@ -292,42 +281,6 @@ export function Landing() {
           "-=0.55",
         );
 
-      if (heroGraphicFloatRef.current) {
-        gsap
-          .timeline({ repeat: -1, yoyo: true, defaults: { ease: "sine.inOut" } })
-          .to(heroGraphicFloatRef.current, { y: -16, rotation: 1.4, duration: 3.6 })
-          .to(heroGraphicFloatRef.current, { y: 8, rotation: -1.1, duration: 4.2 });
-      }
-
-      let handlePointerMove: ((event: PointerEvent) => void) | null = null;
-      let handlePointerLeave: (() => void) | null = null;
-      const sectionEl = heroRef.current;
-
-      if (sectionEl && heroGraphicParallaxRef.current) {
-        const parallaxX = gsap.quickTo(heroGraphicParallaxRef.current, "x", {
-          duration: 0.9,
-          ease: "power3.out",
-        });
-        const parallaxY = gsap.quickTo(heroGraphicParallaxRef.current, "y", {
-          duration: 0.9,
-          ease: "power3.out",
-        });
-
-        handlePointerMove = (event: PointerEvent) => {
-          const bounds = sectionEl.getBoundingClientRect();
-          const relativeX = (event.clientX - bounds.left) / bounds.width - 0.5;
-          const relativeY = (event.clientY - bounds.top) / bounds.height - 0.5;
-          parallaxX(relativeX * 32);
-          parallaxY(relativeY * 24);
-        };
-        handlePointerLeave = () => {
-          parallaxX(0);
-          parallaxY(0);
-        };
-
-        sectionEl.addEventListener("pointermove", handlePointerMove);
-        sectionEl.addEventListener("pointerleave", handlePointerLeave);
-      }
 
       const magneticCleanups: Array<() => void> = [];
       if (typeof window !== "undefined" && window.matchMedia("(pointer: fine)").matches) {
@@ -335,10 +288,6 @@ export function Landing() {
       }
 
       return () => {
-        if (sectionEl && handlePointerMove && handlePointerLeave) {
-          sectionEl.removeEventListener("pointermove", handlePointerMove);
-          sectionEl.removeEventListener("pointerleave", handlePointerLeave);
-        }
         magneticCleanups.forEach((cleanup) => cleanup());
       };
     },
@@ -355,20 +304,18 @@ export function Landing() {
         ref={heroRef}
         className="relative mx-auto max-w-7xl px-4 pb-16 pt-14 sm:px-6 sm:pt-20 lg:px-8"
       >
-        {/* Optional background video, set by an organiser. Renders nothing when
-            none is configured, so the 3D scene below stays the default. */}
+        {/* Background video, set by an organiser. */}
         <HeroVideo />
         {/*
-          Centred hero: the model is the headline.
+          The 3D ribbon-and-orbit graphic used to sit here, between the pill and
+          the button. It is gone.
 
-          There were two Hero3D instances before — one absolutely positioned for
-          phones, one hung in the top-right corner for desktop with a calc()
-          offset to keep it inside the viewport — because the corner had to stay
-          clear of the h1 and the buttons. With the copy gone the model sits in
-          normal flow in the middle, which needs neither the duplicate nor the
-          offset, and cannot be cut at any width.
+          The min-height replaces it. HeroVideo is an absolutely positioned layer
+          filling this section, so the section's height *is* the video's height —
+          without something holding it open, removing a 230-500px element left
+          the clip as a thin strip behind two small controls.
         */}
-        <div className="flex flex-col items-center text-center">
+        <div className="flex min-h-[clamp(340px,48vh,520px)] flex-col items-center justify-center gap-8 text-center">
           <span
             ref={heroPillRef}
             className="inline-flex items-center gap-2 rounded-full border border-gold/25 bg-gold/8 px-3 py-1.5"
@@ -381,22 +328,7 @@ export function Landing() {
             </span>
           </span>
 
-          {/* Height scales with the viewport so the model fills the space the
-              headline used to take, without pushing the button below the fold. */}
-          <div
-            ref={heroGraphicRef}
-            className="pointer-events-none relative mt-6 h-[clamp(230px,44vw,500px)] w-full"
-            style={{ opacity: 0 }}
-            aria-hidden
-          >
-            <div ref={heroGraphicFloatRef} className="h-full w-full">
-              <div ref={heroGraphicParallaxRef} className="h-full w-full">
-                <Hero3D className="h-full w-full" />
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-8 flex flex-col items-center gap-4">
+          <div className="flex flex-col items-center gap-4">
             <Link
               ref={heroBtnPrimaryRef}
               to={user ? "/calendar" : "/signup"}
