@@ -442,7 +442,9 @@ export function Landing() {
             </Card>
           ) : next ? (
             <Tilt max={4} lift={5} glare={false}>
-            <Card className="speedlines group relative overflow-hidden">
+            {/* card-glow, so the next session reads as a distinct object over the
+                  hero video rather than a translucent panel floating in it. */}
+              <Card className="speedlines card-glow group relative overflow-hidden">
               {/* The next event's own cover behind the spotlight, so the first
                   thing on the page shows the session rather than a gradient. */}
               <EventCoverBackdrop url={next.cover_url} scrim="card" />
