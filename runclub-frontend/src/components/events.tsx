@@ -440,8 +440,22 @@ export function TicketModal({
   /** The ticket lands face-down and flips over once the QR has loaded. */
   const [flipped, setFlipped] = useState(false);
 
+  /*
+   * Keyed on the id, not the registration object.
+   *
+   * The event page passes `{ ...registration, event }`, a fresh object on every
+   * render, and it re-renders every second because of the live countdown. With
+   * the object in the dependency list that refetched the ticket once a second —
+   * blanking the html, resetting the flip and remounting the iframe each time,
+   * which is what made the QR blink and reload forever.
+   *
+   * The ticket for a given registration never changes, so the id is the only
+   * thing worth reacting to.
+   */
+  const registrationId = registration?.id ?? null;
+
   useEffect(() => {
-    if (!open || !registration) return;
+    if (!open || !registrationId) return;
     let cancelled = false;
     setHtml(null);
     setQr(null);
@@ -449,7 +463,7 @@ export function TicketModal({
     setFlipped(false);
 
     api
-      .ticketHtml(registration.id)
+      .ticketHtml(registrationId)
       .then((doc) => {
         if (cancelled) return;
         setHtml(doc);
@@ -465,7 +479,7 @@ export function TicketModal({
     return () => {
       cancelled = true;
     };
-  }, [open, registration]);
+  }, [open, registrationId]);
 
   const meta = registration ? PAYMENT_META[registration.status] : null;
 

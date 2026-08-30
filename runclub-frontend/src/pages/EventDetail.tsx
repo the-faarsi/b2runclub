@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link, useParams } from "react-router-dom";
 import { CancelRegistrationDialog } from "../components/cancelDialog";
@@ -66,6 +66,13 @@ export function EventDetail() {
   const [cancelOpen, setCancelOpen] = useState(false);
 
   const registration = (regs ?? []).find((r) => r.event_id === id);
+  /* Memoised because this page re-renders every second (the countdown) and the
+     ticket modal takes it as a prop. An inline `{ ...registration, event }` was
+     a new object each tick. */
+  const ticketRegistration = useMemo(
+    () => (registration && event ? { ...registration, event } : null),
+    [registration, event],
+  );
   const past = event ? isPast(event.date_time) : false;
   const left = event ? countdown(event.date_time) : null;
   // Hooks must run unconditionally, so pass a harmless date before load.
@@ -634,7 +641,7 @@ export function EventDetail() {
       />
 
       <TicketModal
-        registration={registration ? { ...registration, event } : null}
+        registration={ticketRegistration}
         open={ticketOpen}
         onClose={() => setTicketOpen(false)}
       />
