@@ -684,15 +684,7 @@ export function Footer() {
             </p>
           </div>
 
-          <FooterColumn title="The club">
-            <FooterLink to="/about">About the club</FooterLink>
-            <FooterLink to="/calendar">Calendar</FooterLink>
-            <FooterLink to="/events">Events</FooterLink>
-            <FooterLink to="/gallery">Gallery</FooterLink>
-            <FooterLink to="/leaderboard">Leaderboard</FooterLink>
-          </FooterColumn>
-
-          <FooterColumn title="Contact">
+          <FooterColumn title="Contact us">
             {contact.length === 0 ? (
               /* Nothing configured. A visitor gets the neutral line; an
                  organiser gets told where to fix it, because "Details coming
@@ -726,6 +718,14 @@ export function Footer() {
                 </li>
               ))
             )}
+          </FooterColumn>
+
+          <FooterColumn title="The club">
+            <FooterLink to="/about">About the club</FooterLink>
+            <FooterLink to="/calendar">Calendar</FooterLink>
+            <FooterLink to="/events">Events</FooterLink>
+            <FooterLink to="/gallery">Gallery</FooterLink>
+            <FooterLink to="/leaderboard">Leaderboard</FooterLink>
           </FooterColumn>
 
           <FooterColumn title="Policies">
