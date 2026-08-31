@@ -263,7 +263,7 @@ export function reminderEmail(input: {
         </td></tr>
       </table>
       <p style="margin:18px 0 0;color:#6d737f;font-size:12px;line-height:1.6;">
-        Arrive 15 minutes early for the briefing. Marshals wear gold bibs — follow their calls at junctions.
+        Arrive 15 minutes early for the briefing. Marshals carry a club ID card — follow their calls at junctions.
       </p>`,
         `${input.eventTitle} starts ${lead} — ${input.when}`
     );

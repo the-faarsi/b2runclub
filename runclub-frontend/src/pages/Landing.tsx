@@ -12,6 +12,7 @@ import { gsap } from "gsap";
 import { useGSAP } from "@gsap/react";
 import { Link } from "react-router-dom";
 import { ClubFeatures, JoinBanner } from "../components/clubFeatures";
+import { ClubLogo } from "../components/clubLogo";
 import { EventCoverBackdrop, EventMeta } from "../components/eventCover";
 import { CollaboratorScroller } from "../components/collaborators";
 import { Founders } from "../components/founders";
@@ -316,6 +317,10 @@ export function Landing() {
           the clip as a thin strip behind two small controls.
         */}
         <div className="flex min-h-[clamp(340px,48vh,520px)] flex-col items-center justify-center gap-8 text-center">
+          {/* The club's own logo, where the 3D graphic used to be. Falls back to
+              the built monogram and wordmark if public/logo.png is absent. */}
+          <ClubLogo className="mb-8 max-h-[clamp(150px,26vw,280px)]" />
+
           <span
             ref={heroPillRef}
             className="inline-flex items-center gap-2 rounded-full border border-gold/25 bg-gold/8 px-3 py-1.5"
@@ -356,7 +361,7 @@ export function Landing() {
               <Link
                 ref={heroBtnSecondaryRef}
                 to="/calendar"
-                className="tap text-[13.5px] text-ink-3 transition-colors hover:text-gold"
+                className="tap text-[13.5px] text-gold transition-opacity hover:opacity-75"
               >
                 or see what's on →
               </Link>
@@ -619,7 +624,7 @@ export function Landing() {
                   role: "Volunteer",
                   tint: "var(--color-free)",
                   line: "You want to marshal.",
-                  perks: ["Entry comped, every event", "Gold bib, junction calls", "Post to the gallery"],
+                  perks: ["Entry comped, every event", "Club ID card, junction calls", "Post to the gallery"],
                 },
               ].map((r, i) => (
                 <Reveal key={r.role} delay={i * 0.07}>

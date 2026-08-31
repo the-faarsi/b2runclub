@@ -25,6 +25,7 @@ import { api } from "../../lib/api";
 import { useAuth } from "../../lib/auth";
 import { ROLE_META, cn, eventDate, fullDate, inr, minsToHm } from "../../lib/format";
 import type { AssignableRole, Member, MemberActivity } from "../../lib/types";
+import { MARSHAL_MIN_SESSIONS } from "../../lib/policies";
 import { useFetch } from "../../lib/useFetch";
 
 type Filter = "all" | "MEMBER" | "VOLUNTEER" | "VISITOR" | "ADMIN" | "STRAVA";
@@ -39,7 +40,7 @@ const ROLE_TINT: Record<string, string> = {
 /** What each role can actually do, shown so a change is never a guess. */
 const ROLE_EXPLAINER: Record<AssignableRole, string> = {
   VOLUNTEER:
-    "Marshals events and registers for free — entry is comped automatically on every future registration.",
+    `Marshals events and registers for free — entry is comped automatically on every future registration. Club guideline: consider members with ${MARSHAL_MIN_SESSIONS}+ sessions attended.`,
   MEMBER: "Registers for events and pays the entry fee. Can post, comment and vote.",
   VISITOR:
     "Read-only. Can browse events and polls, but cannot register, post or vote.",
@@ -144,7 +145,7 @@ export function ManageMembers() {
       <PageHeader
         eyebrow="Organiser"
         title="Members"
-        description="The club directory. Promote a member to volunteer and their entry is comped from then on."
+        description={`The club directory. Promote a member to volunteer and their entry is comped from then on — the club asks for ${MARSHAL_MIN_SESSIONS} sessions attended before considering someone.`}
         action={
           <div className="flex flex-wrap gap-2">
             <Link to="/admin" className={buttonClass("ghost", "md")}>

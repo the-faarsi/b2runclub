@@ -374,8 +374,8 @@ export function EventDetail() {
               {[
                 "Arrive 15 minutes early for the briefing and bag drop.",
                 "Bring your QR ticket — screenshots are fine, we scan at the start line.",
-                "Carry water and your own nutrition for anything over 10 km.",
-                "Marshals wear gold bibs. Follow their calls at junctions.",
+                "Carry water and your own nutrition.",
+                "Marshals carry a club ID card. Follow their calls at junctions.",
               ].map((line) => (
                 <li key={line} className="flex gap-2.5 text-[13.5px] leading-relaxed text-ink-2">
                   <span className="mt-1.5 size-1 shrink-0 rounded-full bg-gold" aria-hidden />

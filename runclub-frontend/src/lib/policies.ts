@@ -16,6 +16,15 @@ import { CLUB_NAME, CLUB_SHORT } from "./brand";
  * advice. Have someone qualified review them before you rely on them.
  */
 
+/**
+ * Sessions a member must have attended before they are considered to marshal.
+ *
+ * A guideline for organisers rather than a hard gate — promotion is still a
+ * judgement call — but it is the number quoted to members, so it lives in one
+ * place and is read by the volunteer terms and the admin directory.
+ */
+export const MARSHAL_MIN_SESSIONS = 12;
+
 export const REFUND_WINDOW_HOURS = 48;
 
 export const POLICY_UPDATED = "22 August 2026";
@@ -79,7 +88,6 @@ export const PRIVACY_POLICY: PolicySection[] = [
             "Your name and email address, so you can sign in and be contacted about a session.",
             "An emergency contact, if you provide one. It is required before you can register for a run, and exists for one purpose: so an organiser can reach someone if you are hurt.",
             "Your registrations, attendance and any results recorded on the day.",
-            "If you connect Strava, the activity summaries needed for the leaderboard — distance and time. Not your routes or private notes.",
         ],
     },
     {
@@ -120,14 +128,14 @@ export const CLUB_TERMS: PolicySection[] = [
         heading: "Taking part",
         body: [
             "Sessions are open to members. You take part at your own risk, and you confirm you are medically fit to do so when you register.",
-            `${CLUB_NAME} is not liable for injury, illness or loss during a session. Bring what you need — water and your own nutrition for anything over 10 km.`,
+            `${CLUB_NAME} is not liable for injury, illness or loss during a session. Bring what you need.`,
         ],
     },
     {
         heading: "On the day",
         body: [
             "There is a briefing fifteen minutes before every session covering the route, the junctions and where the marshals will be. Please be there for it.",
-            "Marshals wear gold bibs. Follow their calls at junctions — they are there because that corner needs one.",
+            "Marshals carry a club ID card. Follow their calls at junctions — they are there because that corner needs one.",
             "Your QR ticket is scanned at the start line. A screenshot is fine.",
         ],
     },
@@ -149,6 +157,13 @@ export const CLUB_TERMS: PolicySection[] = [
 
 export const VOLUNTEER_TERMS: PolicySection[] = [
     {
+        heading: "Who can marshal",
+        body: [
+            `Marshalling is open to members who have attended at least ${MARSHAL_MIN_SESSIONS} sessions. You need to know how a session runs before you can keep one safe.`,
+            "Past that, it is an organiser's call — ask any of them and they will tell you where the club is short.",
+        ],
+    },
+    {
         heading: "What you are agreeing to",
         body: [
             "Marshalling a session means being at your assigned point for the whole session, from the briefing until the last runner is through.",
@@ -159,7 +174,7 @@ export const VOLUNTEER_TERMS: PolicySection[] = [
         heading: "On the day",
         body: [
             "Arrive thirty minutes before the start — fifteen minutes before the runners' briefing — for the marshal briefing.",
-            "Wear the gold bib. It is what makes you visible to runners and to traffic, and it is not optional.",
+            "Carry your club ID card. It identifies you to runners, to the public and to traffic, and it is not optional.",
             "You direct runners and warn of hazards. You do not direct traffic, and you do not stop vehicles.",
         ],
     },

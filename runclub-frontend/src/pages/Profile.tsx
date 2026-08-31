@@ -83,7 +83,7 @@ export function Profile() {
               <p className="mt-1.5 text-[13px] leading-relaxed text-ink-2">
                 Your entry is comped on every event — registrations are free and your ticket is
                 issued immediately, with no payment step. In return you marshal the session: gold
-                bib, junction calls, and a briefing 15 minutes before the start.
+                club ID card, junction calls, and a briefing 15 minutes before the start.
               </p>
               <div className="mt-4 flex flex-wrap gap-2">
                 <Link to="/calendar" className={buttonClass("outline", "sm")}>

@@ -39,4 +39,4 @@ export const CLUB_SLUG = "b2club";
  * the previous one ("A running club that actually runs on time.") had drifted
  * into four files plus a database default, and changing it meant finding them.
  */
-export const CLUB_TAGLINE = "Fitness meets friendship.";
+export const CLUB_TAGLINE = "Where fitness meets friendship.";
