@@ -357,7 +357,6 @@ const CLUB_DEFAULTS = {
     home_base: null as string | null,
     contact_email: null as string | null,
     instagram: null as string | null,
-    strava_club: null as string | null,
     whatsapp: null as string | null,
 };
 
@@ -383,7 +382,6 @@ router.put("/club", requireRole(["ADMIN"]), async (req: AuthRequest, res: Respon
             "home_base",
             "contact_email",
             "instagram",
-            "strava_club",
             "whatsapp",
             "hero_video_url",
         ] as const;
@@ -701,7 +699,7 @@ router.post("/founders", requireRole(["ADMIN"]), (req: AuthRequest, res: Respons
             }
 
             const file = (req as any).file as MemFile | undefined;
-            const { name, role, bio, instagram, strava, sort_order, photo_url } = req.body ?? {};
+            const { name, role, bio, instagram, sort_order, photo_url } = req.body ?? {};
 
             if (!name?.trim()) {
                 res.status(400).json({ error: "A founder name is required" });
@@ -714,7 +712,6 @@ router.post("/founders", requireRole(["ADMIN"]), (req: AuthRequest, res: Respons
                     role: role?.trim() || "",
                     bio: bio?.trim() || "",
                     instagram: instagramHandle(instagram),
-                    strava: optional(strava),
                     sort_order: Number.parseInt(sort_order, 10) || 0,
                     photo_url: file ? await storeImage(file) : optional(photo_url),
                 },
@@ -745,7 +742,7 @@ router.patch("/founders/:id", requireRole(["ADMIN"]), (req: AuthRequest, res: Re
             }
 
             const file = (req as any).file as MemFile | undefined;
-            const { name, role, bio, instagram, strava, sort_order, photo_url } = req.body ?? {};
+            const { name, role, bio, instagram, sort_order, photo_url } = req.body ?? {};
 
             const data: Record<string, unknown> = {};
             if (name !== undefined) {
@@ -758,7 +755,6 @@ router.patch("/founders/:id", requireRole(["ADMIN"]), (req: AuthRequest, res: Re
             if (role !== undefined) data.role = String(role).trim();
             if (bio !== undefined) data.bio = String(bio).trim();
             if (instagram !== undefined) data.instagram = instagramHandle(instagram);
-            if (strava !== undefined) data.strava = optional(strava);
             if (sort_order !== undefined) {
                 data.sort_order = Number.parseInt(String(sort_order), 10) || 0;
             }

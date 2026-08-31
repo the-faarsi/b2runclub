@@ -1,10 +1,32 @@
 import { motion, useReducedMotion } from "framer-motion";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api } from "../lib/api";
 import { cn, instagramHandle, instagramHref } from "../lib/format";
 import { useFetch } from "../lib/useFetch";
-import { InstagramIcon, StravaIcon } from "./icons";
+import { InstagramIcon } from "./icons";
 import { Skeleton } from "./ui";
+
+/**
+ * True on devices with a real pointer.
+ *
+ * The two flip behaviours are mutually exclusive: hover drives it on a laptop,
+ * and tap-to-toggle drives it on a phone. Running both meant a click on a
+ * laptop latched the card flipped, and hover then had nothing left to do.
+ *
+ * Watched rather than read once, so plugging a mouse into a tablet is handled.
+ */
+function useCanHover() {
+  const [canHover, setCanHover] = useState(
+    () => typeof window !== "undefined" && window.matchMedia("(hover: hover)").matches,
+  );
+  useEffect(() => {
+    const mq = window.matchMedia("(hover: hover)");
+    const sync = () => setCanHover(mq.matches);
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
+  return canHover;
+}
 
 /** Initials fallback when no photo has been uploaded yet. */
 function initials(name: string) {
@@ -16,11 +38,6 @@ function initials(name: string) {
     .join("");
 }
 
-/** A bare Strava id becomes an athlete URL; a full URL is used as given. */
-function stravaHref(value: string) {
-  return /^https?:\/\//i.test(value) ? value : `https://www.strava.com/athletes/${value}`;
-}
-
 /**
  * The people who started the club.
  *
@@ -30,8 +47,9 @@ function stravaHref(value: string) {
  */
 export function Founders() {
   const reduced = useReducedMotion();
-  /** Which card is flipped by tap. Hover and focus are handled in CSS. */
+  /** Which card is flipped by tap. Only used where there is no hover. */
   const [flipped, setFlipped] = useState<string | null>(null);
+  const canHover = useCanHover();
   const load = useCallback(() => api.founders(), []);
   const { data, loading } = useFetch(load);
 
@@ -90,19 +108,25 @@ export function Founders() {
               are absolutely positioned and an auto-height parent would collapse
               to nothing.
             */}
-            {/* data-hoverflip turns it on hover and on keyboard focus;
+            {/* data-hoverflip lets the CSS flip it on hover and keyboard focus;
                 data-stretch makes both faces fill the fixed-height box.
-                onClick covers touch, where there is no hover at all. */}
+
+                data-flipped is the tap state, and is only ever set where there
+                is no hover — on a laptop it would latch the card open and stop
+                hover working. */}
             <div
               className="flip h-[clamp(320px,46vw,400px)] w-full"
               data-hoverflip="true"
               data-stretch="true"
-              data-flipped={flipped === f.id}
+              data-flipped={!canHover && flipped === f.id}
               data-calm={reduced}
               tabIndex={0}
               role="button"
               aria-label={`${f.name} — ${flipped === f.id ? "hide" : "show"} details`}
-              onClick={() => setFlipped((prev) => (prev === f.id ? null : f.id))}
+              onClick={() => {
+                if (canHover) return; // hover already does this
+                setFlipped((prev) => (prev === f.id ? null : f.id));
+              }}
               onKeyDown={(e) => {
                 if (e.key === "Enter" || e.key === " ") {
                   e.preventDefault();
@@ -161,7 +185,7 @@ export function Founders() {
                       </p>
                     )}
 
-                    {(f.instagram || f.strava) && (
+                    {f.instagram && (
                       <div className="mt-4 flex flex-wrap items-center gap-2.5">
                         {/* Instagram is the one people actually follow, so it is a
                             full labelled button rather than a 32px icon square. */}
@@ -177,18 +201,6 @@ export function Founders() {
                             <span className="truncate text-[14px] font-semibold">
                               @{instagramHandle(f.instagram)}
                             </span>
-                          </a>
-                        )}
-                        {f.strava && (
-                          <a
-                            href={stravaHref(f.strava)}
-                            target="_blank"
-                            rel="noreferrer"
-                            onClick={(e) => e.stopPropagation()}
-                            aria-label={`${f.name} on Strava`}
-                            className="tap grid size-11 shrink-0 place-items-center rounded-xl border border-white/10 text-ink-3 transition-colors hover:border-gold/40 hover:text-gold"
-                          >
-                            <StravaIcon className="size-5" />
                           </a>
                         )}
                       </div>

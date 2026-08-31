@@ -5,7 +5,6 @@ import { PageScene } from "../components/scene3d";
 import { Avatar, Badge, Button, buttonClass, Card } from "../components/ui";
 import { AccountSettings } from "../components/accountSettings";
 import { HealthSyncCard } from "../components/healthSync";
-import { StravaPanel } from "../components/stravaPanel";
 import { MyResultsCard, StreakCard } from "../components/streaks";
 import { useAuth } from "../lib/auth";
 import { fullDate, ROLE_META } from "../lib/format";
@@ -30,11 +29,6 @@ export function Profile() {
             <p className="mt-1 truncate text-[13px] text-ink-3">{user.email}</p>
             <div className="mt-2.5 flex flex-wrap items-center gap-2">
               <Badge color="var(--color-gold)">{meta.label}</Badge>
-              {user.strava_id && (
-                <Badge color="var(--color-free)" icon="★">
-                  Strava linked
-                </Badge>
-              )}
             </div>
           </div>
         </div>
@@ -121,8 +115,6 @@ export function Profile() {
           </div>
         </Card>
       )}
-
-      <StravaPanel />
 
       {/* Session */}
       <Card className="mt-5 p-6">

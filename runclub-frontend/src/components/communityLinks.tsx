@@ -3,7 +3,7 @@ import { useCallback } from "react";
 import { api } from "../lib/api";
 import { cn, instagramHandle, instagramHref } from "../lib/format";
 import { useFetch } from "../lib/useFetch";
-import { InstagramIcon, MailIcon, StravaIcon, WhatsAppIcon } from "./icons";
+import { InstagramIcon, MailIcon, WhatsAppIcon } from "./icons";
 import { Card, Skeleton } from "./ui";
 
 interface Channel {
@@ -19,7 +19,7 @@ interface Channel {
 }
 
 /**
- * Where the club actually talks to itself: WhatsApp, Instagram, Strava.
+ * Where the club actually talks to itself: WhatsApp, Instagram, email.
  *
  * Previously these sat as small text links in the footer, which is where links go
  * to be ignored — a visitor deciding whether to join never scrolls that far. Given
@@ -78,22 +78,6 @@ export function CommunityLinks() {
     });
   }
 
-  if (club?.strava_club) {
-    channels.push({
-      key: "strava",
-      label: "Strava",
-      handle: "Club B2club",
-      blurb:
-        "Log your runs with the club, see everyone's week, and keep yourself honest between sessions.",
-      // A bare id becomes a club URL; a full URL is used as given.
-      href: /^https?:\/\//i.test(club.strava_club)
-        ? club.strava_club
-        : `https://www.strava.com/clubs/${club.strava_club}`,
-      cta: "Join the club",
-      tint: "#fc4c02",
-      Icon: StravaIcon,
-    });
-  }
 
   /* Email last: it is the formal route, and the three above are where the club
      actually talks. Previously the address only appeared as small footer text,

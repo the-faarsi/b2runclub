@@ -17,7 +17,6 @@ import type {
   Founder,
   HealthImportResult,
   HealthSummary,
-  Leaderboard,
   MailerConfig,
   MailerStatus,
   Member,
@@ -37,9 +36,6 @@ import type {
   RouteGeometry,
   RouteSummary,
   Shift,
-  StravaActivity,
-  StravaConfig,
-  StravaLink,
   StreakSummary,
   SweepResult,
   User,
@@ -475,31 +471,6 @@ export const api = {
       body: { active },
     }),
 
-  /* ── strava ─────────────────────────────────────────────── */
-
-  leaderboard: () => request<Leaderboard>("/api/strava/leaderboard"),
-
-  /** Whether OAuth is available on this server. */
-  stravaConfig: () => request<StravaConfig>("/api/strava/config"),
-
-  /** The signed-in member's Strava connection, if any. */
-  stravaLink: () => request<StravaLink>("/api/strava/me"),
-
-  /**
-   * Returns the Strava consent URL for the caller to navigate to. Deliberately not
-   * a redirect — a 302 answered to `fetch` would be followed by fetch, and the
-   * browser would never leave the page.
-   */
-  stravaAuthorizeUrl: () => request<{ url: string }>("/api/strava/authorize"),
-
-  stravaActivities: (perPage = 15) =>
-    request<{ count: number; activities: StravaActivity[] }>(
-      `/api/strava/activities?per_page=${perPage}`,
-    ),
-
-  disconnectStrava: () =>
-    request<{ message: string; changed: boolean }>("/api/strava/me", { method: "DELETE" }),
-
   /* ── gallery / about / collaborators ────────────────────── */
 
   /** Optionally narrowed to one event, for the photo strip on an event page. */
@@ -605,7 +576,6 @@ export const api = {
     role?: string;
     bio?: string;
     instagram?: string;
-    strava?: string;
     sort_order?: number;
     photoFile?: File;
     photo_url?: string;
@@ -615,7 +585,6 @@ export const api = {
     if (input.role) form.append("role", input.role);
     if (input.bio) form.append("bio", input.bio);
     if (input.instagram) form.append("instagram", input.instagram);
-    if (input.strava) form.append("strava", input.strava);
     if (input.sort_order !== undefined) form.append("sort_order", String(input.sort_order));
     if (input.photoFile) form.append("photo", input.photoFile);
     if (input.photo_url) form.append("photo_url", input.photo_url);
@@ -634,7 +603,6 @@ export const api = {
       role?: string;
       bio?: string;
       instagram?: string;
-      strava?: string;
       sort_order?: number;
       photoFile?: File;
       photo_url?: string;
@@ -645,7 +613,6 @@ export const api = {
     if (input.role !== undefined) form.append("role", input.role);
     if (input.bio !== undefined) form.append("bio", input.bio);
     if (input.instagram !== undefined) form.append("instagram", input.instagram);
-    if (input.strava !== undefined) form.append("strava", input.strava);
     if (input.sort_order !== undefined) form.append("sort_order", String(input.sort_order));
     if (input.photoFile) form.append("photo", input.photoFile);
     if (input.photo_url !== undefined) form.append("photo_url", input.photo_url);

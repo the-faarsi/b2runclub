@@ -293,7 +293,7 @@ export function HealthSyncCard() {
           <div className="rounded-xl border border-white/8 bg-surface-2/50 p-4">
             <p className="text-[13.5px] font-semibold text-ink">Any watch · single run</p>
             <p className="mt-2 text-[13px] leading-relaxed text-ink-2">
-              Garmin, Coros, Polar, Suunto and Strava all export a run as GPX. Upload that and it
+              Garmin, Coros, Polar and Suunto all export a run as GPX. Upload that and it
               lands here as one workout, with the distance and duration read from the track.
             </p>
           </div>

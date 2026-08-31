@@ -212,7 +212,7 @@ export function About() {
           </div>
 
           {/* Find us */}
-          {(info?.instagram || info?.strava_club || info?.whatsapp || info?.contact_email) && (
+          {(info?.instagram || info?.whatsapp || info?.contact_email) && (
             <Reveal>
               <Card className="mt-5 p-7">
                 <p className="eyebrow">Find us</p>
@@ -241,20 +241,6 @@ export function About() {
                     >
                       <InstagramIcon className="size-4" />
                       Follow @{info.instagram}
-                    </a>
-                  )}
-                  {info?.strava_club && (
-                    <a
-                      href={
-                        info.strava_club.startsWith("http")
-                          ? info.strava_club
-                          : `https://www.strava.com/clubs/${info.strava_club}`
-                      }
-                      target="_blank"
-                      rel="noreferrer"
-                      className={buttonClass("outline", "sm")}
-                    >
-                      Strava club
                     </a>
                   )}
                   {info?.contact_email && (
@@ -309,7 +295,6 @@ function EditClubModal({
     home_base: "",
     contact_email: "",
     instagram: "",
-    strava_club: "",
     whatsapp: "",
   });
   const [busy, setBusy] = useState(false);
@@ -326,7 +311,6 @@ function EditClubModal({
       home_base: info?.home_base ?? "",
       contact_email: info?.contact_email ?? "",
       instagram: info?.instagram ?? "",
-      strava_club: info?.strava_club ?? "",
       whatsapp: info?.whatsapp ?? "",
     });
   }, [open, info]);
@@ -430,15 +414,6 @@ function EditClubModal({
             />
           </Field>
         </div>
-
-        <Field label="Strava club" htmlFor="ci-strava" hint="Club id or full URL.">
-          <Input
-            id="ci-strava"
-            value={form.strava_club}
-            onChange={set("strava_club")}
-            placeholder="1234567"
-          />
-        </Field>
 
         <Field
           label="WhatsApp community"

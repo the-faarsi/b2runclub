@@ -337,11 +337,29 @@
   .flip[data-calm="true"] .flip-inner {
     transition-duration: 0.01ms;
   }
-  /* Hover and keyboard focus flip it too, which the founder cards want. The QR
-     ticket drives the flip from state alone and sets neither attribute, so it is
-     unaffected. */
-  .flip[data-hoverflip="true"]:hover .flip-inner,
-  .flip[data-hoverflip="true"]:focus-within .flip-inner {
+  /*
+   * Hover flips it, on devices that actually have a pointer.
+   *
+   * Guarded by `(hover: hover)` because a touch browser reports a lingering
+   * :hover on the last thing tapped — so on a phone a tapped card stayed
+   * flipped and the tap-to-close never appeared to work.
+   */
+  @media (hover: hover) {
+    .flip[data-hoverflip="true"]:hover .flip-inner {
+      transform: rotateY(180deg);
+    }
+  }
+
+  /*
+   * `:focus-visible`, not `:focus-within`.
+   *
+   * The card carries tabIndex so it is keyboard reachable, and a mouse click
+   * focuses it. With :focus-within that focus outlived the click, so the card
+   * stayed flipped after the pointer left and clicking again could not undo it
+   * — the "flips only once" behaviour. :focus-visible matches keyboard focus
+   * only, which is the case that actually needs it.
+   */
+  .flip[data-hoverflip="true"]:focus-visible .flip-inner {
     transform: rotateY(180deg);
   }
   /* By default the front face stays in flow and sets the card's height, with the

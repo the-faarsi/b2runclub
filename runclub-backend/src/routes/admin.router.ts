@@ -3,7 +3,6 @@ import prisma from "../utils/prisma";
 import { AuthRequest, requireRole } from "../middleware/auth";
 import { ALLOWED_OFFSETS, sweepReminders } from "../utils/reminders";
 import { mailerConfig, mailerConfigured, sendMail, testEmail, verifyMailer } from "../utils/mailer";
-import { getAthleteStatsByUser } from "../utils/strava";
 
 const router = Router();
 
@@ -327,7 +326,7 @@ router.post("/mailer/test", requireRole(["ADMIN"]), async (req: AuthRequest, res
 
 // 3. Member directory (Admin only)
 // The club roster of people, as opposed to a single event's roster. Carries the
-// contact and Strava detail an organiser actually needs on event day.
+// contact detail an organiser actually needs on event day.
 router.get("/members", requireRole(["ADMIN"]), async (req: AuthRequest, res: Response): Promise<void> => {
     try {
         /**
@@ -342,7 +341,7 @@ router.get("/members", requireRole(["ADMIN"]), async (req: AuthRequest, res: Res
          * Imported health workouts are deliberately NOT included. Members are told
          * "organisers never see them" on the profile page, and that has to stay true.
          */
-        const [members, stats, registrations, results, shifts] = await Promise.all([
+        const [members, registrations, results, shifts] = await Promise.all([
             prisma.user.findMany({
                 orderBy: [{ role: "asc" }, { name: "asc" }],
                 select: {
@@ -352,11 +351,9 @@ router.get("/members", requireRole(["ADMIN"]), async (req: AuthRequest, res: Res
                     role: true,
                     created_at: true,
                     emergency_contact: true,
-                    strava_id: true,
                     _count: { select: { registrations: true } },
                 },
             }) as any,
-            getAthleteStatsByUser(),
             prisma.eventRegistration.findMany({
                 select: {
                     user_id: true,
@@ -439,7 +436,6 @@ router.get("/members", requireRole(["ADMIN"]), async (req: AuthRequest, res: Res
         // ADMIN-only.
         res.json(
             (members as any[]).map((m) => {
-                const s = stats.get(m.id);
                 return {
                     id: m.id,
                     name: m.name,
@@ -448,18 +444,6 @@ router.get("/members", requireRole(["ADMIN"]), async (req: AuthRequest, res: Res
                     created_at: m.created_at,
                     emergency_contact: m.emergency_contact,
                     has_emergency_contact: Boolean(m.emergency_contact),
-                    strava_id: m.strava_id,
-                    strava_linked: Boolean(m.strava_id),
-                    // Present only for linked athletes.
-                    strava: s
-                        ? {
-                              rank: s.rank,
-                              weekly_distance_km: s.weekly_distance_km,
-                              runs_count: s.runs_count,
-                              moving_time_mins: s.moving_time_mins,
-                              avg_pace: s.avg_pace,
-                          }
-                        : null,
                     registration_count: m._count.registrations,
 
                     /** Complete history for the directory's detail view. */

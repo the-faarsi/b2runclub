@@ -404,7 +404,7 @@ export function DatabaseAdmin() {
                             </button>
                           </th>
                         ))}
-                        {/* Pinned. Wide tables (User is 1318px, StravaAccount wider) overflow the
+                        {/* Pinned. Wide tables (User is 1318px) overflow the
                             card, and as the last column in a scrolling row this used to sit off
                             the right edge — Edit and Delete were rendered but unreachable without
                             scrolling, so the page looked insert-only. */}

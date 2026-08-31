@@ -11,7 +11,6 @@ export interface User {
   name: string;
   role: Role;
   emergency_contact?: string | null;
-  strava_id?: string | null;
   created_at?: string;
 }
 
@@ -133,15 +132,6 @@ export interface Notification {
   created_at: string;
 }
 
-/** Strava figures for a linked athlete, shared with the leaderboard. */
-export interface MemberStrava {
-  rank: number;
-  weekly_distance_km: number;
-  runs_count: number;
-  moving_time_mins: number;
-  avg_pace: string;
-}
-
 /** A row of the admin member directory. Never carries a password hash. */
 export interface Member {
   id: string;
@@ -152,10 +142,6 @@ export interface Member {
   /** The actual number — organisers need it on event day. Admin-only route. */
   emergency_contact: string | null;
   has_emergency_contact: boolean;
-  strava_id: string | null;
-  strava_linked: boolean;
-  /** Null unless Strava is linked. */
-  strava: MemberStrava | null;
   registration_count: number;
   /** Full history for the directory's detail view. */
   activity: MemberActivity;
@@ -200,22 +186,6 @@ export interface FinancialOverview {
   volunteer_free_count: number;
 }
 
-export interface LeaderboardRow {
-  rank: number;
-  user_id: string;
-  name: string;
-  strava_id: string | null;
-  weekly_distance_km: number;
-  runs_count: number;
-  moving_time_mins: number;
-  avg_pace: string;
-}
-
-export interface Leaderboard {
-  club_name: string;
-  leaderboard: LeaderboardRow[];
-}
-
 /** One row of the admin CSV roster export, parsed client-side. */
 export interface RosterRow {
   registration_id: string;
@@ -250,7 +220,6 @@ export interface ClubInfo {
   home_base: string | null;
   contact_email: string | null;
   instagram: string | null;
-  strava_club: string | null;
   /** Invite URL for the club's WhatsApp community, or null if not set. */
   whatsapp: string | null;
   /** Looping hero video for the home page. Null falls back to the 3D scene. */
@@ -270,8 +239,6 @@ export interface Founder {
   photo_url: string | null;
   /** Bare handle, no leading @ — the client builds the URL. */
   instagram: string | null;
-  /** Full URL or a bare Strava id. */
-  strava: string | null;
   sort_order: number;
   created_at: string;
 }
@@ -576,48 +543,6 @@ export interface HealthImportResult {
   /** True when the export was larger than the parser's cap. */
   truncated: boolean;
   source: string;
-}
-
-/* ── Strava OAuth ───────────────────────────────────────────── */
-
-export interface StravaConfig {
-  configured: boolean;
-  redirect_uri: string;
-  /** Env var names an organiser still needs to set. */
-  missing: string[];
-}
-
-export interface StravaAthlete {
-  athlete_id: string;
-  name: string | null;
-  username: string | null;
-  avatar_url: string | null;
-  city: string | null;
-  country: string | null;
-  profile_url: string;
-}
-
-export interface StravaLink {
-  connected: boolean;
-  configured: boolean;
-  athlete?: StravaAthlete;
-  scope?: string | null;
-  connected_at?: string;
-  last_synced_at?: string | null;
-  token_expires_at?: string;
-}
-
-export interface StravaActivity {
-  id: string;
-  name: string;
-  type: string;
-  started_at: string;
-  distance_km: number | null;
-  moving_secs: number | null;
-  elapsed_secs: number | null;
-  elevation_m: number | null;
-  average_speed_kmh: number | null;
-  url: string;
 }
 
 /* ── Database browser (admin) ───────────────────────────────── */

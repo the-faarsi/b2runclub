@@ -21,7 +21,6 @@ model User {
   role          String   @default("MEMBER")
   created_at    DateTime @default(now())
   emergency_contact String?
-  strava_id     String?
 
   events_created  Event[] // Admin connection
   registrations  EventRegistration[]
@@ -36,7 +35,6 @@ model User {
   shift_assignments ShiftAssignment[]
   splits         CheckpointSplit[]
   health_workouts HealthWorkout[]
-  strava_account  StravaAccount?
 }
 
 // HEALTH SYNC Data
@@ -111,7 +109,6 @@ model ClubInfo {
   home_base     String?
   contact_email String?
   instagram     String?
-  strava_club   String?
   /// Invite URL for the club's WhatsApp community. Editable because WhatsApp
   /// invite links can be reset by a group admin, which retires the old one.
   whatsapp      String?
@@ -150,8 +147,6 @@ model Founder {
   photo_url  String?
   /// Handle, not a URL, matching how ClubInfo.instagram is stored.
   instagram  String?
-  /// Club or athlete URL, or a bare id.
-  strava     String?
   sort_order Int      @default(0)
   created_at DateTime @default(now())
 }
@@ -409,33 +404,3 @@ model Comment {
   user       User     @relation(fields: [user_id], references: [id])
 }
 
-// STRAVA Data
-// One connected Strava athlete per member, established through OAuth.
-//
-// Tokens live here rather than on User so they are easy to drop wholesale when
-// someone disconnects, and so a stray `select` on User can never leak them.
-model StravaAccount {
-  id            String   @id @default(uuid())
-  user_id       String   @unique
-  user          User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
-
-  /// Strava's own numeric athlete id.
-  athlete_id    String   @unique
-  access_token  String
-  /// Access tokens last ~6 hours; this is what buys a new one.
-  refresh_token String
-  expires_at    DateTime
-  scope         String?
-
-  // Profile snapshot from the token exchange, so the UI can name the account
-  // without an extra API call on every render.
-  firstname     String?
-  lastname      String?
-  username      String?
-  avatar_url    String?
-  city          String?
-  country       String?
-
-  connected_at   DateTime @default(now())
-  last_synced_at DateTime?
-}

@@ -23,12 +23,12 @@ import {
 } from "../../components/ui";
 import { api } from "../../lib/api";
 import { useAuth } from "../../lib/auth";
-import { ROLE_META, cn, eventDate, fullDate, inr, minsToHm } from "../../lib/format";
+import { ROLE_META, cn, eventDate, fullDate, inr } from "../../lib/format";
 import type { AssignableRole, Member, MemberActivity } from "../../lib/types";
 import { MARSHAL_MIN_SESSIONS } from "../../lib/policies";
 import { useFetch } from "../../lib/useFetch";
 
-type Filter = "all" | "MEMBER" | "VOLUNTEER" | "VISITOR" | "ADMIN" | "STRAVA";
+type Filter = "all" | "MEMBER" | "VOLUNTEER" | "VISITOR" | "ADMIN";
 
 const ROLE_TINT: Record<string, string> = {
   ADMIN: "var(--color-gold)",
@@ -95,18 +95,12 @@ export function ManageMembers() {
       VOLUNTEER: members.filter((m) => m.role === "VOLUNTEER").length,
       MEMBER: members.filter((m) => m.role === "MEMBER").length,
       VISITOR: members.filter((m) => m.role === "VISITOR").length,
-      STRAVA: members.filter((m) => m.strava_linked).length,
     }),
     [members],
   );
 
   const visible = useMemo(() => {
-    let list =
-      filter === "all"
-        ? members
-        : filter === "STRAVA"
-          ? members.filter((m) => m.strava_linked)
-          : members.filter((m) => m.role === filter);
+    let list = filter === "all" ? members : members.filter((m) => m.role === filter);
     const q = query.trim().toLowerCase();
     if (q) {
       list = list.filter(
@@ -206,7 +200,6 @@ export function ManageMembers() {
             { value: "MEMBER", label: "Members", count: counts.MEMBER },
             { value: "VOLUNTEER", label: "Volunteers", count: counts.VOLUNTEER },
             { value: "VISITOR", label: "Visitors", count: counts.VISITOR },
-            { value: "STRAVA", label: "On Strava", count: counts.STRAVA },
           ]}
         />
 
@@ -303,14 +296,6 @@ export function ManageMembers() {
                         </span>
                         <span>·</span>
                         <span>Joined {fullDate(m.created_at)}</span>
-                        {m.strava?.weekly_distance_km !== undefined && (
-                          <>
-                            <span>·</span>
-                            <span className="tnum text-[color:var(--color-free)]">
-                              #{m.strava.rank} · {m.strava.weekly_distance_km} km this week
-                            </span>
-                          </>
-                        )}
                         {!m.has_emergency_contact && m.role !== "VISITOR" && (
                           <>
                             <span>·</span>
@@ -368,7 +353,7 @@ export function ManageMembers() {
                     </div>
                   </div>
 
-                  {/* Full detail — contact and Strava, admin-only by route */}
+                  {/* Full detail — contact, admin-only by route */}
                   <AnimatePresence initial={false}>
                     {expanded === m.id && (
                       <motion.div
@@ -391,45 +376,10 @@ export function ManageMembers() {
                             label="Registrations"
                             value={String(m.registration_count)}
                           />
-                          <Detail
-                            label="Strava athlete ID"
-                            value={m.strava_id}
-                            warn={!m.strava_id}
-                          />
                         </div>
 
                         <ActivityPanel activity={m.activity} />
 
-                        {m.strava ? (
-                          <div className="mt-3 rounded-xl border border-[color:var(--color-free)]/25 bg-[color:var(--color-free)]/6 p-4">
-                            <p className="eyebrow text-[color:var(--color-free)]">
-                              Strava — this week
-                            </p>
-                            <div className="mt-3 grid grid-cols-2 gap-4 sm:grid-cols-4">
-                              {[
-                                { l: "Club rank", v: `#${m.strava.rank}` },
-                                { l: "Distance", v: `${m.strava.weekly_distance_km} km` },
-                                { l: "Runs", v: String(m.strava.runs_count) },
-                                { l: "Avg pace", v: m.strava.avg_pace },
-                              ].map((x) => (
-                                <div key={x.l}>
-                                  <p className="display tnum text-[20px] text-ink">{x.v}</p>
-                                  <p className="eyebrow mt-0.5">{x.l}</p>
-                                </div>
-                              ))}
-                            </div>
-                            <p className="mt-3 text-[11px] text-ink-3">
-                              Moving time {minsToHm(m.strava.moving_time_mins)}. Figures come from
-                              the club's Strava integration, which currently serves deterministic
-                              sample stats.
-                            </p>
-                          </div>
-                        ) : (
-                          <p className="mt-3 rounded-xl border border-white/8 bg-surface-2/50 px-4 py-3 text-[12.5px] text-ink-3">
-                            No Strava account linked, so this member doesn't appear on the
-                            leaderboard. They can link one from their own profile page.
-                          </p>
-                        )}
                       </motion.div>
                     )}
                   </AnimatePresence>

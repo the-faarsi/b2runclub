@@ -118,10 +118,9 @@ router.post("/login", async (req: Request, res: Response): Promise<void> => {
                 email: user.email,
                 name: user.name,
                 role: user.role,
-                // Returned so a client can render profile state (Strava link,
+                // Returned so a client can render profile state (
                 // emergency contact) without a separate lookup.
                 emergency_contact: user.emergency_contact,
-                strava_id: user.strava_id,
                 created_at: user.created_at,
             },
         });
@@ -297,7 +296,6 @@ const publicUser = (u: {
     name: string;
     role: string;
     emergency_contact: string | null;
-    strava_id: string | null;
     created_at: Date;
 }) => ({
     id: u.id,
@@ -305,7 +303,6 @@ const publicUser = (u: {
     name: u.name,
     role: u.role,
     emergency_contact: u.emergency_contact,
-    strava_id: u.strava_id,
     created_at: u.created_at,
 });
 

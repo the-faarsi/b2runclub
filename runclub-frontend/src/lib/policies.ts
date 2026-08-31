@@ -93,7 +93,7 @@ export const PRIVACY_POLICY: PolicySection[] = [
     {
         heading: "What it is used for",
         body: [
-            "Running the club: taking registrations, issuing tickets, sending reminders about sessions you signed up for, and keeping the leaderboard.",
+            "Running the club: taking registrations, issuing tickets, and sending reminders about sessions you signed up for.",
             "Safety on the day: an organiser can see your emergency contact so they can act quickly if something happens.",
             `${CLUB_SHORT} does not sell your data, and does not send marketing.`,
         ],
@@ -101,7 +101,7 @@ export const PRIVACY_POLICY: PolicySection[] = [
     {
         heading: "Who can see it",
         body: [
-            "Other members see your name, and your distance if you have linked Strava. Nothing else.",
+            "Other members see your name. Nothing else.",
             "Organisers additionally see your email, your emergency contact and your registration history — the minimum needed to run a session safely.",
             "Payments go through Razorpay. The club never sees or stores your card details.",
         ],
@@ -110,14 +110,13 @@ export const PRIVACY_POLICY: PolicySection[] = [
         heading: "How long it is kept",
         body: [
             "Your account and its history are kept while you are a member.",
-            "Ask an organiser to delete your account and it is removed, along with your emergency contact and your Strava connection. Records the club must keep for accounting — that a payment happened, and its amount — are retained.",
+            "Ask an organiser to delete your account and it is removed, along with your emergency contact. Records the club must keep for accounting — that a payment happened, and its amount — are retained.",
         ],
     },
     {
         heading: "Your choices",
         body: [
             "Edit your name, email and emergency contact yourself from your profile at any time.",
-            "Disconnect Strava whenever you like; the leaderboard entry disappears with it.",
             "Ask for a copy of what the club holds about you, or ask for it to be deleted, by contacting an organiser.",
         ],
     },

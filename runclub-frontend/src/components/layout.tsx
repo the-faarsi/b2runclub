@@ -8,7 +8,7 @@ import { cn, instagramHandle, instagramHref, relativeTime, ROLE_META } from "../
 import type { Notification } from "../lib/types";
 import { useFetch } from "../lib/useFetch";
 import { CreatorsCredit } from "./creatorsLogo";
-import { InstagramIcon, MailIcon, StravaIcon, WhatsAppIcon } from "./icons";
+import { InstagramIcon, MailIcon, WhatsAppIcon } from "./icons";
 import { Avatar, buttonClass } from "./ui";
 
 /* ── Wordmark ─────────────────────────────────────────────── */
@@ -268,7 +268,7 @@ function UserMenu() {
                 }}
                 className="w-full rounded-lg px-2.5 py-2 text-left text-[13px] text-ink-2 transition-colors hover:bg-white/6 hover:text-ink"
               >
-                Profile & Strava
+                Profile
               </button>
               <button
                 onClick={() => {
@@ -662,17 +662,6 @@ export function Footer() {
       label: `@${instagramHandle(club.instagram)}`,
       href: instagramHref(club.instagram),
       Icon: InstagramIcon,
-    });
-  }
-  if (club?.strava_club) {
-    contact.push({
-      key: "strava",
-      label: "Strava club",
-      // A bare id becomes a club URL; a full URL is used as given.
-      href: /^https?:\/\//i.test(club.strava_club)
-        ? club.strava_club
-        : `https://www.strava.com/clubs/${club.strava_club}`,
-      Icon: StravaIcon,
     });
   }
   if (club?.whatsapp) {
