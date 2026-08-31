@@ -13,16 +13,43 @@ import { Avatar, buttonClass } from "./ui";
 
 /* ── Wordmark ─────────────────────────────────────────────── */
 
-export function Logo({ compact = false }: { compact?: boolean }) {
-  return (
-    <Link to="/" className="group flex items-center gap-2.5" aria-label={CLUB_NAME}>
-      {/* Monogram — solid gold plate, ink glyph */}
+function LogoMark() {
+  const [failed, setFailed] = useState(false);
+  if (failed) {
+    return (
       <span
         className="grid size-8 shrink-0 place-items-center rounded-[9px] bg-gold text-[color:var(--color-gold-ink)] transition-transform duration-300 group-hover:scale-105"
         aria-hidden
       >
         <span className="display text-[13px] leading-none">{CLUB_MONOGRAM}</span>
       </span>
+    );
+  }
+  return (
+    <img
+      src="/logo-mark.png"
+      alt=""
+      aria-hidden
+      width={32}
+      height={32}
+      onError={() => setFailed(true)}
+      className="size-8 shrink-0 rounded-[9px] object-contain transition-transform duration-300 group-hover:scale-105"
+    />
+  );
+}
+
+export function Logo({ compact = false }: { compact?: boolean }) {
+  return (
+    <Link to="/" className="group flex items-center gap-2.5" aria-label={CLUB_NAME}>
+      {/*
+        The club mark. logo-mark.png is a 96px copy of public/logo.png — the
+        original is a 3264px 616KB photo-JPEG, which is a lot to download for
+        something that renders at 32px in a nav bar.
+
+        The gold monogram plate is kept as the fallback: the artwork is a black
+        square, so if it ever 404s the header would otherwise show nothing.
+      */}
+      <LogoMark />
       {!compact && (
         <span className="display text-[17px] tracking-[-0.02em]">{CLUB_WORDMARK}</span>
       )}

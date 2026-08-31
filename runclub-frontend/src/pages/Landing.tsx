@@ -12,7 +12,6 @@ import { gsap } from "gsap";
 import { useGSAP } from "@gsap/react";
 import { Link } from "react-router-dom";
 import { ClubFeatures, JoinBanner } from "../components/clubFeatures";
-import { ClubLogo } from "../components/clubLogo";
 import { EventCoverBackdrop, EventMeta } from "../components/eventCover";
 import { CollaboratorScroller } from "../components/collaborators";
 import { Founders } from "../components/founders";
@@ -317,10 +316,6 @@ export function Landing() {
           the clip as a thin strip behind two small controls.
         */}
         <div className="flex min-h-[clamp(340px,48vh,520px)] flex-col items-center justify-center gap-8 text-center">
-          {/* The club's own logo, where the 3D graphic used to be. Falls back to
-              the built monogram and wordmark if public/logo.png is absent. */}
-          <ClubLogo className="mb-8 max-h-[clamp(150px,26vw,280px)]" />
-
           <span
             ref={heroPillRef}
             className="inline-flex items-center gap-2 rounded-full border border-gold/25 bg-gold/8 px-3 py-1.5"
