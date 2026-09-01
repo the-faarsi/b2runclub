@@ -1,7 +1,7 @@
 import { motion } from "framer-motion";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { InstagramIcon, PlusIcon, UsersIcon } from "../../components/icons";
+import { InstagramIcon, PlusIcon, StravaIcon, UsersIcon } from "../../components/icons";
 import { Page, PageHeader } from "../../components/layout";
 import { PageScene } from "../../components/scene3d";
 import {
@@ -147,11 +147,17 @@ export function ManageFounders() {
                     {f.role && <p className="eyebrow mt-0.5 text-gold">{f.role}</p>}
                     <p className="mt-1 text-[11.5px] text-ink-3">Order {f.sort_order}</p>
 
-                    {f.instagram && (
+                    {(f.instagram || f.strava) && (
                       <div className="mt-2 flex items-center gap-2 text-ink-3">
                         {f.instagram && (
                           <span className="inline-flex items-center gap-1 text-[11.5px]">
                             <InstagramIcon className="size-3" />@{f.instagram}
+                          </span>
+                        )}
+                        {f.strava && (
+                          <span className="inline-flex items-center gap-1 text-[11.5px]">
+                            <StravaIcon className="size-3" />
+                            Strava
                           </span>
                         )}
                       </div>
@@ -232,6 +238,7 @@ function FounderModal({
     role: "",
     bio: "",
     instagram: "",
+    strava: "",
     photo_url: "",
     sort_order: "0",
   });
@@ -250,6 +257,7 @@ function FounderModal({
             role: editing.role ?? "",
             bio: editing.bio ?? "",
             instagram: editing.instagram ?? "",
+            strava: editing.strava ?? "",
             photo_url: editing.photo_url ?? "",
             sort_order: String(editing.sort_order),
           }
@@ -258,6 +266,7 @@ function FounderModal({
             role: "",
             bio: "",
             instagram: "",
+            strava: "",
             photo_url: "",
             sort_order: String(nextOrder),
           },
@@ -296,6 +305,7 @@ function FounderModal({
         // The @ is stripped server-side too, but doing it here keeps the field
         // showing what was actually stored after a save.
         instagram: form.instagram.trim().replace(/^@/, ""),
+        strava: form.strava.trim(),
         photoFile: photo ?? undefined,
         // Skipped when a new file is uploaded — the file wins server-side, and
         // sending the old URL alongside it would be ambiguous.
@@ -378,6 +388,20 @@ function FounderModal({
             />
           </Field>
         </div>
+
+        <Field
+          label="Strava"
+          htmlFor="fo-strava"
+          hint="Paste their Strava link — a share link or a profile URL both work."
+        >
+          <Input
+            id="fo-strava"
+            value={form.strava}
+            onChange={set("strava")}
+            placeholder="https://strava.app.link/…"
+            inputMode="url"
+          />
+        </Field>
 
         <Field
           label="Sort order"

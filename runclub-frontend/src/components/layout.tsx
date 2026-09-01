@@ -4,11 +4,11 @@ import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { CLUB_MONOGRAM, CLUB_NAME, CLUB_TAGLINE, CLUB_WORDMARK } from "../lib/brand";
-import { cn, instagramHandle, instagramHref, relativeTime, ROLE_META } from "../lib/format";
+import { cn, instagramHandle, instagramHref, relativeTime, ROLE_META, stravaHref } from "../lib/format";
 import type { Notification } from "../lib/types";
 import { useFetch } from "../lib/useFetch";
 import { CreatorsCredit } from "./creatorsLogo";
-import { InstagramIcon, MailIcon, WhatsAppIcon } from "./icons";
+import { InstagramIcon, MailIcon, StravaIcon, WhatsAppIcon } from "./icons";
 import { Avatar, buttonClass } from "./ui";
 
 /* ── Wordmark ─────────────────────────────────────────────── */
@@ -662,6 +662,14 @@ export function Footer() {
       label: `@${instagramHandle(club.instagram)}`,
       href: instagramHref(club.instagram),
       Icon: InstagramIcon,
+    });
+  }
+  if (club?.strava_url) {
+    contact.push({
+      key: "strava",
+      label: "Strava club",
+      href: stravaHref(club.strava_url),
+      Icon: StravaIcon,
     });
   }
   if (club?.whatsapp) {

@@ -220,6 +220,8 @@ export interface ClubInfo {
   home_base: string | null;
   contact_email: string | null;
   instagram: string | null;
+  /** The club's Strava link, shown in the contact section. A full URL. */
+  strava_url: string | null;
   /** Invite URL for the club's WhatsApp community, or null if not set. */
   whatsapp: string | null;
   /** Looping hero video for the home page. Null falls back to the 3D scene. */
@@ -239,6 +241,8 @@ export interface Founder {
   photo_url: string | null;
   /** Bare handle, no leading @ — the client builds the URL. */
   instagram: string | null;
+  /** Full profile or share URL, or a bare athlete id. */
+  strava: string | null;
   sort_order: number;
   created_at: string;
 }

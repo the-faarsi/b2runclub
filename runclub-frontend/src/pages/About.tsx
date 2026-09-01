@@ -295,6 +295,7 @@ function EditClubModal({
     home_base: "",
     contact_email: "",
     instagram: "",
+    strava_url: "",
     whatsapp: "",
   });
   const [busy, setBusy] = useState(false);
@@ -311,6 +312,7 @@ function EditClubModal({
       home_base: info?.home_base ?? "",
       contact_email: info?.contact_email ?? "",
       instagram: info?.instagram ?? "",
+      strava_url: info?.strava_url ?? "",
       whatsapp: info?.whatsapp ?? "",
     });
   }, [open, info]);
@@ -414,6 +416,20 @@ function EditClubModal({
             />
           </Field>
         </div>
+
+        <Field
+          label="Strava link"
+          htmlFor="ci-strava"
+          hint="The club's Strava link. A share link (strava.app.link/…) or a club URL both work."
+        >
+          <Input
+            id="ci-strava"
+            value={form.strava_url}
+            onChange={set("strava_url")}
+            placeholder="https://strava.app.link/…"
+            inputMode="url"
+          />
+        </Field>
 
         <Field
           label="WhatsApp community"

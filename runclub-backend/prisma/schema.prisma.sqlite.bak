@@ -109,6 +109,10 @@ model ClubInfo {
   home_base     String?
   contact_email String?
   instagram     String?
+  /// The club's Strava link, shown in the contact section. A full URL rather
+  /// than a club id: the value people actually have to hand is a share link
+  /// (strava.app.link/…), which no id-based URL template can reconstruct.
+  strava_url    String?
   /// Invite URL for the club's WhatsApp community. Editable because WhatsApp
   /// invite links can be reset by a group admin, which retires the old one.
   whatsapp      String?
@@ -147,6 +151,8 @@ model Founder {
   photo_url  String?
   /// Handle, not a URL, matching how ClubInfo.instagram is stored.
   instagram  String?
+  /// Full profile or share URL, or a bare athlete id.
+  strava     String?
   sort_order Int      @default(0)
   created_at DateTime @default(now())
 }

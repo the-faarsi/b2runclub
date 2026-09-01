@@ -1,9 +1,9 @@
 import { motion, useReducedMotion } from "framer-motion";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../lib/api";
-import { cn, instagramHandle, instagramHref } from "../lib/format";
+import { cn, instagramHandle, instagramHref, stravaHref } from "../lib/format";
 import { useFetch } from "../lib/useFetch";
-import { InstagramIcon } from "./icons";
+import { InstagramIcon, StravaIcon } from "./icons";
 import { Skeleton } from "./ui";
 
 /**
@@ -185,7 +185,7 @@ export function Founders() {
                       </p>
                     )}
 
-                    {f.instagram && (
+                    {(f.instagram || f.strava) && (
                       <div className="mt-4 flex flex-wrap items-center gap-2.5">
                         {/* Instagram is the one people actually follow, so it is a
                             full labelled button rather than a 32px icon square. */}
@@ -201,6 +201,18 @@ export function Founders() {
                             <span className="truncate text-[14px] font-semibold">
                               @{instagramHandle(f.instagram)}
                             </span>
+                          </a>
+                        )}
+                        {f.strava && (
+                          <a
+                            href={stravaHref(f.strava)}
+                            target="_blank"
+                            rel="noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            aria-label={`${f.name} on Strava`}
+                            className="tap grid size-11 shrink-0 place-items-center rounded-xl border border-white/10 text-ink-3 transition-colors hover:border-gold/40 hover:text-gold"
+                          >
+                            <StravaIcon className="size-5" />
                           </a>
                         )}
                       </div>

@@ -216,3 +216,16 @@ export function instagramHandle(value: string): string {
 export function instagramHref(value: string): string {
   return `https://instagram.com/${instagramHandle(value)}`;
 }
+
+/**
+ * Strava link for whatever was pasted in.
+ *
+ * Accepts a full URL — including a strava.app.link share link, which is what
+ * the share sheet actually produces — or a bare athlete id, which becomes a
+ * profile URL. A share link cannot be rebuilt from an id, so the URL form has
+ * to pass through untouched.
+ */
+export function stravaHref(value: string): string {
+  const raw = value.trim();
+  return /^https?:\/\//i.test(raw) ? raw : `https://www.strava.com/athletes/${raw}`;
+}
