@@ -22,7 +22,8 @@ import { UpcomingScroller } from "../components/upcomingScroller";
 import { buttonClass, Card } from "../components/ui";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
-import { isPast } from "../lib/format";
+import { cn, isPast } from "../lib/format";
+import { useMediaQuery } from "../lib/motion";
 import { useFetch } from "../lib/useFetch";
 
 /**
@@ -167,6 +168,17 @@ export function Landing() {
    */
   const [videoAspect, setVideoAspect] = useState<number | null>(null);
 
+  /*
+   * Where the call to action goes: under the pill and over the picture on a
+   * wide screen, below the whole clip on a phone. 40rem is Tailwind's `sm`.
+   *
+   * A hook rather than rendering it twice with `sm:hidden` on one copy. The
+   * button carries a ref the intro timeline tweens, and a second copy would
+   * leave that tween pointing at whichever mounted first — plus a duplicate
+   * link for anyone reading the page with a screen reader.
+   */
+  const ctaOverVideo = useMediaQuery("(min-width: 40rem)");
+
   // ── Scroll refs for the "How it works" sticky section ──
   const stickyRef = useRef<HTMLDivElement>(null);
 
@@ -296,6 +308,58 @@ export function Landing() {
     { scope: heroRef },
   );
 
+  /*
+   * Built once and rendered in whichever of the two places the viewport calls
+   * for. An element rather than a component, so the refs below attach exactly
+   * once either way and the intro timeline finds them.
+   */
+  const heroCta = (
+    <div className="flex flex-col items-center gap-4 text-center">
+      <Link
+        ref={heroBtnPrimaryRef}
+        to={user ? "/calendar" : "/signup"}
+        className={buttonClass(
+          "gold",
+          "lg",
+          "sweep px-10 py-5 text-[18px] sm:px-14 sm:py-6 sm:text-[20px]",
+        )}
+      >
+        {user ? "See the calendar" : "Join Us"}
+        <svg viewBox="0 0 24 24" className="size-5" fill="none" aria-hidden>
+          <path
+            d="M5 12h14m-6-6 6 6-6 6"
+            stroke="currentColor"
+            strokeWidth="2.2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </Link>
+
+      {/* Quiet second option for anyone not ready to sign up. A text link
+          rather than a button, so the big one stays the only real call.
+
+          The chip is added only where this sits over the picture. Unlike the
+          button it has no background of its own, and gold on sunlit footage
+          measured 2.19:1 against the 4.5:1 it needs. Below the clip there is
+          nothing to protect it from, and the chip would be a faint outline
+          around nothing. */}
+      {!user && (
+        <Link
+          ref={heroBtnSecondaryRef}
+          to="/calendar"
+          className={cn(
+            "tap text-[13.5px] text-gold transition-opacity hover:opacity-75",
+            ctaOverVideo &&
+              "rounded-full border border-gold/25 bg-void/95 px-3 py-1 backdrop-blur-md",
+          )}
+        >
+          or see what's on →
+        </Link>
+      )}
+    </div>
+  );
+
   return (
     <>
       {/* ── Hero ─────────────────────────────────────────── */}
@@ -304,7 +368,7 @@ export function Landing() {
           screen is well inside the visible area. */}
       <section
         ref={heroRef}
-        className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8"
+        className="relative mx-auto max-w-7xl px-4 sm:px-6 sm:pb-10 lg:px-8"
       >
         {/*
           The video area. HeroVideo sits inside it as `absolute inset-y-0`, and
@@ -346,60 +410,20 @@ export function Landing() {
                 : "Season in planning"}
             </span>
           </span>
-        </div>
 
+          {/* Over the picture, directly under the pill — wide screens only. */}
+          {ctaOverVideo && <div className="relative mt-7 sm:mt-9">{heroCta}</div>}
+        </div>
       </section>
 
-      {/* ── Hero call to action ───────────────────────────── */}
-      {/* Outside the hero section, not just outside the video area. HeroVideo
-          fills its section's padding box, so anything left inside would have the
-          clip running behind it — which is what used to put this button on top
-          of the group.
-
-          Its own top padding is the gap under the video; the section above
-          deliberately has no bottom padding, so this is the only thing setting
-          that distance.
-
-          The GSAP timeline still animates this: it is handed element references
-          rather than selector strings, so `useGSAP`'s `scope` does not have to
-          contain it. heroSpotlightRef, in the Next up section, was already
-          outside for the same reason. */}
-      <div className="mx-auto max-w-7xl px-4 pb-8 pt-14 text-center sm:px-6 sm:pt-20 lg:px-8">
-        <div className="flex flex-col items-center gap-4">
-          <Link
-            ref={heroBtnPrimaryRef}
-            to={user ? "/calendar" : "/signup"}
-            className={buttonClass(
-              "gold",
-              "lg",
-              "sweep px-10 py-5 text-[18px] sm:px-14 sm:py-6 sm:text-[20px]",
-            )}
-          >
-            {user ? "See the calendar" : "Join Us"}
-            <svg viewBox="0 0 24 24" className="size-5" fill="none" aria-hidden>
-              <path
-                d="M5 12h14m-6-6 6 6-6 6"
-                stroke="currentColor"
-                strokeWidth="2.2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-          </Link>
-
-          {/* Quiet second option for anyone not ready to sign up. A text link
-              rather than a button, so the big one stays the only real call. */}
-          {!user && (
-            <Link
-              ref={heroBtnSecondaryRef}
-              to="/calendar"
-              className="tap text-[13.5px] text-gold transition-opacity hover:opacity-75"
-            >
-              or see what's on →
-            </Link>
-          )}
-        </div>
-      </div>
+      {/* Phone: below the clip rather than on it. At 390px the picture crops
+          to a near-square and the group fills it, so a button in the middle of
+          that covers faces — and there is far less room above the fold to spend
+          on a stack. On `sm` and up it renders under the pill instead; see the
+          section above. */}
+      {!ctaOverVideo && (
+        <div className="mx-auto max-w-7xl px-4 pb-8 pt-12 sm:px-6 lg:px-8">{heroCta}</div>
+      )}
 
       {/* ── Next up ───────────────────────────────────────── */}
       {/*

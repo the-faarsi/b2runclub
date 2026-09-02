@@ -54,6 +54,33 @@ export function useCalmMotion(): boolean {
 }
 
 /**
+ * Live answer to a media query.
+ *
+ * For the cases a Tailwind breakpoint cannot reach — where the *structure*
+ * differs between viewports rather than the styling, so the same element has to
+ * be rendered in a different place. Rendering it twice and hiding one copy is
+ * the usual trick and it is wrong here: duplicated refs mean an intro animation
+ * that only reaches one of them, and duplicated ids and links for a screen
+ * reader.
+ *
+ * Watched rather than read once, so resizing a window or rotating a tablet is
+ * handled.
+ */
+export function useMediaQuery(query: string): boolean {
+  const [matches, setMatches] = useState(
+    () => typeof window !== "undefined" && window.matchMedia(query).matches,
+  );
+  useEffect(() => {
+    const mq = window.matchMedia(query);
+    const sync = () => setMatches(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, [query]);
+  return matches;
+}
+
+/**
  * Counts from 0 to `value` with an ease-out curve. Returns the target directly
  * when the viewer prefers reduced motion, so no number ever animates for them.
  */
