@@ -1,6 +1,7 @@
 import { Router, Response } from "express";
 import prisma from "../utils/prisma";
 import { AuthRequest, requireRole } from "../middleware/auth";
+import { requireVerified } from "../middleware/verified";
 import { deleteObject } from "../utils/storage";
 import Razorpay from "razorpay";
 import { ALLOWED_OFFSETS } from "../utils/reminders";
@@ -495,7 +496,7 @@ router.delete("/:id", requireRole(["ADMIN"]), async (req: AuthRequest, res: Resp
 });
 
 // 6. Register / Checkout Flow
-router.post("/:id/register", requireRole(["MEMBER", "VOLUNTEER"]), async (req: AuthRequest, res: Response): Promise<void> => {
+router.post("/:id/register", requireRole(["MEMBER", "VOLUNTEER"]), requireVerified, async (req: AuthRequest, res: Response): Promise<void> => {
     try {
         const eventId = req.params.id as string;
         const userId = req.user!.id;

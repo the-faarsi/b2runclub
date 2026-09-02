@@ -8,6 +8,7 @@ dotenv.config();
 
 // Initialize Express routers
 import authRouter from "./routes/auth.router";
+import verifyRouter from "./routes/verify.router";
 import eventsRouter from "./routes/events.router";
 import paymentsRouter from "./routes/payments.router";
 import forumRouter from "./routes/forum.router";
@@ -74,6 +75,7 @@ app.all("/api/cron/reminders", async (req, res) => {
 app.use(authenticateJWT);
 
 // Register REST endpoints
+app.use("/api/auth/verify", verifyRouter);
 app.use("/api/auth", authRouter);
 app.use("/api/events", eventsRouter);
 app.use("/api/payments", paymentsRouter);

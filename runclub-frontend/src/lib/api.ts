@@ -39,6 +39,7 @@ import type {
   StreakSummary,
   SweepResult,
   User,
+  VerificationStatus,
 } from "./types";
 
 /** Empty in dev — Vite proxies /api and /health to the Express backend. */
@@ -52,10 +53,32 @@ export const UNAUTHORIZED_EVENT = "cadence:unauthorized";
 
 export class ApiError extends Error {
   status: number;
-  constructor(status: number, message: string) {
+  /**
+   * The parsed error body, when the server sent JSON.
+   *
+   * Kept because several endpoints answer with more than a sentence — a 429
+   * from the verification routes carries `retry_after_seconds`, and a 403 from
+   * the registration gate carries `code` and `needs`. Discarding it forced the
+   * caller to re-read the message with a regex.
+   */
+  body?: Record<string, unknown>;
+
+  constructor(status: number, message: string, body?: Record<string, unknown>) {
     super(message);
     this.name = "ApiError";
     this.status = status;
+    this.body = body;
+  }
+
+  /** Seconds to wait, from a rate-limited response. */
+  get retryAfterSeconds(): number | undefined {
+    const value = this.body?.retry_after_seconds;
+    return typeof value === "number" ? value : undefined;
+  }
+
+  /** True when this is the registration gate asking for verification. */
+  get needsVerification(): boolean {
+    return this.body?.code === "VERIFICATION_REQUIRED";
   }
 }
 
@@ -127,13 +150,15 @@ async function request<T>(path: string, opts: Options = {}): Promise<T> {
 
   if (!res.ok) {
     let message = `Request failed (${res.status})`;
+    let body: Record<string, unknown> | undefined;
     try {
       const data = await res.json();
       if (data?.error) message = data.error;
+      if (data && typeof data === "object") body = data;
     } catch {
       /* non-JSON error body */
     }
-    throw new ApiError(res.status, message);
+    throw new ApiError(res.status, message, body);
   }
 
   if (as === "text") return (await res.text()) as T;
@@ -184,14 +209,56 @@ export const api = {
     email: string;
     password: string;
     name: string;
+    /** Required: the club needs a number that rings on race day. */
+    phone: string;
     role?: string;
     emergency_contact?: string;
   }) =>
-    request<{ message: string; user: User }>("/api/auth/register", {
+    request<{
+      message: string;
+      user: User;
+      /** Signup sends the email code itself, so the client can say so. */
+      verification: { email_code_sent: boolean; sent_to: string | null; simulated: boolean };
+    }>("/api/auth/register", {
       method: "POST",
       body: input,
       auth: false,
     }),
+
+  /* ── email and phone verification ───────────────────────── */
+
+  /**
+   * The destination is never in the request for email, and for phone it is only
+   * ever the caller's own: codes go to your account, not to an address you name.
+   */
+  verification: {
+    status: () => request<VerificationStatus>("/api/auth/verify/status"),
+
+    sendEmail: () =>
+      request<{ message: string; sent_to: string; simulated: boolean; already?: boolean }>(
+        "/api/auth/verify/email/send",
+        { method: "POST" },
+      ),
+
+    confirmEmail: (code: string) =>
+      request<{ message: string; email_verified: boolean }>("/api/auth/verify/email/confirm", {
+        method: "POST",
+        body: { code },
+      }),
+
+    /** Omit the number to resend to the one already on record. */
+    sendPhone: (phone?: string) =>
+      request<{ message: string; sent_to: string; simulated: boolean; already?: boolean }>(
+        "/api/auth/verify/phone/send",
+        { method: "POST", body: phone ? { phone } : {} },
+      ),
+
+    confirmPhone: (code: string) =>
+      request<{ message: string; phone_verified: boolean; phone: string | null }>(
+        "/api/auth/verify/phone/confirm",
+        { method: "POST", body: { code } },
+      ),
+  },
 
   /* ── your own account ───────────────────────────────────── */
 
@@ -202,8 +269,13 @@ export const api = {
    */
   me: () => request<{ user: User }>("/api/auth/me"),
 
-  /** Details with no security weight. Role is deliberately not accepted. */
-  updateProfile: (input: { name?: string; emergency_contact?: string }) =>
+  /**
+   * Details with no security weight. Role is deliberately not accepted.
+   *
+   * Changing `phone` un-verifies it server-side, so the caller should expect
+   * pending_verification.phone to come back true.
+   */
+  updateProfile: (input: { name?: string; emergency_contact?: string; phone?: string }) =>
     request<{ message: string; user: User }>("/api/auth/me", {
       method: "PATCH",
       body: input,

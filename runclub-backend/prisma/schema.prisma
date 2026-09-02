@@ -22,6 +22,14 @@ model User {
   created_at    DateTime @default(now())
   emergency_contact String?
 
+  /// The member's own number, E.164. Distinct from emergency_contact, which is
+  /// somebody else's — on race day we need both, and conflating them means
+  /// ringing the wrong person.
+  phone         String?
+  /// Null until the address has been proved by a one-time code.
+  email_verified_at DateTime?
+  phone_verified_at DateTime?
+
   events_created  Event[] // Admin connection
   registrations  EventRegistration[]
   posts          Post[]
@@ -35,6 +43,36 @@ model User {
   shift_assignments ShiftAssignment[]
   splits         CheckpointSplit[]
   health_workouts HealthWorkout[]
+  verification_codes VerificationCode[]
+}
+
+/// A one-time code sent to an email address or a phone number.
+///
+/// Only an HMAC of the code is stored, following PasswordResetToken. HMAC and
+/// not a bare SHA-256 because a six-digit code has only a million possible
+/// values: a plain digest of one is trivially reversed from a database dump,
+/// whereas the HMAC cannot be computed without the server's key.
+///
+/// `destination` is kept alongside so a code cannot be redeemed against a
+/// different address than the one it was sent to — otherwise a member could
+/// request a code to an address they control, change their email, and verify
+/// the new one with it.
+model VerificationCode {
+  id          String    @id @default(uuid())
+  user_id     String
+  /// "EMAIL" or "PHONE".
+  channel     String
+  destination String
+  code_hash   String
+  expires_at  DateTime
+  consumed_at DateTime?
+  /// Wrong guesses so far. Capped, so the code cannot be brute-forced online.
+  attempts    Int       @default(0)
+  created_at  DateTime  @default(now())
+
+  user        User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id, channel])
 }
 
 // HEALTH SYNC Data

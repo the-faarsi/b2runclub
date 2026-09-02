@@ -12,6 +12,49 @@ export interface User {
   role: Role;
   emergency_contact?: string | null;
   created_at?: string;
+  /** The member's own number, E.164. Not the emergency contact. */
+  phone?: string | null;
+  email_verified?: boolean;
+  /** A number can be on record and still unverified — this is the truth. */
+  phone_verified?: boolean;
+  /**
+   * What is still outstanding, computed by the server so the banner, the gate
+   * and the verify screen cannot disagree about whether somebody is finished.
+   */
+  pending_verification?: { email: boolean; phone: boolean };
+  /**
+   * The subset of the above that the registration gate actually refuses on.
+   *
+   * Differs from pending_verification when the club has no credentials for a
+   * channel: the banner still asks, but nothing is withheld for a code the
+   * member could never receive. Computed server-side so the client cannot
+   * refuse somebody the server would have let through.
+   */
+  verification_required?: { email: boolean; phone: boolean };
+}
+
+/** Reply from /api/auth/verify/status. */
+export interface VerificationStatus {
+  email: string;
+  email_verified: boolean;
+  phone: string | null;
+  phone_verified: boolean;
+  pending: { email: boolean; phone: boolean };
+  code_length: number;
+  expires_in_minutes: number;
+  outstanding: {
+    email: OutstandingCode | null;
+    phone: OutstandingCode | null;
+  };
+  /** Whether the club has credentials for each channel. */
+  delivery: { email: boolean; whatsapp: boolean };
+}
+
+export interface OutstandingCode {
+  /** Masked, e.g. "+91 ••••• 43219". */
+  sent_to: string;
+  expires_at: string;
+  attempts_left: number;
 }
 
 export interface ClubEvent {

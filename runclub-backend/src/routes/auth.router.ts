@@ -6,16 +6,36 @@ import { AuthRequest, requireAccount } from "../middleware/auth";
 import { hashPassword, verifyPassword } from "../utils/crypto";
 import { passwordResetEmail, sendMail } from "../utils/mailer";
 import { JWT_SECRET } from "../utils/secrets";
+import { normalisePhone } from "../utils/phone";
+import {
+    enforcedVerification,
+    ensureVerificationNudge,
+    issueCode,
+    pendingVerification,
+} from "../utils/verification";
 
 const router = Router();
 
 // Registration Endpoint
 router.post("/register", async (req: Request, res: Response): Promise<void> => {
     try {
-        const { email, password, name, role, emergency_contact } = req.body;
+        const { email, password, name, role, emergency_contact, phone } = req.body;
 
         if (!email || !password || !name) {
             res.status(400).json({ error: "Missing required fields: email, password, name" });
+            return;
+        }
+
+        /*
+         * The member's own number, required at signup because the club needs a
+         * way to reach the person who is actually running. Stored straight away
+         * so the verify screen can prefill it, but phone_verified_at stays null
+         * until a code comes back — that column, not this one, is what the gate
+         * and every organiser-facing screen read.
+         */
+        const normalisedPhone = normalisePhone(phone);
+        if (!normalisedPhone.ok) {
+            res.status(400).json({ error: normalisedPhone.error });
             return;
         }
 
@@ -68,18 +88,34 @@ router.post("/register", async (req: Request, res: Response): Promise<void> => {
                 name,
                 role: userRole,
                 emergency_contact: emergency_contact || null,
+                phone: normalisedPhone.e164,
             },
         });
 
+        /*
+         * Send the email code immediately, so the code is already in their inbox
+         * by the time the client lands on the verify screen. Failure is not
+         * fatal: the account exists, and the verify screen has its own resend.
+         * Throwing here would leave a registered member looking at an error and
+         * unable to register again, since their email is now taken.
+         */
+        const codeSent = await issueCode({
+            userId: newUser.id,
+            name: newUser.name,
+            channel: "EMAIL",
+            destination: newUser.email,
+        });
+        await ensureVerificationNudge(newUser);
+
         res.status(211).json({
             message: "Registration successful",
-            user: {
-                id: newUser.id,
-                email: newUser.email,
-                name: newUser.name,
-                role: newUser.role,
-                emergency_contact: newUser.emergency_contact,
-                created_at: newUser.created_at,
+            user: publicUser(newUser),
+            /* So the client knows whether to say "check your inbox" or to send
+               the member straight to the resend button. */
+            verification: {
+                email_code_sent: codeSent.ok,
+                sent_to: codeSent.sent_to ?? null,
+                simulated: codeSent.simulated ?? false,
             },
         });
     } catch (error: any) {
@@ -110,19 +146,19 @@ router.post("/login", async (req: Request, res: Response): Promise<void> => {
             { expiresIn: "24h" }
         );
 
+        /*
+         * Leave a reminder in their notifications if anything is outstanding.
+         * Sign-in is the right hook: it is the one moment we know the member is
+         * present. Idempotent, so signing in daily does not bury the list.
+         */
+        await ensureVerificationNudge(user);
+
         res.status(200).json({
             message: "Login successful",
             token,
-            user: {
-                id: user.id,
-                email: user.email,
-                name: user.name,
-                role: user.role,
-                // Returned so a client can render profile state (
-                // emergency contact) without a separate lookup.
-                emergency_contact: user.emergency_contact,
-                created_at: user.created_at,
-            },
+            // Returned so a client can render profile and verification state
+            // without a separate lookup.
+            user: publicUser(user),
         });
     } catch (error: any) {
         res.status(500).json({ error: error.message || "Login failed" });
@@ -297,6 +333,9 @@ const publicUser = (u: {
     role: string;
     emergency_contact: string | null;
     created_at: Date;
+    phone: string | null;
+    email_verified_at: Date | null;
+    phone_verified_at: Date | null;
 }) => ({
     id: u.id,
     email: u.email,
@@ -304,6 +343,20 @@ const publicUser = (u: {
     role: u.role,
     emergency_contact: u.emergency_contact,
     created_at: u.created_at,
+    phone: u.phone,
+    /* Booleans rather than the timestamps: the client only ever asks whether,
+       and a date invites it to compute an expiry that does not exist. */
+    email_verified: Boolean(u.email_verified_at),
+    phone_verified: Boolean(u.phone_verified_at),
+    /* Precomputed so every screen agrees on what is outstanding without each
+       one re-deriving it — and so "no number at all" and "number not confirmed"
+       cannot drift apart between the banner, the gate and the verify screen. */
+    pending_verification: pendingVerification(u),
+    /* The subset the registration gate will actually refuse on. Differs from
+       pending_verification when the club has no credentials for a channel: the
+       banner still asks for it, but nothing is withheld for a code the member
+       could never receive. */
+    verification_required: enforcedVerification(pendingVerification(u)),
 });
 
 /**
@@ -330,8 +383,34 @@ router.get("/me", requireAccount, async (req: AuthRequest, res: Response): Promi
 /** 2. Edit the details that carry no security weight. */
 router.patch("/me", requireAccount, async (req: AuthRequest, res: Response): Promise<void> => {
     try {
-        const { name, emergency_contact } = req.body ?? {};
-        const data: { name?: string; emergency_contact?: string | null } = {};
+        const { name, emergency_contact, phone } = req.body ?? {};
+        const data: {
+            name?: string;
+            emergency_contact?: string | null;
+            phone?: string;
+            phone_verified_at?: Date | null;
+        } = {};
+
+        /*
+         * Changing the number un-verifies it. Not doing so would be the whole
+         * hole: prove one number, then quietly swap in another and keep the
+         * verified badge on a number nobody has confirmed.
+         *
+         * Not clearable, unlike emergency_contact — the club requires one.
+         */
+        if (phone !== undefined) {
+            const normalised = normalisePhone(phone);
+            if (!normalised.ok) {
+                res.status(400).json({ error: normalised.error });
+                return;
+            }
+            const current = await prisma.user.findUnique({
+                where: { id: req.user!.id },
+                select: { phone: true },
+            });
+            data.phone = normalised.e164;
+            if (current?.phone !== normalised.e164) data.phone_verified_at = null;
+        }
 
         if (name !== undefined) {
             const trimmed = String(name).trim();
@@ -417,9 +496,15 @@ router.patch("/me/email", requireAccount, async (req: AuthRequest, res: Response
             return;
         }
 
+        /*
+         * A new address is an unproven address, so the verified mark comes off.
+         * Keeping it would make the whole exercise theatre: verify a mailbox you
+         * own, then swap the account to any address you like and stay "verified"
+         * on one nobody has confirmed.
+         */
         const updated = await prisma.user.update({
             where: { id: user.id },
-            data: { email: next },
+            data: { email: next, email_verified_at: null },
         });
 
         await prisma.notification.create({
@@ -429,6 +514,16 @@ router.patch("/me/email", requireAccount, async (req: AuthRequest, res: Response
             },
         });
 
+        // Send a code to the new address straight away, and put the reminder
+        // back. Best-effort: a failed send must not undo the email change.
+        const codeSent = await issueCode({
+            userId: updated.id,
+            name: updated.name,
+            channel: "EMAIL",
+            destination: updated.email,
+        });
+        await ensureVerificationNudge(updated);
+
         /**
          * The old token still carries the previous email in its payload. Nothing
          * authorises off that field — `requireRole` reads the role and every query
@@ -436,9 +531,14 @@ router.patch("/me/email", requireAccount, async (req: AuthRequest, res: Response
          * member must use the new address next time they sign in.
          */
         res.json({
-            message: "Email updated — use it next time you sign in",
+            message: "Email updated — confirm it with the code we just sent",
             user: publicUser(updated),
             changed: true,
+            verification: {
+                email_code_sent: codeSent.ok,
+                sent_to: codeSent.sent_to ?? null,
+                simulated: codeSent.simulated ?? false,
+            },
         });
     } catch (error: any) {
         res.status(500).json({ error: error.message || "Could not change your email" });

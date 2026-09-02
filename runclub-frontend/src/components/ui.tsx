@@ -190,15 +190,18 @@ export function Field({
   error,
   children,
   htmlFor,
+  className,
 }: {
   label: string;
   hint?: string;
   error?: string;
   children: ReactNode;
   htmlFor?: string;
+  /** Spacing for the field within its form — the label styling is fixed. */
+  className?: string;
 }) {
   return (
-    <div className="space-y-1.5">
+    <div className={cn("space-y-1.5", className)}>
       <label htmlFor={htmlFor} className="eyebrow block text-ink-2">
         {label}
       </label>

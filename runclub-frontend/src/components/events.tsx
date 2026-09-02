@@ -23,7 +23,7 @@ import type { ClubEvent, Registration } from "../lib/types";
 import { ClockIcon, DisciplineIcon, DownloadIcon, PinIcon } from "./icons";
 import { Confetti, Spotlight } from "./motion";
 import { FlipCard, Tilt } from "./tilt";
-import { Badge, Button, Card, Checkbox, Field, Input, Modal, Spinner, useToast } from "./ui";
+import { Badge, Button, buttonClass, Card, Checkbox, Field, Input, Modal, Spinner, useToast } from "./ui";
 
 const EVENT_STATUS_TINT: Record<string, string> = {
   DRAFT: "var(--color-pending)",
@@ -211,7 +211,7 @@ export function RegisterDialog({
   onClose: () => void;
   onDone: (registration: Registration) => void;
 }) {
-  const { user, patchUser, role } = useAuth();
+  const { user, patchUser, role, verificationBlocksEntry } = useAuth();
   const toast = useToast();
 
   const [contact, setContact] = useState(user?.emergency_contact ?? "");
@@ -315,7 +315,12 @@ export function RegisterDialog({
        * the generic "Registration failed" reads like a bug when it isn't, and there
        * is nothing the member can retry.
        */
-      if (err instanceof ApiError && err.status === 409) {
+      if (err instanceof ApiError && err.needsVerification) {
+        // The cached user said verified but the server disagrees — a stale tab,
+        // or a detail changed elsewhere. Say what to do rather than echoing the
+        // sentence, which reads like a bug at the end of a form.
+        setError(`${err.message} Open "Your account" from the banner at the top of the page.`);
+      } else if (err instanceof ApiError && err.status === 409) {
         setError("The last place just went — this event filled up while you were signing up.");
       } else {
         setError(err instanceof Error ? err.message : "Registration failed");
@@ -328,6 +333,41 @@ export function RegisterDialog({
       setStage("idle");
     }
   };
+
+  /*
+   * Intercepted here rather than at each button. Three pages open this dialog —
+   * the event page, the calendar and my tickets — and putting the check on the
+   * buttons would mean three copies, one of which would eventually be missed.
+   * Better to catch it before the form than to let somebody sign a waiver and
+   * pick a payment method only to be refused at the end.
+   */
+  if (open && verificationBlocksEntry) {
+    const blocking = user?.verification_required ?? { email: false, phone: false };
+    const what =
+      blocking.email && blocking.phone
+        ? "your email address and mobile number"
+        : blocking.email
+          ? "your email address"
+          : "your mobile number";
+    return (
+      <Modal open={open} onClose={onClose} title="One step first" subtitle={event.title}>
+        <p className="text-[14px] leading-relaxed text-ink-2">
+          Confirm <strong className="text-ink">{what}</strong> before taking a spot. We send your
+          ticket to your email, and the organisers need a number that rings if the route or the
+          start time changes on the day.
+        </p>
+        <p className="mt-3 text-[13px] text-ink-3">It takes about a minute.</p>
+        <div className="mt-6 flex flex-wrap gap-2">
+          <Link to="/verify" className={buttonClass("gold", "md")} onClick={onClose}>
+            Confirm now
+          </Link>
+          <Button variant="ghost" onClick={onClose}>
+            Not now
+          </Button>
+        </div>
+      </Modal>
+    );
+  }
 
   return (
     <>

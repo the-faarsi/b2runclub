@@ -194,6 +194,7 @@ export function Signup() {
     name: "",
     email: "",
     password: "",
+    phone: "",
     role: "MEMBER",
     emergency_contact: "",
   });
@@ -218,11 +219,15 @@ export function Signup() {
         name: form.name.trim(),
         email: form.email.trim(),
         password: form.password,
+        phone: form.phone.trim(),
         role: form.role,
         emergency_contact: form.emergency_contact.trim() || undefined,
       });
-      toast(`You're in. Welcome, ${user.name.split(" ")[0]}.`, "ok");
-      navigate(user.role === "ADMIN" ? "/admin" : "/events", { replace: true });
+      toast(`You're in, ${user.name.split(" ")[0]}. One more step.`, "ok");
+      /* Straight to the codes rather than to /events. Signup has already sent
+         the email one, and an account that cannot take a spot yet has nothing
+         to do on the events page. */
+      navigate("/verify", { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Registration failed");
     } finally {
@@ -307,15 +312,34 @@ export function Signup() {
             MEMBER from this form. */}
 
         <Field
+          label="Mobile number"
+          htmlFor="phone"
+          hint="We'll send a code on WhatsApp to confirm it."
+        >
+          <Input
+            id="phone"
+            type="tel"
+            required
+            inputMode="tel"
+            autoComplete="tel"
+            value={form.phone}
+            onChange={set("phone")}
+            placeholder="98765 43210"
+          />
+        </Field>
+
+        {/* Deliberately right below the member's own number, and worded to
+            separate the two — organisers need to know which one to ring. */}
+        <Field
           label="Emergency contact"
           htmlFor="emergency"
-          hint="Optional now, required before you register for a run."
+          hint="Somebody else's number, for race day. Optional now."
         >
           <Input
             id="emergency"
             value={form.emergency_contact}
             onChange={set("emergency_contact")}
-            placeholder="Phone number of a family member or friend"
+            placeholder="A family member or friend"
             autoComplete="tel"
           />
         </Field>

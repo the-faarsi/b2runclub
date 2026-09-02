@@ -5,7 +5,9 @@
   "scripts": {
     "build": "prisma generate && tsc",
     "postinstall": "prisma generate",
-    "dev": "tsx src/server.ts",
+    "//dev": "Local dev runs on SQLite while the deploy target is Postgres, so the client has to be generated from a sqlite-provider schema or @prisma/adapter-libsql refuses to load. Regenerated every time rather than once, because `npm run build` and `postinstall` both flip it back to Postgres.",
+    "dev": "node scripts/local-schema.mjs && prisma generate --schema prisma/schema.local.prisma && tsx src/server.ts",
+    "generate:local": "node scripts/local-schema.mjs && prisma generate --schema prisma/schema.local.prisma",
     "//start": "Migrations run at start, not build: on Render the persistent disk holding the database is only mounted at runtime, so a build-time migrate would target a throwaway filesystem.",
     "start": "prisma migrate deploy && node dist/seed.js && node dist/server.js",
     "test:api": "node dist/test-api.js",

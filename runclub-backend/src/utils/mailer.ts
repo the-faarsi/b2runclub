@@ -225,6 +225,59 @@ export function passwordResetEmail(input: {
     return { to: "", subject: "Reset your B2 Club password", html, text };
 }
 
+/**
+ * The one-time code for proving an email address.
+ *
+ * No link, deliberately. A click-to-verify link in an email is a redirect a
+ * phishing kit can imitate, and it breaks when the member opens their mail on a
+ * different device from the one they signed up on — which for a club whose
+ * members sign up on a phone and read Gmail on a laptop is most of them. A code
+ * they read and type works from anywhere and proves the same thing.
+ */
+export function verificationCodeEmail(input: {
+    name: string;
+    code: string;
+    minutes: number;
+}): Mail {
+    const html = shell(
+        `
+      <p style="margin:0 0 6px;color:${GOLD};font-size:11px;font-weight:700;letter-spacing:0.16em;text-transform:uppercase;">Verify your email</p>
+      <h1 style="margin:0 0 14px;color:${INK};font-size:24px;line-height:1.2;font-weight:800;letter-spacing:-0.03em;">Your code is ${input.code}</h1>
+      <p style="margin:0 0 18px;color:#a5aab5;font-size:14px;line-height:1.6;">
+        Hi ${input.name}, enter this code in the app to confirm this is your address.
+        It expires in ${input.minutes} minutes.
+      </p>
+      <table role="presentation" cellpadding="0" cellspacing="0" style="margin:6px 0;">
+        <tr><td style="background:rgba(233,185,73,0.10);border:1px solid rgba(233,185,73,0.35);border-radius:10px;">
+          <span style="display:inline-block;padding:14px 26px;color:${GOLD};font-size:30px;font-weight:800;letter-spacing:0.22em;font-family:'SF Mono',Menlo,Consolas,monospace;">${input.code}</span>
+        </td></tr>
+      </table>
+      <p style="margin:20px 0 0;color:#6d737f;font-size:12px;line-height:1.6;">
+        If you didn't ask for this, you can ignore it. Nobody can use this code but you,
+        and we'll never ask you for it by phone or on WhatsApp.
+      </p>`,
+        `${input.code} is your B2 Club verification code`,
+    );
+
+    const text = [
+        "Verify your email",
+        "",
+        `Hi ${input.name},`,
+        `Your B2 Club verification code is ${input.code}.`,
+        `It expires in ${input.minutes} minutes.`,
+        "",
+        "If you didn't ask for this, ignore it. We'll never ask you for this code",
+        "by phone or on WhatsApp.",
+    ].join("\n");
+
+    return {
+        to: "",
+        subject: `${input.code} is your B2 Club verification code`,
+        html,
+        text,
+    };
+}
+
 export function reminderEmail(input: {
     name: string;
     eventTitle: string;

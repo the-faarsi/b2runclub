@@ -1,4 +1,5 @@
 import { AnimatePresence, motion } from "framer-motion";
+import { Link } from "react-router-dom";
 import { useEffect, useState, type ReactNode } from "react";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
@@ -88,7 +89,7 @@ const ReadValue = ({ value, empty }: { value?: string | null; empty: string }) =
     <p className="text-[14px] text-ink-3">{empty}</p>
   );
 
-type Section = "name" | "contact" | "email" | "password" | null;
+type Section = "name" | "phone" | "contact" | "email" | "password" | null;
 
 /**
  * Everything the signed-in member can change about their own account.
@@ -108,6 +109,7 @@ export function AccountSettings() {
 
   const [name, setName] = useState("");
   const [contact, setContact] = useState("");
+  const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [emailPassword, setEmailPassword] = useState("");
   const [currentPassword, setCurrentPassword] = useState("");
@@ -121,6 +123,7 @@ export function AccountSettings() {
     if (!user) return;
     if (open === "name") setName(user.name);
     if (open === "contact") setContact(user.emergency_contact ?? "");
+    if (open === "phone") setPhone(user.phone ?? "");
     if (open === "email") {
       setEmail(user.email);
       setEmailPassword("");
@@ -164,6 +167,24 @@ export function AccountSettings() {
       close();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save the contact");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const savePhone = async () => {
+    setError(null);
+    setBusy(true);
+    try {
+      const res = await api.updateProfile({ phone: phone.trim() });
+      /* The whole user, not just the number: changing it clears
+         phone_verified server-side, and patching only `phone` would leave the
+         banner and the gate reading a stale "verified". */
+      patchUser(res.user);
+      toast("Number saved — confirm it with the code we send", "ok");
+      close();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save your number");
     } finally {
       setBusy(false);
     }
@@ -241,10 +262,64 @@ export function AccountSettings() {
         </Button>
       </EditableSection>
 
+      {/* ── Mobile number ────────────────────────────── */}
+      {/* Above the emergency contact deliberately: these two are the pair
+          people confuse, and putting your own number first makes the second
+          one's description read as the contrast it is. */}
+      <EditableSection
+        title="Mobile number"
+        description="Yours. Used for your ticket and for race-day changes."
+        editing={open === "phone"}
+        onEdit={() => setOpen("phone")}
+        onCancel={close}
+        view={
+          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+            <ReadValue value={user.phone} empty="Not set yet" />
+            {user.phone &&
+              (user.phone_verified ? (
+                <span className="text-[12px] font-semibold text-[color:var(--color-paid)]">
+                  Confirmed
+                </span>
+              ) : (
+                /* An unconfirmed number is shown as such rather than hidden:
+                   the column can hold one nobody has proved, and an organiser
+                   reading it needs to know that. */
+                <Link
+                  to="/verify"
+                  className="text-[12px] font-semibold text-gold underline decoration-gold/40 underline-offset-4 hover:decoration-gold"
+                >
+                  Not confirmed — confirm it
+                </Link>
+              ))}
+          </div>
+        }
+      >
+        <Field
+          label="Mobile number"
+          htmlFor="acct-phone"
+          hint="Changing it means confirming the new one on WhatsApp."
+        >
+          <Input
+            id="acct-phone"
+            type="tel"
+            inputMode="tel"
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            placeholder="98765 43210"
+            autoComplete="tel"
+            autoFocus
+          />
+        </Field>
+        {error && <ErrorNote>{error}</ErrorNote>}
+        <Button className="mt-4" loading={busy} onClick={savePhone} disabled={!phone.trim()}>
+          Save number
+        </Button>
+      </EditableSection>
+
       {/* ── Emergency contact ────────────────────────── */}
       <EditableSection
         title="Emergency contact"
-        description="Who we call if something happens on a run. Organisers can see it on event day."
+        description="Somebody else's number, for if something happens on a run."
         editing={open === "contact"}
         onEdit={() => setOpen("contact")}
         onCancel={close}

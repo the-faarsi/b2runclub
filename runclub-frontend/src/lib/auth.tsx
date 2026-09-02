@@ -24,11 +24,28 @@ interface AuthValue {
    */
   isClubMember: boolean;
   ready: boolean;
+  /**
+   * What the member still has to confirm. Derived from the server's own
+   * pending_verification so nothing here re-implements the rule.
+   *
+   * Signed-out and VISITOR accounts report nothing outstanding: there is no
+   * account to finish setting up, and a banner nagging a browsing stranger to
+   * verify an address they have not given would be nonsense.
+   */
+  pendingVerification: { email: boolean; phone: boolean };
+  /** True when anything is outstanding — what the banner reads. */
+  needsVerification: boolean;
+  /**
+   * What the registration gate will actually refuse on, which can be a smaller
+   * set than `pendingVerification` — see User.verification_required.
+   */
+  verificationBlocksEntry: boolean;
   login: (email: string, password: string) => Promise<User>;
   signup: (input: {
     email: string;
     password: string;
     name: string;
+    phone: string;
     role?: string;
     emergency_contact?: string;
   }) => Promise<User>;
@@ -133,6 +150,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<AuthValue>(() => {
     const role: Role = user?.role ?? "VISITOR";
+    /*
+     * Falls back to deriving from the fields rather than assuming
+     * pending_verification is present: a user object cached in localStorage by
+     * an older build of the app has neither, and reading `undefined` as false
+     * would quietly mark a stale session fully verified.
+     */
+    const pendingVerification =
+      !user || role === "VISITOR"
+        ? { email: false, phone: false }
+        : (user.pending_verification ?? {
+            email: !user.email_verified,
+            phone: !user.phone || !user.phone_verified,
+          });
+    /* Falls back to the outstanding set when the field is absent — an older
+       cached user, or a server that predates it. Erring toward blocking is the
+       safe direction: the request would be refused anyway, and the member gets
+       told why up front instead of at the end of the form. */
+    const blocking = user?.verification_required ?? pendingVerification;
     return {
       user,
       role,
@@ -140,6 +175,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       canRegister: role === "MEMBER" || role === "VOLUNTEER",
       isClubMember: role === "MEMBER" || role === "VOLUNTEER" || role === "ADMIN",
       ready,
+      pendingVerification,
+      needsVerification: pendingVerification.email || pendingVerification.phone,
+      verificationBlocksEntry: blocking.email || blocking.phone,
       login,
       signup,
       logout,

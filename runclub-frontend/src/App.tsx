@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
 import { Footer, Navbar } from "./components/layout";
+import { VerificationBanner } from "./components/verificationBanner";
 import { ScrollProgress } from "./components/motion";
 import { Spinner } from "./components/ui";
 import { useAuth } from "./lib/auth";
@@ -16,6 +17,7 @@ import { ManageMembers } from "./pages/admin/ManageMembers";
 import { ManagePolls } from "./pages/admin/ManagePolls";
 import { Calendar } from "./pages/Calendar";
 import { About } from "./pages/About";
+import { Verify } from "./pages/Verify";
 import { PrivacyPage, RefundPage, TermsPage, VolunteerTermsPage } from "./pages/Policy";
 import { EventDetail } from "./pages/EventDetail";
 import { Gallery } from "./pages/Gallery";
@@ -48,6 +50,11 @@ function Shell() {
     <div className="flex min-h-screen flex-col overflow-x-clip">
       <ScrollProgress />
       <Navbar />
+      {/* Under the navbar rather than inside it: the navbar is a sticky 64px
+          band and adding a variable-height strip to it would shift every
+          page's top offset, including the pinned "How it works" section that
+          is tuned against it. */}
+      <VerificationBanner />
       <div className="flex-1">
         <Outlet />
       </div>
@@ -98,6 +105,18 @@ export default function App() {
         {/* Gallery is view-only for members and visitors; posting is gated in the page. */}
         <Route path="/gallery" element={<Gallery />} />
         <Route path="/about" element={<About />} />
+
+        {/* Signed in only — there is no account to confirm otherwise. Not
+            role-gated: an admin who has not confirmed their own details needs
+            this page as much as anybody. */}
+        <Route
+          path="/verify"
+          element={
+            <Guard>
+              <Verify />
+            </Guard>
+          }
+        />
 
         {/* Policies are public: someone deciding whether to join needs to read
             the terms and the refund rules before they have an account. */}
