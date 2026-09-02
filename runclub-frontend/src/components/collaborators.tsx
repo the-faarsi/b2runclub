@@ -65,8 +65,20 @@ export function FeaturedPartners() {
           const handle = c.website ? instagramHandle(c.website) : null;
           const isInstagram = Boolean(c.website && /instagram\.com/i.test(c.website));
 
+          /*
+           * The card is a column on a phone and the row it was from sm up.
+           *
+           * It relied on flex-wrap before, which did put the link under the
+           * text — but left the logo and the text side by side, and the logo is
+           * 96px of a 358px card. That squeezed the blurb into 192px at 390 and
+           * 122px at 320, where it wrapped to five lines. Stacking hands the
+           * text the full width.
+           */
           return (
-            <Card key={c.id} className="card-glow flex flex-wrap items-center gap-5 p-6 sm:p-7">
+            <Card
+              key={c.id}
+              className="card-glow flex flex-col items-start gap-4 p-5 sm:flex-row sm:flex-wrap sm:items-center sm:gap-5 sm:p-7"
+            >
               {/*
                 The logo on its own — no frame, no tint, no rounded plate.
 
@@ -92,7 +104,7 @@ export function FeaturedPartners() {
                   src={c.logo_url}
                   alt=""
                   aria-hidden
-                  className="h-24 w-auto max-w-44 shrink-0 object-contain sm:h-28"
+                  className="h-20 w-auto max-w-40 shrink-0 object-contain sm:h-28 sm:max-w-44"
                 />
               ) : (
                 <span
@@ -103,7 +115,10 @@ export function FeaturedPartners() {
                 </span>
               )}
 
-              <div className="min-w-0 flex-1">
+              {/* `w-full` on a phone so the blurb uses the whole card;
+                  `flex-1` only once it is sharing a row, since in a column it
+                  would grow on the wrong axis. */}
+              <div className="w-full min-w-0 sm:w-auto sm:flex-1">
                 <h3 className="display text-[clamp(20px,2.4vw,26px)]">{c.name}</h3>
                 {c.blurb && (
                   <p className="mt-1.5 max-w-prose text-[13.5px] leading-relaxed text-ink-2">
@@ -117,7 +132,10 @@ export function FeaturedPartners() {
                   href={isInstagram ? instagramHref(c.website) : c.website}
                   target="_blank"
                   rel="noreferrer"
-                  className={buttonClass("outline", "md", "shrink-0")}
+                  /* Full width on a phone, where it is last in the stack and
+                     a 212px pill left-aligned under a full-width blurb reads
+                     as unfinished. */
+                  className={buttonClass("outline", "md", "w-full shrink-0 justify-center sm:w-auto")}
                 >
                   {isInstagram ? (
                     <>
