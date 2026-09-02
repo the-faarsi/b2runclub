@@ -122,7 +122,28 @@ function NotificationBell() {
   };
 
   return (
-    <div ref={ref} className="relative">
+    /*
+     * `sm:relative`, so on a phone this box is *static* and the panel below
+     * anchors to the navbar row instead — which spans the viewport.
+     *
+     * Anchoring to this box is what cut the panel off. `right-0` pins the
+     * panel's right edge to the bell, and the bell is not at the right edge of
+     * the screen: the avatar sits beside it, putting the bell's own right edge
+     * at x=276 on a 390px phone. A 358px panel therefore started at -82, and
+     * the Shell's `overflow-x: clip` hid that 82px with no way to scroll to it —
+     * measured as 23% of the panel gone at 390px and 28% at 320px.
+     *
+     * The measured chain from here is: this box -> div.relative.mx-auto (the
+     * navbar row) -> header. The row is `relative` at every breakpoint and
+     * spans the full width below 1280px, so dropping out of the way hands the
+     * panel a viewport-wide containing block for free.
+     *
+     * Not `position: fixed`, which would be the obvious alternative: the header
+     * takes `backdrop-blur-xl` once scrolled, and a backdrop-filter makes an
+     * element a containing block for fixed descendants — so the panel would
+     * jump the moment somebody scrolled.
+     */
+    <div ref={ref} className="sm:relative">
       <button
         onClick={() => setOpen((o) => !o)}
         aria-label={`Notifications${unread ? `, ${unread} unread` : ""}`}
@@ -152,7 +173,23 @@ function NotificationBell() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -6, scale: 0.98 }}
             transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-            className="card absolute right-0 top-11 z-50 w-[min(360px,calc(100vw-2rem))] overflow-hidden p-0"
+            className={cn(
+              "card absolute z-50 overflow-hidden p-0",
+              /* Phone: pinned to both gutters of the navbar row, so the width
+                 is whatever is left between them and cannot overflow either
+                 edge. `top-full` is the foot of the 64px bar.
+
+                 Capped and right-aligned rather than simply filling the space:
+                 with both insets set and nothing else, a 639px screen got a
+                 607px-wide dropdown, which is not a dropdown. Under ~392px the
+                 cap does not bind and it runs gutter to gutter; above that
+                 `ml-auto` keeps it against the right gutter, near the bell it
+                 belongs to. */
+              "inset-x-4 top-full ml-auto max-w-[360px]",
+              /* sm and up: back to hanging off the bell, which measured
+                 correctly at 768 and 1440. */
+              "sm:inset-x-auto sm:right-0 sm:top-11 sm:w-[min(360px,calc(100vw-2rem))]",
+            )}
           >
             <div className="flex items-center justify-between border-b border-white/8 px-4 py-3">
               <p className="eyebrow text-ink-2">Notifications</p>
