@@ -72,9 +72,26 @@ export function HeroVideo() {
    * gradient — still solid black in the mask — and the fade played out beyond
    * the element where there is nothing to fade. `farthest-side` makes 100% land
    * exactly on each edge, so `transparent 100%` means transparent at the border.
+   *
+   * The stops were 38% / 0.5 at 76% / 0 at 100%, which held the clip fully
+   * opaque across only the middle 38% of the radius and spent the other 62%
+   * fading. That is a vignette rather than a feathered edge: it squeezed the
+   * picture into a small oval and dimmed the faces at the ends of the group.
+   *
+   * Now the plateau reaches 72% and the whole falloff happens in the outer 28%.
+   * Along the horizontal centre line, where 100% is the left or right border:
+   *
+   *      radius     50%     76%     88%     95%
+   *      was       0.84    0.50    0.25    0.10
+   *      now       1.00    0.94    0.75    0.36
+   *
+   * So the fade is narrower (28% of the radius instead of 62%), shallower at
+   * every point, and covers less of the frame — while still dissolving all four
+   * edges, which is what stops the two vertical seams appearing mid-screen on a
+   * wide display.
    */
   const featherMask =
-    "radial-gradient(farthest-side ellipse at 50% 50%, #000 38%, rgba(0,0,0,0.5) 76%, transparent 100%)";
+    "radial-gradient(farthest-side ellipse at 50% 50%, #000 72%, rgba(0,0,0,0.72) 90%, transparent 100%)";
 
   return (
     <div
