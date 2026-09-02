@@ -297,24 +297,29 @@ export function Landing() {
         ref={heroRef}
         className="relative mx-auto max-w-7xl px-4 pb-16 pt-14 sm:px-6 sm:pt-20 lg:px-8"
       >
-        {/* Background video, set by an organiser. */}
-        <HeroVideo />
         {/*
-          The 3D ribbon-and-orbit graphic used to sit here, between the pill and
-          the button. It is gone.
+          The video area, and its own positioning context.
 
-          The min-height replaces it. HeroVideo is an absolutely positioned layer
-          filling this section, so the section's height *is* the video's height —
-          without something holding it open, removing a 230-500px element left
-          the clip as a thin strip behind two small controls.
+          HeroVideo is `absolute inset-y-0`, so whatever box it sits in decides
+          where the clip ends. It used to be this section, which made the video
+          the full height of the hero and put the call to action on top of the
+          picture — over the group, in the case of the club's own clip. Scoping
+          it to this div ends the clip here, and the button below then sits on
+          the page.
+
+          The min-height stands in for the 3D ribbon-and-orbit graphic that used
+          to be here: the section has no other content tall enough, so without
+          it the clip collapsed to a thin strip behind a pill.
+
+          The video still spans the viewport, not this box — it is `w-screen`
+          and centred on its container's centre, which is the viewport's centre
+          because the section is `mx-auto`.
         */}
-        {/* justify-between, not center: the pill sits at the top of the video
-              area and the call to action at the foot of it. Centred, the button
-              landed in the middle of the clip and covered the subject. */}
-          <div className="flex min-h-[clamp(340px,48vh,520px)] flex-col items-center justify-between gap-8 pb-2 pt-2 text-center">
+        <div className="relative flex min-h-[clamp(340px,48vh,520px)] flex-col items-center pt-2 text-center">
+          <HeroVideo />
           <span
             ref={heroPillRef}
-            className="inline-flex items-center gap-2 rounded-full border border-gold/25 bg-gold/8 px-3 py-1.5"
+            className="relative inline-flex items-center gap-2 rounded-full border border-gold/25 bg-gold/8 px-3 py-1.5"
           >
             <span className="size-1.5 rounded-full bg-gold pulse-ring" aria-hidden />
             <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-gold">
@@ -323,43 +328,45 @@ export function Landing() {
                 : "Season in planning"}
             </span>
           </span>
-
-          <div className="flex flex-col items-center gap-4">
-            <Link
-              ref={heroBtnPrimaryRef}
-              to={user ? "/calendar" : "/signup"}
-              className={buttonClass(
-                "gold",
-                "lg",
-                "sweep px-10 py-5 text-[18px] sm:px-14 sm:py-6 sm:text-[20px]",
-              )}
-            >
-              {user ? "See the calendar" : "Join Us"}
-              <svg viewBox="0 0 24 24" className="size-5" fill="none" aria-hidden>
-                <path
-                  d="M5 12h14m-6-6 6 6-6 6"
-                  stroke="currentColor"
-                  strokeWidth="2.2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </Link>
-
-            {/* Quiet second option for anyone not ready to sign up. A text link
-                rather than a button, so the big one stays the only real call. */}
-            {!user && (
-              <Link
-                ref={heroBtnSecondaryRef}
-                to="/calendar"
-                className="tap text-[13.5px] text-gold transition-opacity hover:opacity-75"
-              >
-                or see what's on →
-              </Link>
-            )}
-          </div>
         </div>
 
+        {/* Below the video rather than over it, so nothing covers the subject.
+            The scrim inside HeroVideo reaches the page colour at its foot, so
+            the clip has already dissolved by the time this starts. */}
+        <div className="flex flex-col items-center gap-4 pt-9 text-center">
+          <Link
+            ref={heroBtnPrimaryRef}
+            to={user ? "/calendar" : "/signup"}
+            className={buttonClass(
+              "gold",
+              "lg",
+              "sweep px-10 py-5 text-[18px] sm:px-14 sm:py-6 sm:text-[20px]",
+            )}
+          >
+            {user ? "See the calendar" : "Join Us"}
+            <svg viewBox="0 0 24 24" className="size-5" fill="none" aria-hidden>
+              <path
+                d="M5 12h14m-6-6 6 6-6 6"
+                stroke="currentColor"
+                strokeWidth="2.2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </Link>
+
+          {/* Quiet second option for anyone not ready to sign up. A text link
+              rather than a button, so the big one stays the only real call. */}
+          {!user && (
+            <Link
+              ref={heroBtnSecondaryRef}
+              to="/calendar"
+              className="tap text-[13.5px] text-gold transition-opacity hover:opacity-75"
+            >
+              or see what's on →
+            </Link>
+          )}
+        </div>
       </section>
 
       {/* ── Next up ───────────────────────────────────────── */}
