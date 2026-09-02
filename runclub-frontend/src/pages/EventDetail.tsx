@@ -7,7 +7,7 @@ import { EventFeedbackCard, FeedbackSummaryCard } from "../components/eventFeedb
 import { EventPhotoStrip } from "../components/eventPhotos";
 import { EventReminders } from "../components/eventReminders";
 import { EventResultsSheet, ResultsEditor } from "../components/eventResults";
-import { EventCoverBackdrop, EventMeta } from "../components/eventCover";
+import { coverUrl, EventCoverBackdrop, EventMeta } from "../components/eventCover";
 import { EventRoster } from "../components/eventRoster";
 import { LocationMap } from "../components/locationMap";
 import { QuickCheckIn } from "../components/quickCheckIn";
@@ -139,6 +139,10 @@ export function EventDetail() {
     );
   }
 
+  /* Normalised once: the hero, the terrain backdrop, the badge block and the
+     meta row all switch on whether there is a cover, and they have to agree. */
+  const cover = coverUrl(event.cover_url);
+
   const facts = [
     { label: "Date", value: fullDate(event.date_time) },
     { label: "Start time", value: eventTime(event.date_time) },
@@ -173,10 +177,10 @@ export function EventDetail() {
         The gradient is doing real work — a photo behind `display` type at 52px
         is unreadable without one.
       */}
-      {event.cover_url && (
+      {cover && (
         <div className="relative mb-6 overflow-hidden rounded-3xl border border-white/8">
           <div className="relative h-[min(52vh,420px)] w-full">
-            <EventCoverBackdrop url={event.cover_url} scrim="hero" />
+            <EventCoverBackdrop url={cover} scrim="hero" />
 
             {/* Title block, bottom-left over the image. */}
             <div className="absolute inset-x-0 bottom-0 p-5 sm:p-7">
@@ -213,7 +217,7 @@ export function EventDetail() {
           backdrop at all. Terrain suits this page — it is the route view.
           Suppressed when a cover is set: two backdrops behind the same title
           just muddle each other. */}
-      {!event.cover_url && <PageScene variant="terrain" opacity={0.24} />}
+      {!cover && <PageScene variant="terrain" opacity={0.24} />}
       {/* The "All events" link that used to sit here was removed: <Page> renders
           a generic Back control, and arriving from the events list made the two
           land in the same place, so the header read "← Back ← All events" with
@@ -237,7 +241,7 @@ export function EventDetail() {
         <div>
           {/* Badges and title only when there is no hero to carry them —
               otherwise the page would state its own name twice. */}
-          {!event.cover_url && (
+          {!cover && (
             <>
               <div className="flex flex-wrap items-center gap-2.5">
                 <span className="inline-flex items-center gap-2 rounded-full border border-gold/25 bg-gold/8 px-3 py-1">
@@ -266,7 +270,7 @@ export function EventDetail() {
 
           {/* Without a cover there is no hero to carry when and where, so the
               same icon row appears here instead — one shape either way. */}
-          {!event.cover_url && <EventMeta event={event} className="mt-4" />}
+          {!cover && <EventMeta event={event} className="mt-4" />}
 
           <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-ink-2">
             {event.price === 0

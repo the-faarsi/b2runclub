@@ -3,6 +3,21 @@ import type { ClubEvent } from "../lib/types";
 import { CalendarIcon, PinIcon } from "./icons";
 
 /**
+ * An event's cover URL, or null when it hasn't got one.
+ *
+ * The string "null" is rejected as well as the empty one. The edit route used to
+ * write `String(cover_url)` when an event was saved without a picture, so rows
+ * holding the four characters "null" are already in the database — the route is
+ * fixed, but the values it wrote outlive the fix. A plain falsiness check lets
+ * them through, because "null" is a perfectly truthy string, and the card ends
+ * up pointing an <img> at /null and painting a broken-image glyph in its corner.
+ */
+export function coverUrl(url: string | null | undefined): string | null {
+  const raw = (url ?? "").trim();
+  return !raw || raw === "null" || raw === "undefined" ? null : raw;
+}
+
+/**
  * An event's cover image, as the background of whatever surface it sits in.
  *
  * One component rather than the same img-plus-gradient in five places: the
@@ -23,7 +38,8 @@ export function EventCoverBackdrop({
   scrim?: "card" | "hero" | "row";
   className?: string;
 }) {
-  if (!url) return null;
+  const src = coverUrl(url);
+  if (!src) return null;
 
   /*
    * These were much heavier — the card sat at 0.93/0.86/0.78, which measured a
@@ -48,7 +64,7 @@ export function EventCoverBackdrop({
   return (
     <div aria-hidden className={cn("pointer-events-none absolute inset-0 overflow-hidden", className)}>
       <img
-        src={url}
+        src={src}
         alt=""
         loading="lazy"
         decoding="async"

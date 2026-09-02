@@ -399,8 +399,14 @@ router.put("/:id", requireRole(["ADMIN"]), async (req: AuthRequest, res: Respons
         // Present-but-empty clears the cover, so this is keyed on `undefined`
         // rather than falsiness. The replaced file is binned after the row is
         // updated, further down.
+        //
+        // The type check matters: the form sends cover_url: null for an event
+        // saved without a picture, and String(null) is the four-character string
+        // "null" — truthy, so it survived the `|| null` and got written to the
+        // column. Every card then pointed an <img> at /null. Same shape as the
+        // create route above, deliberately.
         if (cover_url !== undefined) {
-            dataToUpdate.cover_url = String(cover_url).trim() || null;
+            dataToUpdate.cover_url = typeof cover_url === "string" ? cover_url.trim() || null : null;
         }
         if (capacity !== undefined) {
             const parsed = parseCapacity(capacity);
