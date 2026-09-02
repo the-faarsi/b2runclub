@@ -8,10 +8,9 @@ import { passwordResetEmail, sendMail } from "../utils/mailer";
 import { JWT_SECRET } from "../utils/secrets";
 import { normalisePhone } from "../utils/phone";
 import {
-    enforcedVerification,
     ensureVerificationNudge,
     issueCode,
-    pendingVerification,
+    verificationRequired,
 } from "../utils/verification";
 
 const router = Router();
@@ -28,10 +27,12 @@ router.post("/register", async (req: Request, res: Response): Promise<void> => {
 
         /*
          * The member's own number, required at signup because the club needs a
-         * way to reach the person who is actually running. Stored straight away
-         * so the verify screen can prefill it, but phone_verified_at stays null
-         * until a code comes back — that column, not this one, is what the gate
-         * and every organiser-facing screen read.
+         * way to reach the person who is actually running. Distinct from
+         * emergency_contact, which is somebody else's.
+         *
+         * Normalised but not verified: there is no sender to put a code on, so
+         * this is taken on trust. Registration is gated on the email address
+         * alone.
          */
         const normalisedPhone = normalisePhone(phone);
         if (!normalisedPhone.ok) {
@@ -335,7 +336,6 @@ const publicUser = (u: {
     created_at: Date;
     phone: string | null;
     email_verified_at: Date | null;
-    phone_verified_at: Date | null;
 }) => ({
     id: u.id,
     email: u.email,
@@ -343,20 +343,16 @@ const publicUser = (u: {
     role: u.role,
     emergency_contact: u.emergency_contact,
     created_at: u.created_at,
+    /* Collected and required at signup, but not proved — there is no way to
+       send a code to it. Nothing in the app claims it is verified. */
     phone: u.phone,
-    /* Booleans rather than the timestamps: the client only ever asks whether,
+    /* A boolean rather than the timestamp: the client only ever asks whether,
        and a date invites it to compute an expiry that does not exist. */
     email_verified: Boolean(u.email_verified_at),
-    phone_verified: Boolean(u.phone_verified_at),
-    /* Precomputed so every screen agrees on what is outstanding without each
-       one re-deriving it — and so "no number at all" and "number not confirmed"
-       cannot drift apart between the banner, the gate and the verify screen. */
-    pending_verification: pendingVerification(u),
-    /* The subset the registration gate will actually refuse on. Differs from
-       pending_verification when the club has no credentials for a channel: the
-       banner still asks for it, but nothing is withheld for a code the member
-       could never receive. */
-    verification_required: enforcedVerification(pendingVerification(u)),
+    /* Whether the registration gate will actually refuse this member. Not the
+       same as !email_verified: with no mailer configured nothing is withheld,
+       because the member could never receive the code. */
+    verification_required: verificationRequired(u),
 });
 
 /**
@@ -388,28 +384,17 @@ router.patch("/me", requireAccount, async (req: AuthRequest, res: Response): Pro
             name?: string;
             emergency_contact?: string | null;
             phone?: string;
-            phone_verified_at?: Date | null;
         } = {};
 
-        /*
-         * Changing the number un-verifies it. Not doing so would be the whole
-         * hole: prove one number, then quietly swap in another and keep the
-         * verified badge on a number nobody has confirmed.
-         *
-         * Not clearable, unlike emergency_contact — the club requires one.
-         */
+        // Normalised so the column holds one shape. Not clearable, unlike
+        // emergency_contact — the club requires a number for every member.
         if (phone !== undefined) {
             const normalised = normalisePhone(phone);
             if (!normalised.ok) {
                 res.status(400).json({ error: normalised.error });
                 return;
             }
-            const current = await prisma.user.findUnique({
-                where: { id: req.user!.id },
-                select: { phone: true },
-            });
             data.phone = normalised.e164;
-            if (current?.phone !== normalised.e164) data.phone_verified_at = null;
         }
 
         if (name !== undefined) {

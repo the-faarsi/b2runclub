@@ -342,19 +342,12 @@ export function RegisterDialog({
    * pick a payment method only to be refused at the end.
    */
   if (open && verificationBlocksEntry) {
-    const blocking = user?.verification_required ?? { email: false, phone: false };
-    const what =
-      blocking.email && blocking.phone
-        ? "your email address and mobile number"
-        : blocking.email
-          ? "your email address"
-          : "your mobile number";
     return (
       <Modal open={open} onClose={onClose} title="One step first" subtitle={event.title}>
         <p className="text-[14px] leading-relaxed text-ink-2">
-          Confirm <strong className="text-ink">{what}</strong> before taking a spot. We send your
-          ticket to your email, and the organisers need a number that rings if the route or the
-          start time changes on the day.
+          Confirm <strong className="text-ink">your email address</strong> before taking a spot.
+          Your ticket goes to your inbox, and the organisers use it to reach you if the route or
+          the start time changes on the day.
         </p>
         <p className="mt-3 text-[13px] text-ink-3">It takes about a minute.</p>
         <div className="mt-6 flex flex-wrap gap-2">

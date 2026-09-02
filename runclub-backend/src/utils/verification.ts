@@ -1,5 +1,4 @@
 import prisma from "./prisma";
-import { maskPhone } from "./phone";
 import {
     cleanCode,
     codeMatches,
@@ -12,19 +11,24 @@ import {
     OTP_TTL_MINUTES,
 } from "./otp";
 import { mailerConfigured, sendMail, verificationCodeEmail } from "./mailer";
-import { sendWhatsAppCode, whatsappConfigured } from "./whatsapp";
 
 /**
- * Issuing and redeeming verification codes.
+ * Issuing and redeeming email verification codes.
  *
- * One module for both channels because the rules — one live code at a time, a
- * resend cooldown, an attempt cap, single use, and a code that only works
- * against the address it was sent to — must be identical for email and phone.
- * Two copies of this would drift, and the weaker copy would be the one that
- * mattered.
+ * Email only. Phone verification was removed once it became clear the club
+ * cannot get a WhatsApp sender approved. The member's number is still collected
+ * and still required at signup; it is simply taken on trust rather than proved.
  */
 
-export type Channel = "EMAIL" | "PHONE";
+/**
+ * Only EMAIL today.
+ *
+ * Kept as a named type rather than dropped because VerificationCode.channel is
+ * a real column and its rows say "EMAIL" — a future second channel goes here
+ * and the storage does not change. The removed phone implementation is in git
+ * history at fa37999 if a WhatsApp sender is ever approved.
+ */
+export type Channel = "EMAIL";
 
 export interface IssueOutcome {
     ok: boolean;
@@ -48,8 +52,7 @@ export interface ConfirmOutcome {
 }
 
 /** What the member is shown: never the full address, never the code. */
-export function maskDestination(channel: Channel, destination: string): string {
-    if (channel === "PHONE") return maskPhone(destination);
+export function maskDestination(_channel: Channel, destination: string): string {
     const [local, domain] = destination.split("@");
     if (!domain) return "your email";
     const head = local.slice(0, 2);
@@ -108,13 +111,10 @@ export async function issueCode(input: {
         },
     });
 
-    const sent =
-        channel === "EMAIL"
-            ? await sendMail({
-                  ...verificationCodeEmail({ name, code, minutes: OTP_TTL_MINUTES }),
-                  to: destination,
-              })
-            : await sendWhatsAppCode(destination, code);
+    const sent = await sendMail({
+        ...verificationCodeEmail({ name, code, minutes: OTP_TTL_MINUTES }),
+        to: destination,
+    });
 
     if (!sent.ok) {
         // Bin the row. Leaving it would start the cooldown on a code the member
@@ -136,16 +136,7 @@ export async function issueCode(input: {
     };
 }
 
-/**
- * Redeems a code and marks the channel verified.
- *
- * For PHONE the number is written again here, not only at signup. Signup and
- * the profile form both store it unverified so the verify screen can prefill
- * it, which means `phone` alone says nothing about whether anyone holds it —
- * `phone_verified_at` is the only column the gate and the organiser screens
- * read. Rewriting it here covers the case where the member corrected the number
- * on the verify screen itself.
- */
+/** Redeems a code and marks the email address verified. */
 export async function confirmCode(input: {
     userId: string;
     channel: Channel;
@@ -202,63 +193,42 @@ export async function confirmCode(input: {
 
     await prisma.user.update({
         where: { id: userId },
-        data:
-            channel === "EMAIL"
-                ? { email_verified_at: now }
-                : { phone: row.destination, phone_verified_at: now },
+        data: { email_verified_at: now },
     });
 
     return { ok: true, status: 200 };
 }
 
-/** What still needs doing, for the client and for the gate. */
-export function pendingVerification(user: {
-    email_verified_at: Date | null;
-    phone_verified_at: Date | null;
-    phone: string | null;
-}) {
-    return {
-        email: !user.email_verified_at,
-        // Both "no number at all" and "a number nobody has confirmed" count as
-        // outstanding. The club requires one either way, and collapsing them
-        // here is what stops the banner, the gate and the verify screen from
-        // disagreeing about whether a member is finished.
-        phone: !user.phone || !user.phone_verified_at,
-    };
+/** Whether the member still has an unconfirmed email address. */
+export function emailPending(user: { email_verified_at: Date | null }): boolean {
+    return !user.email_verified_at;
 }
 
 /**
- * Whether to withhold registration for a channel the club cannot currently send
- * a code on.
+ * Whether to withhold registration when the club cannot currently send a code.
  *
- * `false` — the default — means the gate only enforces channels that actually
- * work. It is not defensible to refuse somebody a place for failing a step they
- * are physically unable to complete: with no WhatsApp credentials the phone
- * code goes to the server log, which a member cannot read, so a strict gate
- * would stop every registration in the club until Meta approves the template.
- * That is an outage, not a policy.
+ * `false` — the default — means an unconfigured mailer does not lock the club
+ * out. Refusing somebody a place for failing a step they are physically unable
+ * to complete is an outage, not a policy: with no SMTP credentials the code is
+ * written to the server log, which a member cannot read.
  *
- * Prompting is unaffected — the banner and the notification still ask for both,
- * so numbers get confirmed as soon as delivery works and the gate tightens on
- * its own with no code change.
+ * Prompting is unaffected either way, so addresses get confirmed the moment
+ * delivery works and the gate tightens on its own.
  *
- * Set to `true` for the strictest reading, once both channels are live.
+ * Set to `true` to refuse regardless.
  */
-export const ENFORCE_UNDELIVERABLE_CHANNELS = false;
+export const ENFORCE_WHEN_UNDELIVERABLE = false;
 
 /**
- * The subset of `pendingVerification` that actually withholds anything.
+ * Whether the registration gate should actually refuse this member.
  *
  * Lives here rather than in the middleware because the client needs the same
  * answer: it intercepts the registration dialog before the form, and if it
  * computed this differently it would refuse a member the server would have let
  * through.
  */
-export function enforcedVerification(pending: { email: boolean; phone: boolean }) {
-    return {
-        email: pending.email && (mailerConfigured || ENFORCE_UNDELIVERABLE_CHANNELS),
-        phone: pending.phone && (whatsappConfigured || ENFORCE_UNDELIVERABLE_CHANNELS),
-    };
+export function verificationRequired(user: { email_verified_at: Date | null }): boolean {
+    return emailPending(user) && (mailerConfigured || ENFORCE_WHEN_UNDELIVERABLE);
 }
 
 const NUDGE_LINK = "/verify";
@@ -273,34 +243,26 @@ const NUDGE_LINK = "/verify";
 export async function ensureVerificationNudge(user: {
     id: string;
     email_verified_at: Date | null;
-    phone_verified_at: Date | null;
-    phone: string | null;
 }): Promise<void> {
-    const pending = pendingVerification(user);
-    if (!pending.email && !pending.phone) return;
+    if (!emailPending(user)) return;
 
     const existing = await prisma.notification.findFirst({
         where: { user_id: user.id, link: NUDGE_LINK, is_read: false },
     });
     if (existing) return;
 
-    const what =
-        pending.email && pending.phone
-            ? "your email address and your phone number"
-            : pending.email
-              ? "your email address"
-              : "your phone number";
-
     await prisma.notification.create({
         data: {
             user_id: user.id,
-            message: `Confirm ${what} to finish setting up your account. You'll need it to take a spot in a session.`,
+            message:
+                "Confirm your email address to finish setting up your account. " +
+                "You'll need it to take a spot in a session.",
             link: NUDGE_LINK,
         },
     });
 }
 
-/** Clears the reminder once there is nothing left to confirm. */
+/** Clears the reminder once the address is confirmed. */
 export async function clearVerificationNudge(userId: string): Promise<void> {
     await prisma.notification.updateMany({
         where: { user_id: userId, link: NUDGE_LINK, is_read: false },

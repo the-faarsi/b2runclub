@@ -1,5 +1,4 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { Link } from "react-router-dom";
 import { useEffect, useState, type ReactNode } from "react";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
@@ -177,11 +176,8 @@ export function AccountSettings() {
     setBusy(true);
     try {
       const res = await api.updateProfile({ phone: phone.trim() });
-      /* The whole user, not just the number: changing it clears
-         phone_verified server-side, and patching only `phone` would leave the
-         banner and the gate reading a stale "verified". */
-      patchUser(res.user);
-      toast("Number saved — confirm it with the code we send", "ok");
+      patchUser({ phone: res.user.phone });
+      toast("Number updated", "ok");
       close();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save your number");
@@ -268,36 +264,16 @@ export function AccountSettings() {
           one's description read as the contrast it is. */}
       <EditableSection
         title="Mobile number"
-        description="Yours. Used for your ticket and for race-day changes."
+        description="Yours, for race-day changes. Organisers can see it on event day."
         editing={open === "phone"}
         onEdit={() => setOpen("phone")}
         onCancel={close}
-        view={
-          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
-            <ReadValue value={user.phone} empty="Not set yet" />
-            {user.phone &&
-              (user.phone_verified ? (
-                <span className="text-[12px] font-semibold text-[color:var(--color-paid)]">
-                  Confirmed
-                </span>
-              ) : (
-                /* An unconfirmed number is shown as such rather than hidden:
-                   the column can hold one nobody has proved, and an organiser
-                   reading it needs to know that. */
-                <Link
-                  to="/verify"
-                  className="text-[12px] font-semibold text-gold underline decoration-gold/40 underline-offset-4 hover:decoration-gold"
-                >
-                  Not confirmed — confirm it
-                </Link>
-              ))}
-          </div>
-        }
+        view={<ReadValue value={user.phone} empty="Not set yet" />}
       >
         <Field
           label="Mobile number"
           htmlFor="acct-phone"
-          hint="Changing it means confirming the new one on WhatsApp."
+          hint="Ten digits, or the full number with its country code."
         >
           <Input
             id="acct-phone"

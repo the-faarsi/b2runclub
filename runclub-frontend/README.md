@@ -201,56 +201,51 @@ are all exercisable before any credentials exist, and a missing config can never
 crash a sweep. `GET /api/admin/mailer` reports whether SMTP is configured and
 reachable, and the status panel says plainly which mode you are in.
 
-### Email and phone verification
+### Email verification
 
-Every account confirms two things with a six-digit code: the email address, and
-the member's own mobile number. Both are mandatory — an unconfirmed member can
-browse, post and vote, but cannot take a spot in a session. That is the one
-action where an unreachable member is a real problem: the ticket goes to their
-email, and the organisers need a number that rings if the route changes on the
-day.
+Every account confirms its email address with a six-digit code. It is mandatory:
+an unconfirmed member can browse, post and vote, but cannot take a spot in a
+session. That is the one action where an unreachable member is a real problem —
+the ticket goes to their inbox, and it is how organisers reach them if a session
+changes.
 
 Existing accounts are not locked out. They get a standing banner and one
 notification, and the registration dialog offers a link straight to `/verify`
 instead of the waiver form.
 
-The email code goes over the SMTP transport above. The phone code goes over
-**WhatsApp**, via Meta's Cloud API:
-
-```bash
-# runclub-backend/.env
-WHATSAPP_PHONE_NUMBER_ID=<from WhatsApp Manager>
-WHATSAPP_ACCESS_TOKEN=<permanent system-user token>
-WHATSAPP_OTP_TEMPLATE=b2club_verification   # default
-WHATSAPP_OTP_TEMPLATE_LANG=en               # default
-WHATSAPP_OTP_COPY_BUTTON=true               # default; false if your template has no button
-WHATSAPP_API_VERSION=v21.0                  # default
-```
-
-The template is not optional. Meta only allows a business to start a
-conversation from a pre-approved template, and a signup is by definition
-business-initiated — a free-form message would be rejected unless the member had
-messaged the club in the previous 24 hours. Create it in WhatsApp Manager under
-the **Authentication** category, which is the only one permitted to carry a
-one-time code. Authentication templates include a "Copy code" button by default;
-that button needs the code passed a second time as its own parameter, which is
-what `WHATSAPP_OTP_COPY_BUTTON` controls. Sending that component to a template
-without a button is an error, and omitting it from one that has a button is also
-an error, so the switch has to match the template you actually created.
-
-**With the WhatsApp variables unset the code is written to the server log instead
-of being sent**, exactly as the mailer does. The whole flow — issuing, the
-cooldown, the attempt cap, expiry, single use — is testable before any Meta
-credentials exist. `GET /api/admin/whatsapp` reports whether it is configured,
-and the verify screen tells the member plainly that the code was only logged, so
-nobody sits waiting for a message that is not coming.
+Codes go over the SMTP transport above. **With SMTP unset the code is written to
+the server log instead of being sent**, and in that state nothing is withheld
+either — refusing somebody a place for failing a step they cannot complete is an
+outage, not a policy. `ENFORCE_WHEN_UNDELIVERABLE` in
+`src/utils/verification.ts` flips that to refusing regardless.
 
 Codes are stored as an HMAC keyed with `JWT_SECRET`, never in the clear. A plain
 SHA-256 of a six-digit number is reversed by trying all million, so a database
 dump would hand over every live code; the HMAC cannot be computed without the
 key. They last 10 minutes, allow 5 wrong guesses, work once, and can only be
 redeemed against the address they were sent to — so a code requested for one
-email cannot be used to confirm a different one.
+address cannot be used to confirm a different one. Changing your email
+un-verifies it and sends a code to the new one.
+
+#### Phone numbers are collected, not verified
+
+A mobile number is required at signup and editable from the profile, kept in
+E.164 so the column holds one shape. It is **not** verified: it was going to be,
+over the WhatsApp Cloud API, but Meta requires an approved Authentication-
+category template before a business can start a conversation, and the club
+cannot get one. Rather than ship a step nobody could complete — which would have
+blocked every registration in the club — phone verification was removed.
+
+Nothing in the app claims a number is confirmed, and there is deliberately no
+`phone_verified_at` column: one that nothing ever writes reads as "these numbers
+are confirmed" on an organiser screen, and on race day that is a worse lie than
+having no column at all. The implementation, including the Cloud API sender and
+its template handling, is in git history at `fa37999` if a sender is ever
+approved.
+
+Note this is separate from the **emergency contact**, which is somebody else's
+number. Both are collected; the profile keeps them adjacent and worded to
+distinguish them, because they are the pair people confuse.
 
 > The scheduler is a single in-process timer, which is right for one server. A
 > multi-instance deployment would want a shared lock or a real job queue — the

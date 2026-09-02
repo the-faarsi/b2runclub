@@ -3,7 +3,6 @@ import prisma from "../utils/prisma";
 import { AuthRequest, requireRole } from "../middleware/auth";
 import { ALLOWED_OFFSETS, sweepReminders } from "../utils/reminders";
 import { mailerConfig, mailerConfigured, sendMail, testEmail, verifyMailer } from "../utils/mailer";
-import { whatsappConfig, whatsappConfigured } from "../utils/whatsapp";
 
 const router = Router();
 
@@ -263,27 +262,6 @@ router.get("/mailer", requireRole(["ADMIN"]), async (_req: AuthRequest, res: Res
         // Which settings are present, so a misconfiguration is diagnosable from
         // the admin screen rather than by reading the server's .env.
         config: mailerConfig(),
-    });
-});
-
-/**
- * 2g. WhatsApp diagnostics (Admin only).
- *
- * Beside the mailer panel because they answer the same question for the other
- * half of verification: with no credentials, a member's phone code is written
- * to the server log instead of sent, and the only way an organiser could tell
- * was to read the log. Values are never returned — only whether each is set.
- *
- * No live check to match verifyMailer(): the Cloud API has no no-op probe, and
- * the cheapest real call would send a template message to somebody.
- */
-router.get("/whatsapp", requireRole(["ADMIN"]), async (_req: AuthRequest, res: Response): Promise<void> => {
-    res.json({
-        configured: whatsappConfigured,
-        config: whatsappConfig(),
-        note: whatsappConfigured
-            ? "Codes are sent as WhatsApp template messages."
-            : "Codes are written to the server log instead of being sent. Members cannot confirm a phone number until this is set.",
     });
 });
 

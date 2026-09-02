@@ -2,8 +2,7 @@ import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "../lib/auth";
 
 /**
- * The standing prompt for a member who has not finished confirming their
- * details.
+ * The standing prompt for a member who has not confirmed their email address.
  *
  * The club chose to nag rather than lock out: existing members keep browsing,
  * the forum, polls and the gallery, and what is withheld is taking a spot. That
@@ -13,22 +12,15 @@ import { useAuth } from "../lib/auth";
  * Not dismissible, and deliberately so. A dismissed banner is a member who
  * never finds out why registration refuses them later, which is a worse
  * experience than a strip of text they can act on in a minute. It disappears
- * the moment there is nothing outstanding.
+ * the moment the address is confirmed.
  */
 export function VerificationBanner() {
-    const { user, ready, pendingVerification, needsVerification } = useAuth();
+    const { user, ready, needsVerification } = useAuth();
     const { pathname } = useLocation();
 
     // Nothing to say on the page that does the job — it would sit directly
     // above a heading making the same request.
     if (!ready || !user || !needsVerification || pathname === "/verify") return null;
-
-    const what =
-        pendingVerification.email && pendingVerification.phone
-            ? "your email address and mobile number"
-            : pendingVerification.email
-              ? "your email address"
-              : "your mobile number";
 
     return (
         <div
@@ -38,8 +30,8 @@ export function VerificationBanner() {
             <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-3 gap-y-1.5">
                 <span className="size-2 shrink-0 rounded-full bg-gold" aria-hidden />
                 <p className="text-[13px] text-ink-2">
-                    Confirm <strong className="text-ink">{what}</strong> to finish setting up your
-                    account. You'll need it to take a spot in a session.
+                    Confirm <strong className="text-ink">your email address</strong> to finish
+                    setting up your account. You'll need it to take a spot in a session.
                 </p>
                 <Link
                     to="/verify"

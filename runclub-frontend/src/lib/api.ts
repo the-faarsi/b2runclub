@@ -225,11 +225,12 @@ export const api = {
       auth: false,
     }),
 
-  /* ── email and phone verification ───────────────────────── */
+  /* ── email verification ─────────────────────────────────── */
 
   /**
-   * The destination is never in the request for email, and for phone it is only
-   * ever the caller's own: codes go to your account, not to an address you name.
+   * The destination is never in the request: a code goes to the address already
+   * on your account, not to one you name. Phone verification was removed — the
+   * club cannot get a WhatsApp sender approved.
    */
   verification: {
     status: () => request<VerificationStatus>("/api/auth/verify/status"),
@@ -245,19 +246,6 @@ export const api = {
         method: "POST",
         body: { code },
       }),
-
-    /** Omit the number to resend to the one already on record. */
-    sendPhone: (phone?: string) =>
-      request<{ message: string; sent_to: string; simulated: boolean; already?: boolean }>(
-        "/api/auth/verify/phone/send",
-        { method: "POST", body: phone ? { phone } : {} },
-      ),
-
-    confirmPhone: (code: string) =>
-      request<{ message: string; phone_verified: boolean; phone: string | null }>(
-        "/api/auth/verify/phone/confirm",
-        { method: "POST", body: { code } },
-      ),
   },
 
   /* ── your own account ───────────────────────────────────── */
@@ -269,12 +257,7 @@ export const api = {
    */
   me: () => request<{ user: User }>("/api/auth/me"),
 
-  /**
-   * Details with no security weight. Role is deliberately not accepted.
-   *
-   * Changing `phone` un-verifies it server-side, so the caller should expect
-   * pending_verification.phone to come back true.
-   */
+  /** Details with no security weight. Role is deliberately not accepted. */
   updateProfile: (input: { name?: string; emergency_contact?: string; phone?: string }) =>
     request<{ message: string; user: User }>("/api/auth/me", {
       method: "PATCH",

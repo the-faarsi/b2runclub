@@ -224,9 +224,9 @@ export function Signup() {
         emergency_contact: form.emergency_contact.trim() || undefined,
       });
       toast(`You're in, ${user.name.split(" ")[0]}. One more step.`, "ok");
-      /* Straight to the codes rather than to /events. Signup has already sent
-         the email one, and an account that cannot take a spot yet has nothing
-         to do on the events page. */
+      /* Straight to the code rather than to /events. Signup has already sent
+         it, and an account that cannot take a spot yet has nothing to do on
+         the events page. */
       navigate("/verify", { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Registration failed");
@@ -314,7 +314,7 @@ export function Signup() {
         <Field
           label="Mobile number"
           htmlFor="phone"
-          hint="We'll send a code on WhatsApp to confirm it."
+          hint="So organisers can reach you about a session."
         >
           <Input
             id="phone"

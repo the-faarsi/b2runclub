@@ -3,8 +3,11 @@
  *
  * Stored in one shape only, because these are looked up and compared: the same
  * member typing "9876543210" at signup and "+91 98765 43210" on their profile
- * must not end up as two different numbers, and a code sent to one form must
- * not fail to match the other.
+ * must not end up as two different numbers.
+ *
+ * Normalising only. Numbers are not verified — the club has no sender to put a
+ * code on — so this is about keeping the column tidy, not about proving
+ * anything.
  *
  * India is the default country — the club runs in Chennai and Madurai and every
  * member so far has an Indian number — but an explicitly dialled +<cc> is kept
@@ -81,17 +84,4 @@ export function normalisePhone(input: unknown): PhoneResult {
     }
 
     return { ok: true, e164 };
-}
-
-/**
- * A number with most of it hidden, for confirmation screens and notifications.
- *
- * "+919876543210" reads as "+91 ••••• 43210" — enough for the owner to
- * recognise it, not enough to be worth harvesting from a shared screen.
- */
-export function maskPhone(e164: string): string {
-    if (!e164 || e164.length < 5) return "•••••";
-    const tail = e164.slice(-5);
-    const head = e164.startsWith("+") ? e164.slice(0, 3) : "";
-    return `${head} ••••• ${tail}`.trim();
 }

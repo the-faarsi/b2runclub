@@ -1,18 +1,17 @@
 import { Response, NextFunction } from "express";
 import prisma from "../utils/prisma";
 import { AuthRequest } from "./auth";
-import { enforcedVerification, pendingVerification } from "../utils/verification";
+import { verificationRequired } from "../utils/verification";
 
 
 /**
- * Blocks an action until the member's email and phone are both confirmed.
+ * Blocks an action until the member's email address is confirmed.
  *
  * Applied narrowly — to taking a spot in a session, and nothing else. The club
  * decided that an existing member should be prompted rather than shut out, so
  * browsing, the forum, polls and the gallery stay open; what is withheld is the
- * one thing where an unreachable member is a real problem. If somebody does not
- * turn up, or turns up hurt, the organisers need a working address and a number
- * that rings.
+ * one thing where an unreachable member is a real problem, since the ticket
+ * goes to their inbox.
  *
  * Gating registration alone is also what keeps money out of it: a payment can
  * only exist against a registration, so there is no way to reach checkout
@@ -36,7 +35,7 @@ export async function requireVerified(
 
     const user = await prisma.user.findUnique({
         where: { id },
-        select: { email_verified_at: true, phone_verified_at: true, phone: true },
+        select: { email_verified_at: true },
     });
 
     if (!user) {
@@ -44,31 +43,15 @@ export async function requireVerified(
         return;
     }
 
-    const pending = pendingVerification(user);
-
-    // What this gate will actually act on, as opposed to what is outstanding.
-    const enforced = enforcedVerification(pending);
-
-    if (!enforced.email && !enforced.phone) {
+    if (!verificationRequired(user)) {
         next();
         return;
     }
 
-    const what =
-        enforced.email && enforced.phone
-            ? "Confirm your email address and phone number"
-            : enforced.email
-              ? "Confirm your email address"
-              : "Add and confirm your phone number";
-
     res.status(403).json({
-        error: `${what} before taking a spot. It takes a minute.`,
-        // Machine-readable so the client can route to the right step instead of
-        // parsing the sentence above.
+        error: "Confirm your email address before taking a spot. It takes a minute.",
+        // Machine-readable so the client can route to the verify screen instead
+        // of parsing the sentence above.
         code: "VERIFICATION_REQUIRED",
-        /* The enforced set, not the outstanding one: the client uses this to
-           name what it is asking for, and naming a channel it is not actually
-           blocking on would be a lie the member cannot resolve. */
-        needs: enforced,
     });
 }

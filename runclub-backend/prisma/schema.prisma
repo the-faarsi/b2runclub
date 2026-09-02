@@ -25,10 +25,15 @@ model User {
   /// The member's own number, E.164. Distinct from emergency_contact, which is
   /// somebody else's — on race day we need both, and conflating them means
   /// ringing the wrong person.
+  ///
+  /// Required at signup but not verified: the club has no way to send a code to
+  /// it. There is deliberately no phone_verified_at to go with it — a column
+  /// nothing ever writes would read as "these numbers are confirmed" to the
+  /// next person looking at an organiser screen, which would be worse than
+  /// having no such column at all.
   phone         String?
   /// Null until the address has been proved by a one-time code.
   email_verified_at DateTime?
-  phone_verified_at DateTime?
 
   events_created  Event[] // Admin connection
   registrations  EventRegistration[]
@@ -46,7 +51,7 @@ model User {
   verification_codes VerificationCode[]
 }
 
-/// A one-time code sent to an email address or a phone number.
+/// A one-time code sent to an email address.
 ///
 /// Only an HMAC of the code is stored, following PasswordResetToken. HMAC and
 /// not a bare SHA-256 because a six-digit code has only a million possible
@@ -60,7 +65,8 @@ model User {
 model VerificationCode {
   id          String    @id @default(uuid())
   user_id     String
-  /// "EMAIL" or "PHONE".
+  /// Always "EMAIL" today. Kept as a column rather than assumed so a second
+  /// channel needs no migration — the removed phone one is at fa37999.
   channel     String
   destination String
   code_hash   String
