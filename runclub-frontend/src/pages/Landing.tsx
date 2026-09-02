@@ -158,6 +158,15 @@ export function Landing() {
 
   const allEvents = events ?? [];
 
+  /*
+   * The hero clip's own width/height, once it reports one.
+   *
+   * Used to give the video area a matching height, because `object-fit: cover`
+   * crops whatever does not fit: the club's 16:9 footage in a 2.8:1 hero lost
+   * 37% of its frame height at 1440 and 45% at 1920, off the top and bottom.
+   */
+  const [videoAspect, setVideoAspect] = useState<number | null>(null);
+
   // ── Scroll refs for the "How it works" sticky section ──
   const stickyRef = useRef<HTMLDivElement>(null);
 
@@ -295,43 +304,37 @@ export function Landing() {
           screen is well inside the visible area. */}
       <section
         ref={heroRef}
-        className="relative mx-auto max-w-7xl px-4 pt-14 sm:px-6 sm:pt-20 lg:px-8"
+        className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8"
       >
         {/*
-          HeroVideo is `absolute inset-y-0`, so whichever box it sits in decides
-          where the clip starts and ends — and `inset-y-0` resolves against the
-          containing block's *padding* box, so sitting here means it covers this
-          section's `pt-20` as well.
+          The video area. HeroVideo sits inside it as `absolute inset-y-0`, and
+          `inset-y-0` resolves against this box's *padding* box — so the clip
+          covers the padding too and still starts flush under the navbar, while
+          this element's height is the only thing deciding the clip's height.
 
-          That is the whole reason it lives here rather than one level down. When
-          it was inside the div below, the clip began after the section's top
-          padding and left an 80px band of bare page between the navbar and the
-          picture. The call to action is what moved out of the section instead —
-          see below — which is what keeps the clip from covering the group.
+          That mattered: with the padding on the section instead, the clip's box
+          was 80px taller than the ratio below asks for, and `object-cover` took
+          those 80px back out of the frame — 40px off the top and 40px off the
+          bottom. Which is why the bottom still looked cropped after the ratio
+          was supposedly handled.
 
-          The section carries no bottom padding for the same reason: it would
-          extend the clip past the video area and reopen the same gap at the
-          other end. The spacing under the video is the call to action's own top
-          padding.
+          Height is whichever is greater: the clamp, or 80% of what the clip
+          needs to show its whole frame at the viewport's width. The 0.8 is the
+          deliberate top crop — see object-bottom in heroVideo.tsx. The clamp
+          stands in for the 3D graphic that used to hold this open, and wins on
+          a phone, where the ratio alone would ask for 175px and leave the hero
+          a thin band; there the crop lands on the sides instead, which is the
+          axis with room to spare.
         */}
-        <HeroVideo />
-
-        {/* The video area. The min-height stands in for the 3D
-            ribbon-and-orbit graphic that used to be here: nothing else in the
-            hero is tall enough, so without it the clip collapsed to a thin
-            strip behind a pill. */}
-        <div className="relative flex min-h-[clamp(340px,48vh,520px)] flex-col items-center pt-2 text-center">
-          {/* Its own near-opaque chip rather than the 8% gold tint it used to
-              have. That tint left the label borrowing contrast from the
-              darkening wash over the video, and measured 1.6:1 on a laptop
-              against the 4.5:1 an 11px bold label needs — gold on sunlit sky is
-              not a combination that works.
-
-              This is now the label's only protection: the wash is gone
-              entirely, so whatever the organiser's clip is showing sits
-              directly behind it. At 88% opacity that measured 4.71:1 at the
-              99th percentile — passing, but with no margin against brighter
-              footage. 92% puts it at 5.8:1. */}
+        <div
+          className="relative flex flex-col items-center pt-14 text-center sm:pt-20"
+          style={{
+            minHeight: videoAspect
+              ? `max(clamp(340px, 48vh, 520px), calc(100vw / ${videoAspect} * 0.8))`
+              : "clamp(340px, 48vh, 520px)",
+          }}
+        >
+          <HeroVideo onAspect={setVideoAspect} />
           <span
             ref={heroPillRef}
             className="relative inline-flex items-center gap-2 rounded-full border border-gold/35 bg-void/92 px-3 py-1.5 backdrop-blur-md"

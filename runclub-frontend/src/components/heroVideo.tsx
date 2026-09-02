@@ -21,7 +21,19 @@ import { videoKind, youtubeEmbedUrl, youtubeId, youtubeThumbnail } from "../lib/
  * exists to stop. A still frame stands in — the poster for a file, YouTube's
  * own thumbnail for an embed.
  */
-export function HeroVideo() {
+export function HeroVideo({
+  onAspect,
+}: {
+  /**
+   * The clip's own width/height, reported once known.
+   *
+   * The hero needs it to size itself, because `object-fit: cover` crops to fill
+   * whatever box it is given and the club's footage is 16:9 against a hero far
+   * wider than that — 37% of the frame height was being thrown away at 1440,
+   * 45% at 1920. Only the parent can fix that, and only if it knows the ratio.
+   */
+  onAspect?: (ratio: number) => void;
+} = {}) {
   const calm = useCalmMotion();
   const load = useCallback(() => api.clubInfo(), []);
   const { data: club } = useFetch(load);
@@ -34,6 +46,15 @@ export function HeroVideo() {
   useEffect(() => {
     setFailed(false);
   }, [src]);
+
+  /*
+   * YouTube always encodes and serves 16:9, and an iframe exposes nothing about
+   * its content, so that is reported outright rather than measured. A file's
+   * real dimensions arrive with its metadata — see onLoadedMetadata below.
+   */
+  useEffect(() => {
+    if (kind === "youtube") onAspect?.(16 / 9);
+  }, [kind, onAspect]);
 
   useEffect(() => {
     const el = videoRef.current;
@@ -70,19 +91,26 @@ export function HeroVideo() {
    *      ~15px of 100vw that a desktop scrollbar accounts for is trimmed rather
    *      than adding a scrollbar.
    *
-   *   2. Nothing over the top of it. There is no darkening wash either — the
-   *      clip plays at full strength, which is the point.
+   *   2. No darkening wash over the picture. The clip plays at full strength;
+   *      the only thing on top of it is a 64-80px dissolve at the very bottom
+   *      edge, which is there because that edge is otherwise a hard horizontal
+   *      line the full width of the screen. Earlier versions of that gradient
+   *      spanned most of the frame and were narrowed three times — 72px, 46px,
+   *      31px — before being dropped and then reinstated as a border alone.
    *
-   * So the foot of the clip is a hard horizontal line the full width of the
-   * screen. That is deliberate: showing the whole frame was judged worth more
-   * than hiding the join. A gradient used to dissolve it, and went through
-   * several rounds of narrowing — 72px, then 46px, then 31px on a 512px clip —
-   * before being dropped outright.
+   *   3. The hero sizes itself to the clip's own aspect ratio, reported through
+   *      `onAspect`. `object-fit: cover` fills the box and crops the overflow,
+   *      so a 16:9 clip in a 2.8:1 hero lost 37% of its frame height at 1440
+   *      and 45% at 1920 — off the top and bottom, since object-position
+   *      defaults to centre. With the box matching the ratio there is nothing
+   *      left to crop vertically. The hero then asks for 80% of that height on
+   *      purpose, trimming the top fifth — sky and treetops — and
+   *      `object-bottom` is what puts the whole trim there rather than
+   *      splitting it between top and bottom as centred cover would.
    *
-   * What makes that safe is the events pill carrying its own background instead
-   * of borrowing contrast from that wash. Gold text on an 8% gold tint measured
-   * 1.6:1 over sunlit footage while the wash was still there; with nothing
-   * behind the picture it would be worse. See the pill in Landing.tsx.
+   * The events pill carries its own near-opaque background rather than
+   * borrowing contrast from a wash, which is what let the wash go. Gold text on
+   * an 8% gold tint measured 1.6:1 over sunlit footage. See Landing.tsx.
    *
    * The left and right edges land at the viewport and the top sits below the
    * sticky navbar, so neither needs anything.
@@ -97,7 +125,7 @@ export function HeroVideo() {
           <img
             src={youtubeThumbnail(ytId)}
             alt=""
-            className="h-full w-full object-cover"
+            className="h-full w-full object-cover object-bottom"
             onError={() => setFailed(true)}
           />
         ) : (
@@ -127,7 +155,11 @@ export function HeroVideo() {
           muted
           playsInline
           preload="metadata"
-          className="h-full w-full object-cover"
+          className="h-full w-full object-cover object-bottom"
+          onLoadedMetadata={(e) => {
+            const v = e.currentTarget;
+            if (v.videoWidth && v.videoHeight) onAspect?.(v.videoWidth / v.videoHeight);
+          }}
           onError={() => setFailed(true)}
         />
       ) : (
@@ -139,10 +171,28 @@ export function HeroVideo() {
           muted
           playsInline
           preload="auto"
-          className="h-full w-full object-cover"
+          className="h-full w-full object-cover object-bottom"
+          onLoadedMetadata={(e) => {
+            const v = e.currentTarget;
+            if (v.videoWidth && v.videoHeight) onAspect?.(v.videoWidth / v.videoHeight);
+          }}
           onError={() => setFailed(true)}
         />
       )}
+
+      {/* The dissolve, at the bottom edge only.
+          Short on purpose — a border, not a wash. The clip's foot is a hard
+          horizontal line the full width of the screen, and every earlier
+          attempt at hiding it used a gradient spanning most of the frame; this
+          one covers 64px on a phone and 80px above that, so the picture is
+          untouched everywhere else. */}
+      <div
+        className="absolute inset-x-0 bottom-0 h-16 sm:h-20"
+        style={{
+          background:
+            "linear-gradient(to top, rgb(8 9 11) 0%, rgb(8 9 11 / 0.72) 38%, transparent 100%)",
+        }}
+      />
     </div>
   );
 }
