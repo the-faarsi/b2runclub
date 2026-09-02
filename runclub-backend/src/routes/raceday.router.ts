@@ -1,5 +1,6 @@
 import { Router, Response } from "express";
 import prisma from "../utils/prisma";
+import { CLUB_NAME } from "../utils/brand";
 import { AuthRequest, requireRole } from "../middleware/auth";
 
 const router = Router();
@@ -42,12 +43,12 @@ router.post("/check-in", requireRole(CREW), async (req: AuthRequest, res: Respon
                 const parsed = typeof qr_payload === "string" ? JSON.parse(qr_payload) : qr_payload;
                 regId = parsed.reg_id || parsed.registrationId || parsed.registration_id;
             } catch {
-                res.status(400).json({ error: "That QR code isn't a B2 Club ticket" });
+                res.status(400).json({ error: `That QR code isn't a ${CLUB_NAME} ticket` });
                 return;
             }
 
             if (!regId) {
-                res.status(400).json({ error: "That QR code isn't a B2 Club ticket" });
+                res.status(400).json({ error: `That QR code isn't a ${CLUB_NAME} ticket` });
                 return;
             }
         }

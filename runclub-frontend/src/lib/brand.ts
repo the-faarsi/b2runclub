@@ -14,16 +14,16 @@
  */
 
 /** Full legal-ish name, for waivers, invoices and anything formal. */
-export const CLUB_NAME = "B2 Club";
+export const CLUB_NAME = "B² Club";
 
 /** Short name for prose. */
-export const CLUB_SHORT = "B2 Club";
+export const CLUB_SHORT = "B² Club";
 
 /** Wordmark, uppercased in the header. */
-export const CLUB_WORDMARK = "B2 CLUB";
+export const CLUB_WORDMARK = "B² CLUB";
 
 /** Monogram inside the gold plate. */
-export const CLUB_MONOGRAM = "B2";
+export const CLUB_MONOGRAM = "B²";
 
 /**
  * Filename-safe slug for exports. Downloads used to be named "b-squared-…",
