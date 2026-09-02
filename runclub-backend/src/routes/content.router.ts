@@ -491,7 +491,12 @@ router.put("/club", requireRole(["ADMIN"]), async (req: AuthRequest, res: Respon
 
 /* ── Collaborators ────────────────────────────────────────── */
 
-const TIERS = ["PARTNER", "SPONSOR", "COMMUNITY"];
+/*
+ * FEATURED is not a rank above SPONSOR — it is a placement. A featured
+ * collaborator is pulled out of the home page scroller into its own block, so
+ * only one or two make sense at a time. The scroller shows the rest.
+ */
+const TIERS = ["PARTNER", "SPONSOR", "COMMUNITY", "FEATURED"];
 
 // 6. List collaborators — public, drives the home page scroller.
 router.get("/collaborators", async (_req: AuthRequest, res: Response): Promise<void> => {

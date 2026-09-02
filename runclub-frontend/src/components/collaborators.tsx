@@ -1,16 +1,18 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import { api } from "../lib/api";
-import { cn } from "../lib/format";
+import { cn, instagramHandle, instagramHref } from "../lib/format";
 import { DUR, EASE, useCalmMotion } from "../lib/motion";
 import type { Collaborator } from "../lib/types";
 import { useFetch } from "../lib/useFetch";
-import { SparkIcon } from "./icons";
+import { InstagramIcon, SparkIcon } from "./icons";
+import { buttonClass, Card } from "./ui";
 
 const TIER = {
   SPONSOR: { label: "Sponsor", tint: "var(--color-gold)" },
   PARTNER: { label: "Partner", tint: "var(--color-free)" },
   COMMUNITY: { label: "Community", tint: "var(--color-paid)" },
+  FEATURED: { label: "Featured partner", tint: "var(--color-gold)" },
 } as const;
 
 const tierOf = (t: string) => TIER[t as keyof typeof TIER] ?? TIER.PARTNER;
@@ -23,6 +25,91 @@ function Monogram({ name }: { name: string }) {
     .map((w) => w[0]?.toUpperCase() ?? "")
     .join("");
   return <span className="display text-[22px] tracking-tight text-gold">{initials}</span>;
+}
+
+/**
+ * The featured partners, in their own block above the scroller.
+ *
+ * Separate rather than another entry on the ring: the ring turns, so any one
+ * card is only readable for a couple of seconds and is one of eight. A partner
+ * the club wants named needs to sit still and be legible.
+ *
+ * Data-driven off the same Collaborator table as the scroller, so this is an
+ * admin edit rather than a code change — the alternative was hardcoding a
+ * business name and URL into the page, which is not something that should need
+ * a deploy to correct.
+ *
+ * Renders nothing when no row is tiered FEATURED, so the home page is unchanged
+ * on a fresh install.
+ */
+export function FeaturedPartners() {
+  const load = useCallback(() => api.collaborators(), []);
+  const { data, loading } = useFetch(load);
+
+  const featured = (data ?? []).filter((c) => c.tier === "FEATURED");
+  if (loading || featured.length === 0) return null;
+
+  return (
+    <section className="mx-auto max-w-7xl px-4 py-14 sm:px-6 lg:px-8">
+      <div className="rule-gold mb-8" />
+      <p className="eyebrow mb-2 text-gold">Where we train</p>
+      <h2 className="display text-[clamp(26px,3.6vw,38px)]">
+        {featured.length === 1 ? "Our home gym" : "Featured partners"}
+      </h2>
+
+      <div className={cn("mt-7 grid gap-4", featured.length > 1 && "sm:grid-cols-2")}>
+        {featured.map((c) => {
+          /* The club keeps a partner's Instagram in `website`, since that is
+             often the only page a local business has. Detected rather than
+             stored separately so the admin form stays one field. */
+          const handle = c.website ? instagramHandle(c.website) : null;
+          const isInstagram = Boolean(c.website && /instagram\.com/i.test(c.website));
+
+          return (
+            <Card key={c.id} className="card-glow flex flex-wrap items-center gap-5 p-6 sm:p-7">
+              <span
+                className="grid size-16 shrink-0 place-items-center overflow-hidden rounded-2xl border border-gold/25 bg-gold/8"
+                aria-hidden
+              >
+                {c.logo_url ? (
+                  <img src={c.logo_url} alt="" className="h-full w-full object-cover" />
+                ) : (
+                  <Monogram name={c.name} />
+                )}
+              </span>
+
+              <div className="min-w-0 flex-1">
+                <h3 className="display text-[clamp(20px,2.4vw,26px)]">{c.name}</h3>
+                {c.blurb && (
+                  <p className="mt-1.5 max-w-prose text-[13.5px] leading-relaxed text-ink-2">
+                    {c.blurb}
+                  </p>
+                )}
+              </div>
+
+              {c.website && (
+                <a
+                  href={isInstagram ? instagramHref(c.website) : c.website}
+                  target="_blank"
+                  rel="noreferrer"
+                  className={buttonClass("outline", "md", "shrink-0")}
+                >
+                  {isInstagram ? (
+                    <>
+                      <InstagramIcon className="size-4" />
+                      @{handle}
+                    </>
+                  ) : (
+                    <>{c.website.replace(/^https?:\/\//, "").replace(/\/$/, "")} →</>
+                  )}
+                </a>
+              )}
+            </Card>
+          );
+        })}
+      </div>
+    </section>
+  );
 }
 
 /**
@@ -43,7 +130,9 @@ export function CollaboratorScroller() {
   const [radius, setRadius] = useState(520);
   const stageRef = useRef<HTMLDivElement>(null);
 
-  const rows = data ?? [];
+  /* FEATURED rows are excluded: they render in their own block above, and
+     showing them in both places would read as the same partner listed twice. */
+  const rows = (data ?? []).filter((c) => c.tier !== "FEATURED");
 
   // Repeat a short list so the ring is populated rather than gappy.
   const reps = rows.length === 0 ? 0 : rows.length < 6 ? Math.ceil(8 / rows.length) : 1;

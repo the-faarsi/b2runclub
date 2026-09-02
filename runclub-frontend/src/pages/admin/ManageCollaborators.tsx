@@ -29,6 +29,9 @@ const TIERS: { value: CollaboratorTier; label: string; tint: string }[] = [
   { value: "SPONSOR", label: "Sponsor", tint: "var(--color-gold)" },
   { value: "PARTNER", label: "Partner", tint: "var(--color-free)" },
   { value: "COMMUNITY", label: "Community", tint: "var(--color-paid)" },
+  /* Lifted out of the home page scroller into its own block, so keep it to one
+     or two — see FeaturedPartners in components/collaborators.tsx. */
+  { value: "FEATURED", label: "Featured", tint: "var(--color-gold)" },
 ];
 
 const tierOf = (t: string) => TIERS.find((x) => x.value === t) ?? TIERS[1];
@@ -396,7 +399,15 @@ function CollaboratorModal({
         </Field>
 
         <div className="grid gap-5 sm:grid-cols-2">
-          <Field label="Tier" htmlFor="co-tier">
+          <Field
+            label="Tier"
+            htmlFor="co-tier"
+            hint={
+              form.tier === "FEATURED"
+                ? "Gets its own block on the home page, above the turning ring. Keep this to one or two."
+                : "Shown on the home page's turning ring. Pick Featured for its own block instead."
+            }
+          >
             <Select id="co-tier" value={form.tier} onChange={set("tier")}>
               {TIERS.map((t) => (
                 <option key={t.value} value={t.value}>
@@ -405,12 +416,16 @@ function CollaboratorModal({
               ))}
             </Select>
           </Field>
-          <Field label="Website" htmlFor="co-web">
+          <Field
+            label="Website or Instagram"
+            htmlFor="co-web"
+            hint="An instagram.com link is shown as its @handle with the Instagram mark."
+          >
             <Input
               id="co-web"
               value={form.website}
               onChange={set("website")}
-              placeholder="https://…"
+              placeholder="https://instagram.com/… or https://…"
               inputMode="url"
             />
           </Field>

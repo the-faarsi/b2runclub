@@ -12,7 +12,7 @@ import { gsap } from "gsap";
 import { useGSAP } from "@gsap/react";
 import { Link } from "react-router-dom";
 import { ClubFeatures, JoinBanner } from "../components/clubFeatures";
-import { CollaboratorScroller } from "../components/collaborators";
+import { CollaboratorScroller, FeaturedPartners } from "../components/collaborators";
 import { Founders } from "../components/founders";
 import { HeroVideo } from "../components/heroVideo";
 import { RunnerScene } from "../components/scene3d";
@@ -699,6 +699,11 @@ export function Landing() {
 
 
 
+
+      {/* Named partners get their own block, above the turning ring where a
+          card is only legible for a second or two. Renders nothing unless a
+          collaborator is tiered FEATURED. */}
+      <FeaturedPartners />
 
       <CollaboratorScroller />
 

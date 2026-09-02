@@ -265,7 +265,11 @@ export interface ClubInfo {
   updated_at: string | null;
 }
 
-export type CollaboratorTier = "PARTNER" | "SPONSOR" | "COMMUNITY";
+/**
+ * FEATURED is a placement rather than a rank: those rows are lifted out of the
+ * home page scroller into their own block. See FeaturedPartners.
+ */
+export type CollaboratorTier = "PARTNER" | "SPONSOR" | "COMMUNITY" | "FEATURED";
 
 /** A club founder, shown on the home page and editable by admins. */
 export interface Founder {
