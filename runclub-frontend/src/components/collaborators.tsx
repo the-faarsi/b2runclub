@@ -67,16 +67,41 @@ export function FeaturedPartners() {
 
           return (
             <Card key={c.id} className="card-glow flex flex-wrap items-center gap-5 p-6 sm:p-7">
-              <span
-                className="grid size-16 shrink-0 place-items-center overflow-hidden rounded-2xl border border-gold/25 bg-gold/8"
-                aria-hidden
-              >
-                {c.logo_url ? (
-                  <img src={c.logo_url} alt="" className="h-full w-full object-cover" />
-                ) : (
+              {/*
+                The logo on its own — no frame, no tint, no rounded plate.
+
+                An explicit height with `w-auto` and `object-contain`. The
+                height being a fixed length is the point: this had a container
+                twice, and both times a percentage height on a grid item
+                resolved against the row, the row was sized by its content — the
+                image — and the percentage computed to nothing. A 1080px-square
+                logo drew at 158px and then 106px inside a 92px frame, with
+                overflow-hidden clipping the difference: precisely the crop the
+                change was meant to remove. With no container the question does
+                not arise.
+
+                `max-w-44` is the only guard left, so a very wide wordmark
+                cannot push the text off the card. Contain letterboxes rather
+                than crops if it bites.
+
+                The monogram fallback keeps a plate — it is two letters rather
+                than a picture, and needs something to sit on.
+              */}
+              {c.logo_url ? (
+                <img
+                  src={c.logo_url}
+                  alt=""
+                  aria-hidden
+                  className="h-24 w-auto max-w-44 shrink-0 object-contain sm:h-28"
+                />
+              ) : (
+                <span
+                  className="grid size-16 shrink-0 place-items-center rounded-2xl border border-gold/25 bg-gold/8"
+                  aria-hidden
+                >
                   <Monogram name={c.name} />
-                )}
-              </span>
+                </span>
+              )}
 
               <div className="min-w-0 flex-1">
                 <h3 className="display text-[clamp(20px,2.4vw,26px)]">{c.name}</h3>
