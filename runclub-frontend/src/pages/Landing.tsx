@@ -295,7 +295,7 @@ export function Landing() {
           screen is well inside the visible area. */}
       <section
         ref={heroRef}
-        className="relative mx-auto max-w-7xl px-4 pb-16 pt-14 sm:px-6 sm:pt-20 lg:px-8"
+        className="relative mx-auto max-w-7xl px-4 pb-8 pt-14 sm:px-6 sm:pt-20 lg:px-8"
       >
         {/*
           The video area, and its own positioning context.
@@ -332,8 +332,15 @@ export function Landing() {
 
         {/* Below the video rather than over it, so nothing covers the subject.
             The scrim inside HeroVideo reaches the page colour at its foot, so
-            the clip has already dissolved by the time this starts. */}
-        <div className="flex flex-col items-center gap-4 pt-9 text-center">
+            the clip has already dissolved by the time this starts.
+
+            The gap is generous on purpose — it is what separates the button
+            from the picture instead of leaving it looking tacked onto the
+            bottom edge. Paired with the reduced `pb` on the section: the
+            button drops into space the hero already had below it rather than
+            pushing the whole page down, so "Next up" stays roughly where it
+            was. */}
+        <div className="flex flex-col items-center gap-4 pt-14 text-center sm:pt-20">
           <Link
             ref={heroBtnPrimaryRef}
             to={user ? "/calendar" : "/signup"}
