@@ -73,25 +73,35 @@ export function HeroVideo() {
    * the element where there is nothing to fade. `farthest-side` makes 100% land
    * exactly on each edge, so `transparent 100%` means transparent at the border.
    *
-   * The stops were 38% / 0.5 at 76% / 0 at 100%, which held the clip fully
-   * opaque across only the middle 38% of the radius and spent the other 62%
-   * fading. That is a vignette rather than a feathered edge: it squeezed the
-   * picture into a small oval and dimmed the faces at the ends of the group.
+   * The stops started at 38% / 0.5 at 76% / 0 at 100%, which held the clip
+   * fully opaque across only the middle 38% of the radius and spent the other
+   * 62% fading — a vignette rather than a feathered edge, squeezing the picture
+   * into a small oval and dimming the faces at the ends of the group.
    *
-   * Now the plateau reaches 72% and the whole falloff happens in the outer 28%.
+   * Now the plateau runs to 88% and the falloff is confined to the outer 12%.
    * Along the horizontal centre line, where 100% is the left or right border:
    *
-   *      radius     50%     76%     88%     95%
-   *      was       0.84    0.50    0.25    0.10
-   *      now       1.00    0.94    0.75    0.36
+   *      radius     50%     76%     88%     93%     97%
+   *      first     0.84    0.50    0.25    0.14    0.06
+   *      then      1.00    1.00    1.00    0.85    0.45
    *
-   * So the fade is narrower (28% of the radius instead of 62%), shallower at
-   * every point, and covers less of the frame — while still dissolving all four
-   * edges, which is what stops the two vertical seams appearing mid-screen on a
-   * wide display.
+   * Four stops rather than three, and that is the point rather than fussiness:
+   * a gradient interpolates linearly between stops, so two segments meet at a
+   * visible kink and the rim reads as a drawn line. The extra stop bends the
+   * ramp into something closer to a curve, which is what makes the edge dissolve
+   * instead of ending.
+   *
+   * `farthest-side` and `transparent 100%` are load-bearing and stay: they put
+   * zero exactly on each border, which is what stops the two vertical seams
+   * appearing mid-screen on a wide display. A consequence is that the four
+   * corners are always fully transparent — an ellipse inscribed in the box
+   * cannot reach them at any stop values. Filling the corners would mean a
+   * different mask shape, not different stops, and composited linear gradients
+   * bring back the `mask-composite` keyword split that hides the video outright
+   * in Safari.
    */
   const featherMask =
-    "radial-gradient(farthest-side ellipse at 50% 50%, #000 72%, rgba(0,0,0,0.72) 90%, transparent 100%)";
+    "radial-gradient(farthest-side ellipse at 50% 50%, #000 88%, rgba(0,0,0,0.85) 93%, rgba(0,0,0,0.45) 97%, transparent 100%)";
 
   return (
     <div
