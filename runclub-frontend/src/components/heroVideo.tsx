@@ -48,66 +48,38 @@ export function HeroVideo() {
   const ytId = kind === "youtube" ? youtubeId(src) : null;
 
   /*
-   * Feathered edges, so the clip dissolves into the page instead of sitting in
-   * a rectangle.
+   * No edge mask. The clip fills the hero outright.
    *
-   * Only the bottom used to fade, via the dark gradient below — the left, right
-   * and top edges ended on a hard line, and because the hero is a max-w-7xl
-   * column rather than full-bleed, those two vertical seams landed in the middle
-   * of the screen on a wide display.
+   * It used to be feathered by a radial mask — an ellipse inscribed in the box,
+   * which meant the four corners could never be reached and the picture always
+   * read as an oval. Successive passes widened the opaque plateau from 38% to
+   * 88% of the radius chasing that, which is the shape asking to be dropped
+   * rather than tuned.
    *
-   * The mask is on the wrapper rather than the video, so the darkening overlay
-   * fades with it. Masking only the video would leave the overlay covering the
-   * full box, which reads as a slightly-darker-than-the-page rectangle — the
-   * same problem in a subtler form.
+   * Removing the mask on its own would have been worse than keeping it, and the
+   * other two changes here are what make "no border" actually look like no
+   * border:
    *
-   * One radial layer, not two composited linear ones: `mask-composite` needs a
-   * different keyword on WebKit (`source-in`) than everywhere else
-   * (`intersect`), and getting that pair wrong hides the video completely in
-   * Safari. An ellipse fades all four edges on its own.
+   *   1. Full-bleed. The hero section is `mx-auto max-w-7xl`, so this layer was
+   *      1280px wide with page either side. Unmasked and container-width, the
+   *      left and right edges become hard vertical lines at x=80 and x=1360 on
+   *      a 1440 screen — a rectangle floating mid-page. `left-1/2 w-screen
+   *      -translate-x-1/2` spans the viewport instead, putting those edges
+   *      where a hard cut is unremarkable. The Shell clips overflow-x, so the
+   *      ~15px of 100vw that a desktop scrollbar accounts for is trimmed rather
+   *      than adding a scrollbar.
    *
-   * `farthest-side` rather than a percentage radius. A radial gradient's
-   * percentage radii are measured against the box's full width and height, so
-   * the 120% I first wrote put the left and right edges at only ~42% along the
-   * gradient — still solid black in the mask — and the fade played out beyond
-   * the element where there is nothing to fade. `farthest-side` makes 100% land
-   * exactly on each edge, so `transparent 100%` means transparent at the border.
+   *   2. The scrim below now reaches solid --color-void at the bottom. The
+   *      video's own bottom edge is a hard horizontal line across the full
+   *      width once the mask is gone, and a scrim ending at 0.68 alpha does not
+   *      hide it. Landing on the page colour does.
    *
-   * The stops started at 38% / 0.5 at 76% / 0 at 100%, which held the clip
-   * fully opaque across only the middle 38% of the radius and spent the other
-   * 62% fading — a vignette rather than a feathered edge, squeezing the picture
-   * into a small oval and dimming the faces at the ends of the group.
-   *
-   * Now the plateau runs to 88% and the falloff is confined to the outer 12%.
-   * Along the horizontal centre line, where 100% is the left or right border:
-   *
-   *      radius     50%     76%     88%     93%     97%
-   *      first     0.84    0.50    0.25    0.14    0.06
-   *      then      1.00    1.00    1.00    0.85    0.45
-   *
-   * Four stops rather than three, and that is the point rather than fussiness:
-   * a gradient interpolates linearly between stops, so two segments meet at a
-   * visible kink and the rim reads as a drawn line. The extra stop bends the
-   * ramp into something closer to a curve, which is what makes the edge dissolve
-   * instead of ending.
-   *
-   * `farthest-side` and `transparent 100%` are load-bearing and stay: they put
-   * zero exactly on each border, which is what stops the two vertical seams
-   * appearing mid-screen on a wide display. A consequence is that the four
-   * corners are always fully transparent — an ellipse inscribed in the box
-   * cannot reach them at any stop values. Filling the corners would mean a
-   * different mask shape, not different stops, and composited linear gradients
-   * bring back the `mask-composite` keyword split that hides the video outright
-   * in Safari.
+   * The top edge needs nothing: it sits under the sticky navbar.
    */
-  const featherMask =
-    "radial-gradient(farthest-side ellipse at 50% 50%, #000 88%, rgba(0,0,0,0.85) 93%, rgba(0,0,0,0.45) 97%, transparent 100%)";
-
   return (
     <div
       aria-hidden
-      className="pointer-events-none absolute inset-0 -z-10 overflow-hidden"
-      style={{ maskImage: featherMask, WebkitMaskImage: featherMask }}
+      className="pointer-events-none absolute inset-y-0 left-1/2 -z-10 w-screen -translate-x-1/2 overflow-hidden"
     >
       {kind === "youtube" && ytId ? (
         calm ? (
@@ -161,15 +133,17 @@ export function HeroVideo() {
         />
       )}
 
-      {/* Readability. Kept light — the only text over this is the pill and the
-          button, both of which carry their own background. It no longer has to
-          reach solid --color-void at the bottom, because the mask above now
-          feathers the whole layer out and the page shows through by itself. */}
+      {/* Readability, and the bottom edge.
+          Kept light through the middle — the only text over this is the pill and
+          the button, both of which carry their own background. It has to reach
+          solid --color-void at the bottom, though: with no mask, the foot of the
+          clip is a hard horizontal line the full width of the screen, and this
+          is what dissolves it into the page below. */}
       <div
         className="absolute inset-0"
         style={{
           background:
-            "linear-gradient(to bottom, rgba(8,9,11,0.5) 0%, rgba(8,9,11,0.36) 45%, rgba(8,9,11,0.68) 100%)",
+            "linear-gradient(to bottom, rgba(8,9,11,0.5) 0%, rgba(8,9,11,0.34) 42%, rgba(8,9,11,0.72) 84%, rgb(8,9,11) 100%)",
         }}
       />
     </div>
