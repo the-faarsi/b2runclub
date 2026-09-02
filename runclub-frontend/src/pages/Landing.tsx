@@ -458,17 +458,48 @@ export function Landing() {
       <Reveal>
         <section className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
           <div className="rule-gold mb-8" />
+          {/* Both figures are links into the list view. They point at the "All"
+              tab in both cases because both are counted across every event —
+              land someone on the Upcoming tab and the total they just clicked
+              would not match what they are looking at. "Open now" adds
+              ?highlight=open, which picks its own subset out of that list. */}
           <div className="grid grid-cols-2 gap-4">
             {[
-              { label: "Sessions", value: allEvents.length, suffix: "" },
-              { label: "Open now", value: upcoming.length, suffix: "" },
+              {
+                label: "Sessions",
+                value: allEvents.length,
+                to: "/events?filter=all",
+                aria: `${allEvents.length} sessions in total — see the full list`,
+              },
+              {
+                label: "Open now",
+                value: upcoming.length,
+                to: "/events?filter=all&highlight=open",
+                aria: `${upcoming.length} sessions open for entry — see them in the list`,
+              },
             ].map((s) => (
-              <div key={s.label} className="text-center sm:text-left">
+              <Link
+                key={s.label}
+                to={s.to}
+                aria-label={s.aria}
+                className="group block rounded-xl px-2 py-1 text-center transition-colors hover:bg-white/4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold sm:text-left"
+              >
                 <p className="display foil text-[clamp(30px,6vw,52px)] leading-none">
-                  <AnimatedNumber value={s.value} format={(v) => `${Math.round(v)}${s.suffix}`} />
+                  <AnimatedNumber value={s.value} format={(v) => `${Math.round(v)}`} />
                 </p>
-                <p className="eyebrow mt-2">{s.label}</p>
-              </div>
+                {/* The arrow shows at rest, not only on hover — a bare number
+                    with a label gives a reader no reason to think it is
+                    clickable, and this is the only cue that it is. */}
+                <p className="eyebrow mt-2 inline-flex items-center gap-1.5 transition-colors group-hover:text-gold">
+                  {s.label}
+                  <span
+                    aria-hidden
+                    className="opacity-45 transition-all duration-300 group-hover:translate-x-0.5 group-hover:opacity-100"
+                  >
+                    →
+                  </span>
+                </p>
+              </Link>
             ))}
           </div>
         </section>

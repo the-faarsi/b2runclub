@@ -38,6 +38,7 @@ export function EventCard({
   registration,
   index = 0,
   showStatus = false,
+  emphasis = "none",
 }: {
   event: ClubEvent;
   /** The viewer's registration for this event, if any. */
@@ -45,6 +46,12 @@ export function EventCard({
   index?: number;
   /** Admins see DRAFT/ARCHIVED badges. */
   showStatus?: boolean;
+  /**
+   * Set when the list is highlighting a subset (arriving from the home page's
+   * "Open now" figure, say). "match" gets the gold halo, "muted" fades back so
+   * the matches are what the eye lands on. "none" is the ordinary card.
+   */
+  emphasis?: "none" | "match" | "muted";
 }) {
   const { day, month, weekday } = dateParts(event.date_time);
   const past = isPast(event.date_time);
@@ -55,13 +62,21 @@ export function EventCard({
   return (
     <motion.div
       initial={{ opacity: 0, y: 16 }}
-      animate={{ opacity: 1, y: 0 }}
+      /* The fade for "muted" rides on framer's animate rather than a CSS class:
+         framer writes opacity inline every frame, so a class would lose. */
+      animate={{ opacity: emphasis === "muted" ? 0.4 : 1, y: 0 }}
       transition={{ duration: DUR.reveal, delay: Math.min(index * 0.05, 0.3), ease: EASE }}
       className="h-full"
     >
       <Tilt className="h-full" max={8} lift={9}>
       <Spotlight className="h-full rounded-[var(--radius-card)]">
-        <Card hover className="group relative h-full overflow-hidden edge-gold">
+        <Card
+          hover
+          className={cn(
+            "group relative h-full overflow-hidden edge-gold",
+            emphasis === "match" && "card-glow",
+          )}
+        >
           {/* The organiser's cover, as the card's own background. Heavily
               scrimmed — small text runs across the whole face here, unlike the
               detail hero where it sits in one corner. */}
