@@ -295,28 +295,32 @@ export function Landing() {
           screen is well inside the visible area. */}
       <section
         ref={heroRef}
-        className="relative mx-auto max-w-7xl px-4 pb-8 pt-14 sm:px-6 sm:pt-20 lg:px-8"
+        className="relative mx-auto max-w-7xl px-4 pt-14 sm:px-6 sm:pt-20 lg:px-8"
       >
         {/*
-          The video area, and its own positioning context.
+          HeroVideo is `absolute inset-y-0`, so whichever box it sits in decides
+          where the clip starts and ends — and `inset-y-0` resolves against the
+          containing block's *padding* box, so sitting here means it covers this
+          section's `pt-20` as well.
 
-          HeroVideo is `absolute inset-y-0`, so whatever box it sits in decides
-          where the clip ends. It used to be this section, which made the video
-          the full height of the hero and put the call to action on top of the
-          picture — over the group, in the case of the club's own clip. Scoping
-          it to this div ends the clip here, and the button below then sits on
-          the page.
+          That is the whole reason it lives here rather than one level down. When
+          it was inside the div below, the clip began after the section's top
+          padding and left an 80px band of bare page between the navbar and the
+          picture. The call to action is what moved out of the section instead —
+          see below — which is what keeps the clip from covering the group.
 
-          The min-height stands in for the 3D ribbon-and-orbit graphic that used
-          to be here: the section has no other content tall enough, so without
-          it the clip collapsed to a thin strip behind a pill.
-
-          The video still spans the viewport, not this box — it is `w-screen`
-          and centred on its container's centre, which is the viewport's centre
-          because the section is `mx-auto`.
+          The section carries no bottom padding for the same reason: it would
+          extend the clip past the video area and reopen the same gap at the
+          other end. The spacing under the video is the call to action's own top
+          padding.
         */}
+        <HeroVideo />
+
+        {/* The video area. The min-height stands in for the 3D
+            ribbon-and-orbit graphic that used to be here: nothing else in the
+            hero is tall enough, so without it the clip collapsed to a thin
+            strip behind a pill. */}
         <div className="relative flex min-h-[clamp(340px,48vh,520px)] flex-col items-center pt-2 text-center">
-          <HeroVideo />
           <span
             ref={heroPillRef}
             className="relative inline-flex items-center gap-2 rounded-full border border-gold/25 bg-gold/8 px-3 py-1.5"
@@ -330,17 +334,24 @@ export function Landing() {
           </span>
         </div>
 
-        {/* Below the video rather than over it, so nothing covers the subject.
-            The scrim inside HeroVideo reaches the page colour at its foot, so
-            the clip has already dissolved by the time this starts.
+      </section>
 
-            The gap is generous on purpose — it is what separates the button
-            from the picture instead of leaving it looking tacked onto the
-            bottom edge. Paired with the reduced `pb` on the section: the
-            button drops into space the hero already had below it rather than
-            pushing the whole page down, so "Next up" stays roughly where it
-            was. */}
-        <div className="flex flex-col items-center gap-4 pt-14 text-center sm:pt-20">
+      {/* ── Hero call to action ───────────────────────────── */}
+      {/* Outside the hero section, not just outside the video area. HeroVideo
+          fills its section's padding box, so anything left inside would have the
+          clip running behind it — which is what used to put this button on top
+          of the group.
+
+          Its own top padding is the gap under the video; the section above
+          deliberately has no bottom padding, so this is the only thing setting
+          that distance.
+
+          The GSAP timeline still animates this: it is handed element references
+          rather than selector strings, so `useGSAP`'s `scope` does not have to
+          contain it. heroSpotlightRef, in the Next up section, was already
+          outside for the same reason. */}
+      <div className="mx-auto max-w-7xl px-4 pb-8 pt-14 text-center sm:px-6 sm:pt-20 lg:px-8">
+        <div className="flex flex-col items-center gap-4">
           <Link
             ref={heroBtnPrimaryRef}
             to={user ? "/calendar" : "/signup"}
@@ -374,7 +385,7 @@ export function Landing() {
             </Link>
           )}
         </div>
-      </section>
+      </div>
 
       {/* ── Next up ───────────────────────────────────────── */}
       {/*
