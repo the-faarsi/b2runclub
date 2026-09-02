@@ -321,9 +321,20 @@ export function Landing() {
             hero is tall enough, so without it the clip collapsed to a thin
             strip behind a pill. */}
         <div className="relative flex min-h-[clamp(340px,48vh,520px)] flex-col items-center pt-2 text-center">
+          {/* Its own near-opaque chip rather than the 8% gold tint it used to
+              have. That tint left the label borrowing contrast from the
+              darkening wash over the video, and measured 1.6:1 on a laptop
+              against the 4.5:1 an 11px bold label needs — gold on sunlit sky is
+              not a combination that works.
+
+              This is now the label's only protection: the wash is gone
+              entirely, so whatever the organiser's clip is showing sits
+              directly behind it. At 88% opacity that measured 4.71:1 at the
+              99th percentile — passing, but with no margin against brighter
+              footage. 92% puts it at 5.8:1. */}
           <span
             ref={heroPillRef}
-            className="relative inline-flex items-center gap-2 rounded-full border border-gold/25 bg-gold/8 px-3 py-1.5"
+            className="relative inline-flex items-center gap-2 rounded-full border border-gold/35 bg-void/92 px-3 py-1.5 backdrop-blur-md"
           >
             <span className="size-1.5 rounded-full bg-gold pulse-ring" aria-hidden />
             <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-gold">

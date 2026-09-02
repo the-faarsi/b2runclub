@@ -192,46 +192,6 @@
    * Also raises the background to near-opaque. The point is separation, and a
    * ring around a card you can still see the video through only half solves it.
    */
-  /*
-   * The darkening wash over the hero video, and the dissolve at its foot.
-   *
-   * A class with a media query rather than an inline style, because the two
-   * viewports want different amounts and a `style` prop cannot carry a
-   * breakpoint. The phone value is the one to leave alone — it was judged right
-   * as it is.
-   *
-   * The dissolve only has to reach solid --color-void exactly at the layer's
-   * bottom edge; there is no mask any more, so that hard horizontal line is the
-   * full width of the screen and this is the only thing hiding it. How *wide*
-   * the ramp is is purely taste, and a wide clip wants a narrower one: the same
-   * percentage covers a much larger area of the frame at desktop proportions.
-   */
-  .hero-scrim {
-    background: linear-gradient(
-      to bottom,
-      rgb(8 9 11 / 0.5) 0%,
-      rgb(8 9 11 / 0.3) 38%,
-      rgb(8 9 11 / 0.3) 86%,
-      rgb(8 9 11 / 0.62) 95%,
-      rgb(8 9 11) 100%
-    );
-  }
-
-  /* sm and up: the dissolve is held off to 91% and the whole ramp is 9% of the
-     height instead of 14% — 46px rather than 72px on a 512px clip. */
-  @media (min-width: 40rem) {
-    .hero-scrim {
-      background: linear-gradient(
-        to bottom,
-        rgb(8 9 11 / 0.5) 0%,
-        rgb(8 9 11 / 0.3) 38%,
-        rgb(8 9 11 / 0.3) 91%,
-        rgb(8 9 11 / 0.5) 96.5%,
-        rgb(8 9 11) 100%
-      );
-    }
-  }
-
   .card-glow {
     border-color: rgb(233 185 73 / 0.42);
     background-color: color-mix(in oklab, var(--color-surface) 95%, transparent);

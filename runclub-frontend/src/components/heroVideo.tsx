@@ -39,7 +39,8 @@ export function HeroVideo() {
     const el = videoRef.current;
     if (!el || kind !== "file" || calm) return;
     // Autoplay can still be refused (data saver, low power mode). Not an error
-    // worth surfacing — the gradient underneath is a valid backdrop.
+    // worth surfacing — the first frame stands as a still, and the page's own
+    // background shows through where the clip does not reach.
     void el.play().catch(() => undefined);
   }, [src, kind, calm]);
 
@@ -69,12 +70,22 @@ export function HeroVideo() {
    *      ~15px of 100vw that a desktop scrollbar accounts for is trimmed rather
    *      than adding a scrollbar.
    *
-   *   2. The scrim below now reaches solid --color-void at the bottom. The
-   *      video's own bottom edge is a hard horizontal line across the full
-   *      width once the mask is gone, and a scrim ending at 0.68 alpha does not
-   *      hide it. Landing on the page colour does.
+   *   2. Nothing over the top of it. There is no darkening wash either — the
+   *      clip plays at full strength, which is the point.
    *
-   * The top edge needs nothing: it sits under the sticky navbar.
+   * So the foot of the clip is a hard horizontal line the full width of the
+   * screen. That is deliberate: showing the whole frame was judged worth more
+   * than hiding the join. A gradient used to dissolve it, and went through
+   * several rounds of narrowing — 72px, then 46px, then 31px on a 512px clip —
+   * before being dropped outright.
+   *
+   * What makes that safe is the events pill carrying its own background instead
+   * of borrowing contrast from that wash. Gold text on an 8% gold tint measured
+   * 1.6:1 over sunlit footage while the wash was still there; with nothing
+   * behind the picture it would be worse. See the pill in Landing.tsx.
+   *
+   * The left and right edges land at the viewport and the top sits below the
+   * sticky navbar, so neither needs anything.
    */
   return (
     <div
@@ -132,18 +143,6 @@ export function HeroVideo() {
           onError={() => setFailed(true)}
         />
       )}
-
-      {/* Readability, and the bottom edge.
-          The only thing over this now is the pill — the call to action moved out
-          from over the picture — so the middle stays light. It still has to
-          reach solid --color-void at the very bottom: with no mask, the foot of
-          the clip is a hard horizontal line the full width of the screen, and
-          this is what dissolves it into the page below.
-
-          The gradient lives in `.hero-scrim` rather than here, because the phone
-          and the desktop want different amounts of dissolve and a `style` prop
-          cannot carry a breakpoint. */}
-      <div className="hero-scrim absolute inset-0" />
     </div>
   );
 }
