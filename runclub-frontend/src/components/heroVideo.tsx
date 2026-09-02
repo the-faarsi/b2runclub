@@ -134,18 +134,16 @@ export function HeroVideo() {
       )}
 
       {/* Readability, and the bottom edge.
-          Kept light through the middle — the only text over this is the pill and
-          the button, both of which carry their own background. It has to reach
-          solid --color-void at the bottom, though: with no mask, the foot of the
-          clip is a hard horizontal line the full width of the screen, and this
-          is what dissolves it into the page below. */}
-      <div
-        className="absolute inset-0"
-        style={{
-          background:
-            "linear-gradient(to bottom, rgba(8,9,11,0.5) 0%, rgba(8,9,11,0.34) 42%, rgba(8,9,11,0.72) 84%, rgb(8,9,11) 100%)",
-        }}
-      />
+          The only thing over this now is the pill — the call to action moved out
+          from over the picture — so the middle stays light. It still has to
+          reach solid --color-void at the very bottom: with no mask, the foot of
+          the clip is a hard horizontal line the full width of the screen, and
+          this is what dissolves it into the page below.
+
+          The gradient lives in `.hero-scrim` rather than here, because the phone
+          and the desktop want different amounts of dissolve and a `style` prop
+          cannot carry a breakpoint. */}
+      <div className="hero-scrim absolute inset-0" />
     </div>
   );
 }
