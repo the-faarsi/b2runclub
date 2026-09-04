@@ -2,6 +2,7 @@ import { Router, Response } from "express";
 import prisma from "../utils/prisma";
 import { AuthRequest, requireRole } from "../middleware/auth";
 import { requireVerified } from "../middleware/verified";
+import { MAX_PARTY_SIZE, parseGuests, priceParty, seatCost } from "../utils/party";
 import { deleteObject } from "../utils/storage";
 import Razorpay from "razorpay";
 import { ALLOWED_OFFSETS } from "../utils/reminders";
@@ -43,30 +44,73 @@ export function parseCapacity(raw: unknown): number | null | undefined | typeof 
 }
 
 /**
- * Filter defining which registrations consume a place. Shared by the single-event
- * count and the grouped count used for lists, so the two can never disagree.
+ * Normalises the two children fields together, because they only make sense
+ * together.
  *
- *  - A blocked entry frees its place: an organiser barring someone should open the
- *    spot back up.
- *  - FAILED covers failed and refunded payments, which likewise release it.
- *  - PENDING *does* hold a place, so a rush of half-finished checkouts cannot
+ * A price with the toggle off is meaningless, and the toggle on with no price is
+ * an event nobody can bring a child to — so the first is cleared and the second
+ * is refused. Returns INVALID for a malformed price so the caller can answer
+ * 400 rather than storing NaN.
+ */
+export function parseKids(raw: {
+    kids_allowed?: unknown;
+    kid_price?: unknown;
+}): { kids_allowed: boolean; kid_price: number | null } | typeof INVALID {
+    const allowed = raw.kids_allowed === true || raw.kids_allowed === "true";
+
+    if (!allowed) {
+        // Cleared rather than kept: a stale price behind a disabled toggle is
+        // what gets switched back on months later and surprises somebody.
+        return { kids_allowed: false, kid_price: null };
+    }
+
+    if (raw.kid_price === undefined || raw.kid_price === null || raw.kid_price === "") {
+        return INVALID;
+    }
+    const price = Number(raw.kid_price);
+    if (!Number.isFinite(price) || price < 0) return INVALID;
+
+    return { kids_allowed: true, kid_price: price };
+}
+
+/**
+ * Filter defining which *bookings* hold places. Shared by the single-event count
+ * and the grouped count used for lists, so the two can never disagree.
+ *
+ *  - A blocked entry frees its places: an organiser barring someone should open
+ *    the spots back up.
+ *  - FAILED covers failed and refunded payments, which likewise release them.
+ *  - PENDING *does* hold places, so a rush of half-finished checkouts cannot
  *    oversell the event.
- *  - Volunteers are excluded entirely. They are crew rather than participants and
- *    are exempt from the cap on registration, so counting them would let a marshal
- *    consume a runner's place — inconsistent with letting them past the check.
+ *
+ * Volunteers are no longer excluded here, and that is the important change. A
+ * booking is now a party: the volunteer's own place is still free, but anyone
+ * they bring is a participant and takes a place. Excluding the whole row would
+ * have let a marshal walk four guests past a full event. The exemption moved
+ * down to the guest level — see seatsTaken.
  */
 // Not `as const`: Prisma's generated filter types take a mutable string[], so a
 // readonly tuple is rejected.
 export const SEAT_FILTER = {
     blocked_at: null,
     status: { in: ["PAID", "FREE", "PENDING"] },
-    role_at_event: { not: "VOLUNTEER" },
 };
 
-/** How many participant places an event has given away. */
+/**
+ * How many participant places an event has given away.
+ *
+ * Counts *people*, not bookings. It counted rows until parties existed, which
+ * would now read a family of five as one place and oversell every capped
+ * session. Children count; a volunteer's own place does not, which is the `OR`
+ * below: keep a guest row if it is not the booker, or if the booker is not a
+ * volunteer.
+ */
 export async function seatsTaken(eventId: string): Promise<number> {
-    return prisma.eventRegistration.count({
-        where: { event_id: eventId, ...SEAT_FILTER },
+    return prisma.registrationGuest.count({
+        where: {
+            registration: { event_id: eventId, ...SEAT_FILTER },
+            OR: [{ is_booker: false }, { registration: { role_at_event: { not: "VOLUNTEER" } } }],
+        },
     });
 }
 
@@ -124,6 +168,13 @@ router.post("/", requireRole(["ADMIN"]), async (req: AuthRequest, res: Response)
     try {
         const { title, type, date_time, location, price, status, description, capacity, cover_url } =
             req.body;
+        const kids = parseKids(req.body ?? {});
+        if (kids === INVALID) {
+            res.status(400).json({
+                error: "Set an entry price for children of 0 or more, or turn children off for this session.",
+            });
+            return;
+        }
         const adminId = req.user!.id;
 
         if (!title || !type || !date_time || !location || price === undefined) {
@@ -163,6 +214,8 @@ router.post("/", requireRole(["ADMIN"]), async (req: AuthRequest, res: Response)
                 // Already a stored URL by this point — the client uploads to
                 // /api/content/uploads/image first.
                 cover_url: typeof cover_url === "string" ? cover_url.trim() || null : null,
+                kids_allowed: kids.kids_allowed,
+                kid_price: kids.kid_price,
             },
         });
 
@@ -207,18 +260,47 @@ router.get("/", async (req: AuthRequest, res: Response): Promise<void> => {
         const counts = new Map<string, number>();
 
         if (capped.length > 0) {
-            const grouped = await prisma.eventRegistration.groupBy({
-                by: ["event_id"],
-                where: { event_id: { in: capped.map((e) => e.id) }, ...SEAT_FILTER },
-                _count: { _all: true },
+            /*
+             * Guest rows, tallied here rather than by the database.
+             *
+             * This was a `groupBy` on registrations, which now undercounts: a
+             * party of five is one row. Prisma cannot group by a field on a
+             * relation, so the alternative is raw SQL per dialect — the app runs
+             * on SQLite locally and Postgres in production, and two hand-written
+             * queries that must stay in step is a worse trade than tallying a
+             * few hundred rows in memory. Still one query for the whole page,
+             * which is what this block exists for.
+             */
+            const rows = await prisma.registrationGuest.findMany({
+                where: {
+                    registration: { event_id: { in: capped.map((e) => e.id) }, ...SEAT_FILTER },
+                    OR: [
+                        { is_booker: false },
+                        { registration: { role_at_event: { not: "VOLUNTEER" } } },
+                    ],
+                },
+                select: { registration: { select: { event_id: true } } },
             });
-            for (const row of grouped) counts.set(row.event_id, row._count._all);
+            for (const row of rows) {
+                const id = row.registration.event_id;
+                counts.set(id, (counts.get(id) ?? 0) + 1);
+            }
         }
 
         res.json(
+            /* The party ceiling rides along on every event rather than living
+               in a second constant on the client. The form and the server then
+               cannot disagree about it, which is the failure mode a duplicated
+               limit eventually always has. */
             events.map((e) => {
                 if (e.capacity === null) {
-                    return { ...e, taken: null, spots_left: null, full: false };
+                    return {
+                        ...e,
+                        taken: null,
+                        spots_left: null,
+                        full: false,
+                        max_party_size: MAX_PARTY_SIZE,
+                    };
                 }
                 const taken = counts.get(e.id) ?? 0;
                 return {
@@ -226,6 +308,7 @@ router.get("/", async (req: AuthRequest, res: Response): Promise<void> => {
                     taken,
                     spots_left: Math.max(0, e.capacity - taken),
                     full: taken >= e.capacity,
+                    max_party_size: MAX_PARTY_SIZE,
                 };
             }),
         );
@@ -355,7 +438,7 @@ router.get("/:id", async (req: AuthRequest, res: Response): Promise<void> => {
             return;
         }
 
-        res.json({ ...event, ...(await capacityOf(event)) });
+        res.json({ ...event, ...(await capacityOf(event)), max_party_size: MAX_PARTY_SIZE });
     } catch (error: any) {
         res.status(500).json({ error: error.message || "Failed to fetch event" });
     }
@@ -408,6 +491,20 @@ router.put("/:id", requireRole(["ADMIN"]), async (req: AuthRequest, res: Respons
         // create route above, deliberately.
         if (cover_url !== undefined) {
             dataToUpdate.cover_url = typeof cover_url === "string" ? cover_url.trim() || null : null;
+        }
+        /* Keyed on the toggle rather than either field, because the two move
+           together: turning children off has to clear the price, which an
+           `undefined` check on kid_price alone would skip. */
+        if (req.body?.kids_allowed !== undefined) {
+            const kids = parseKids(req.body);
+            if (kids === INVALID) {
+                res.status(400).json({
+                    error: "Set an entry price for children of 0 or more, or turn children off for this session.",
+                });
+                return;
+            }
+            dataToUpdate.kids_allowed = kids.kids_allowed;
+            dataToUpdate.kid_price = kids.kid_price;
         }
         if (capacity !== undefined) {
             const parsed = parseCapacity(capacity);
@@ -555,22 +652,56 @@ router.post("/:id/register", requireRole(["MEMBER", "VOLUNTEER"]), requireVerifi
             return;
         }
 
+        /*
+         * The party, validated before anything is charged or written. Names of
+         * the extra people only — the member's own row is built from their
+         * account below, so nobody can book under a name that is not theirs.
+         */
+        if (!user) {
+            // Authenticated, so this cannot normally happen — but the booker's
+            // name is read off this row below, and a `!` there would turn a
+            // deleted account into a crash rather than an answer.
+            res.status(404).json({ error: "Account not found" });
+            return;
+        }
+
+        const parsed = parseGuests(req.body?.guests, event);
+        if (!parsed.ok) {
+            res.status(400).json({ error: parsed.error });
+            return;
+        }
+        const extraGuests = parsed.guests!;
+        const isVolunteer = userRole === "VOLUNTEER";
+        const party = priceParty({ event, guests: extraGuests, isVolunteer });
+
         /**
          * Capacity check, after the already-registered check so somebody who is
          * already on the list is never told the event is full.
          *
-         * Volunteers are exempt: they are crew rather than participants, and a
-         * full event still needs marshals. Blocking a marshal because the runner
-         * places sold out would be the wrong outcome.
+         * Compares against the *whole party*, not one place. `taken >= capacity`
+         * would let a family of five into a session with one place left, which
+         * is the bug that arrives with party bookings and does not announce
+         * itself until the start line.
+         *
+         * A volunteer's own place is still exempt — crew are not participants,
+         * and a full event still needs marshals — but the people they bring
+         * are, so seatCost drops one place for them and counts the rest.
          */
-        if (event.capacity !== null && userRole !== "VOLUNTEER") {
+        const cost = seatCost(party.partySize, isVolunteer);
+        if (event.capacity !== null && cost > 0) {
             const taken = await seatsTaken(eventId);
-            if (taken >= event.capacity) {
+            if (taken + cost > event.capacity) {
+                const left = Math.max(0, event.capacity - taken);
                 res.status(409).json({
-                    error: "This event is full.",
-                    full: true,
+                    error:
+                        left === 0
+                            ? "This event is full."
+                            : `Only ${left} place${left === 1 ? "" : "s"} left, and you asked for ${cost}.`,
+                    full: left === 0,
                     capacity: event.capacity,
                     taken,
+                    spots_left: left,
+                    requested: cost,
                 });
                 return;
             }
@@ -584,22 +715,22 @@ router.post("/:id/register", requireRole(["MEMBER", "VOLUNTEER"]), requireVerifi
             });
         }
 
-        // Determine initial payment status and roles
-        let paymentStatus = "PENDING";
-        let roleAtEvent = "MEMBER";
-
-        if (userRole === "VOLUNTEER") {
-            paymentStatus = "FREE";
-            roleAtEvent = "VOLUNTEER";
-        } else if (event.price === 0) {
-            paymentStatus = "FREE";
-        }
+        /*
+         * Status follows the party total rather than the role.
+         *
+         * A volunteer used to be FREE unconditionally. Their own place still is,
+         * but the club's rule is that only the volunteer is comped — so a
+         * marshal bringing two children owes for two children, and marking that
+         * booking FREE would have handed the entry away.
+         */
+        const roleAtEvent = isVolunteer ? "VOLUNTEER" : "MEMBER";
+        let paymentStatus = party.amountPaise === 0 ? "FREE" : "PENDING";
 
         let razorpayOrderId: string | null = null;
-        // One rounding, used for both the order and the response. They were
-        // computed separately, so a price like 99.99 sent 9999 paise to Razorpay
-        // while telling the client 9999.000000000002.
-        const amountPaise = Math.round(event.price * 100);
+        /* The whole party's total, rounded to paise per unit price before being
+           multiplied — see priceParty. One number used for the order, the stored
+           snapshot and the response, so the three cannot disagree. */
+        const amountPaise = party.amountPaise;
 
         if (paymentStatus === "PENDING") {
             /**
@@ -612,7 +743,7 @@ router.post("/:id/register", requireRole(["MEMBER", "VOLUNTEER"]), requireVerifi
              */
             if (amountPaise < 100) {
                 res.status(400).json({
-                    error: `Entry is ${event.price}, which is below the ₹1 minimum a card payment can take. Ask an organiser to make it free or at least ₹1.`,
+                    error: `This booking comes to ₹${(amountPaise / 100).toFixed(2)}, which is below the ₹1 minimum a card payment can take. Ask an organiser to make the entry free or at least ₹1.`,
                 });
                 return;
             }
@@ -652,7 +783,15 @@ router.post("/:id/register", requireRole(["MEMBER", "VOLUNTEER"]), requireVerifi
             }
         }
 
-        // Create the registration record
+        /*
+         * The booking and its people in one nested create, so a party can never
+         * exist without its guest rows. That matters beyond tidiness: capacity
+         * counts guest rows, so a registration written without them would hold
+         * zero places and quietly oversell the session.
+         *
+         * The booker's row is built from their account name, never from the
+         * request.
+         */
         const registration = await prisma.eventRegistration.create({
             data: {
                 event_id: eventId,
@@ -661,7 +800,17 @@ router.post("/:id/register", requireRole(["MEMBER", "VOLUNTEER"]), requireVerifi
                 role_at_event: roleAtEvent,
                 waiver_signed: true,
                 razorpay_order_id: razorpayOrderId,
+                amount_due_paise: amountPaise,
+                adult_price_at_booking: party.adultPrice,
+                kid_price_at_booking: party.kidPrice,
+                guests: {
+                    create: [
+                        { name: user.name, kind: "ADULT", is_booker: true },
+                        ...extraGuests.map((g) => ({ name: g.name, kind: g.kind })),
+                    ],
+                },
             },
+            include: { guests: { orderBy: [{ is_booker: "desc" }, { created_at: "asc" }] } },
         });
 
         res.status(211).json({
@@ -669,6 +818,13 @@ router.post("/:id/register", requireRole(["MEMBER", "VOLUNTEER"]), requireVerifi
             registration,
             razorpay_key_id: isRazorpayMock ? "mock_key_id" : razorpayKeyId,
             amount: amountPaise,
+            party: {
+                size: party.partySize,
+                adults: party.adults,
+                kids: party.kids,
+                paying_adults: party.payingAdults,
+                seats_used: cost,
+            },
         });
     } catch (error: any) {
         res.status(500).json({ error: error.message || "Registration failed" });

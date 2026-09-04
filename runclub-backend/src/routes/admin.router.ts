@@ -15,7 +15,11 @@ router.get("/financial-overview", requireRole(["ADMIN"]), async (req: AuthReques
             include: { event: true },
         }) as any;
 
-        const totalRevenue = (paidRegistrations as any[]).reduce((sum, reg) => sum + reg.event.price, 0);
+        /* Summed from what each booking was charged, not from the event price.
+           A party of three paid three entries, and summing the event price
+           counted it once — so revenue read low by exactly the guests. */
+        const totalRevenue =
+            (paidRegistrations as any[]).reduce((sum, reg) => sum + reg.amount_due_paise, 0) / 100;
 
         const pendingCounts = await prisma.eventRegistration.count({
             where: { status: "PENDING" },
@@ -403,7 +407,7 @@ router.get("/members", requireRole(["ADMIN"]), async (req: AuthRequest, res: Res
 
             if (r.status === "PAID") {
                 u.paid += 1;
-                u.total_paid += r.event.price;
+                u.total_paid += r.amount_due_paise / 100;
             } else if (r.status === "PENDING") u.pending += 1;
             else if (r.status === "FREE") u.comped += 1;
 

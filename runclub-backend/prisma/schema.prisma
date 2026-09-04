@@ -81,6 +81,41 @@ model VerificationCode {
   @@index([user_id, channel])
 }
 
+/// One named person on a booking — the member who booked, plus anyone they
+/// brought.
+///
+/// A row per person rather than adult/kid counters on the registration, because
+/// names are required. Counters would have meant storing a number and a separate
+/// list of names that could disagree, and race day needs to admit people
+/// individually: "two booked, one turned up" is a per-person fact.
+///
+/// The booking member gets a row too, flagged is_booker. That is the whole
+/// reason check-in has one shape instead of two — every attendee is a row with
+/// an admitted_at, and the roster is just this list.
+model RegistrationGuest {
+  id              String    @id @default(uuid())
+  registration_id String
+
+  name            String
+  /// "ADULT" or "KID". Decides which price applied and whether the event had to
+  /// allow children.
+  kind            String    @default("ADULT")
+  /// True for the member who made the booking. They cannot be removed from their
+  /// own party, and a volunteer's own place is the one that is comped.
+  is_booker       Boolean   @default(false)
+
+  /// Null until they are admitted at the start line. This is what lets a party of
+  /// two be half checked in.
+  admitted_at     DateTime?
+  admitted_by     String?
+
+  created_at      DateTime  @default(now())
+
+  registration    EventRegistration @relation(fields: [registration_id], references: [id], onDelete: Cascade)
+
+  @@index([registration_id])
+}
+
 // HEALTH SYNC Data
 // Workouts a member has imported from their phone's health app.
 //
@@ -210,6 +245,14 @@ model Event {
   location    String
   price       Float
   status      String @default("DRAFT")
+
+  /// Whether children may be brought to this session at all. Off by default, so
+  /// an existing event does not silently start accepting them.
+  kids_allowed Boolean @default(false)
+  /// Entry per child, when kids_allowed. Null means the organiser has not set
+  /// one — the registration route refuses a child in that state rather than
+  /// guessing at zero, since "free" and "not decided" are different answers.
+  kid_price    Float?
 
   /// Free-text brief shown on the event page. Optional.
   description String?
@@ -382,6 +425,21 @@ model EventRegistration {
   refund_id           String?
   refunded_at         DateTime?
   refund_amount       Float?
+
+  /// What was actually charged, in paise, for the whole party.
+  ///
+  /// A snapshot, not a calculation. An organiser can edit an event's price after
+  /// people have booked, so recomputing at refund time would return a different
+  /// number than was taken. Integer paise because that is what Razorpay works
+  /// in, and because a Float total of several tickets accumulates error.
+  amount_due_paise    Int      @default(0)
+  /// The unit prices this booking was priced at, kept for the same reason and so
+  /// a receipt can be reconstructed.
+  adult_price_at_booking Float @default(0)
+  kid_price_at_booking   Float?
+
+  /// Everyone this booking covers, the member included.
+  guests              RegistrationGuest[]
 
   event               Event         @relation(fields: [event_id], references: [id])
   user                User          @relation(fields: [user_id], references: [id])
