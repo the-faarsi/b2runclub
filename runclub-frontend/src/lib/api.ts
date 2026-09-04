@@ -15,6 +15,7 @@ import type {
   FeedbackSummary,
   FinancialOverview,
   Founder,
+  GuestDraft,
   HealthImportResult,
   HealthSummary,
   MailerConfig,
@@ -409,7 +410,21 @@ export const api = {
   deleteEvent: (id: string) =>
     request<{ message: string }>(`/api/events/${id}`, { method: "DELETE" }),
 
-  registerForEvent: (id: string, input: { waiver_signed: boolean; emergency_contact?: string }) =>
+  /**
+   * Books a place, optionally for guests as well.
+   *
+   * `guests` is the *extra* people only. The member's own place is added by the
+   * server from their account, so a booking cannot be made under a name that is
+   * not theirs.
+   */
+  registerForEvent: (
+    id: string,
+    input: {
+      waiver_signed: boolean;
+      emergency_contact?: string;
+      guests?: GuestDraft[];
+    },
+  ) =>
     request<{
       message: string;
       registration: Registration;

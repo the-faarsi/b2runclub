@@ -4,7 +4,7 @@ import { REMINDER_OFFSETS } from "../lib/types";
 import type { ClubEvent, EventStatus } from "../lib/types";
 import { cn } from "../lib/format";
 import { SparkIcon } from "./icons";
-import { Button, Field, Input, Modal, Select, Textarea } from "./ui";
+import { Button, Checkbox, Field, Input, Modal, Select, Textarea } from "./ui";
 
 export const EVENT_TYPES = ["Run", "Cycle", "Swim", "Race", "Training", "Social", "Party"];
 
@@ -48,6 +48,8 @@ const BLANK = {
   date_time: "",
   location: "",
   price: "0",
+  kids_allowed: false,
+  kid_price: "0",
   status: "DRAFT" as EventStatus,
   description: "",
   /** Empty string means unlimited — the backend reads a blank as null. */
@@ -150,6 +152,8 @@ export function EventFormModal({
         date_time: toLocalInput(event.date_time),
         location: event.location,
         price: String(event.price),
+        kids_allowed: Boolean(event.kids_allowed),
+        kid_price: event.kid_price != null ? String(event.kid_price) : "0",
         status: event.status,
         description: event.description ?? "",
         capacity: event.capacity != null ? String(event.capacity) : "",
@@ -182,6 +186,17 @@ export function EventFormModal({
 
     // Blank is a valid answer meaning unlimited; anything else must be a whole
     // number of at least one.
+    /* Only validated when the toggle is on. A stale figure behind a disabled
+       toggle should not block a save — the server clears it either way. */
+    let kidPrice: number | null = null;
+    if (form.kids_allowed) {
+      kidPrice = Number.parseFloat(form.kid_price);
+      if (Number.isNaN(kidPrice) || kidPrice < 0) {
+        setError("Set an entry price for children of 0 or more.");
+        return;
+      }
+    }
+
     const capacityText = form.capacity.trim();
     let capacity: number | null = null;
     if (capacityText !== "") {
@@ -205,6 +220,10 @@ export function EventFormModal({
         status: form.status,
         description: form.description.trim() || null,
         capacity,
+        /* Always sent, so turning children off on an edit actually clears the
+           price — the backend keys the whole pair on kids_allowed. */
+        kids_allowed: form.kids_allowed,
+        kid_price: kidPrice,
         // Always sent, including as an empty string, so clearing the cover on an
         // edit actually clears it — the backend keys on `undefined`, not falsy.
         cover_url: form.cover_url.trim() || null,
@@ -365,7 +384,7 @@ export function EventFormModal({
           <Field
             label="Places"
             htmlFor="ev-capacity"
-            hint="Leave blank for no limit. Volunteers don't use a place."
+            hint="Leave blank for no limit. Children use a place; a volunteer's own does not."
           >
             <Input
               id="ev-capacity"
@@ -377,6 +396,35 @@ export function EventFormModal({
               placeholder="Unlimited"
             />
           </Field>
+        </div>
+
+        {/* Children. The price only appears once they are allowed — a price
+            behind a disabled toggle is a number nobody can act on, and it is
+            what gets switched back on months later and surprises somebody. */}
+        <div className="rounded-xl border border-white/8 bg-white/[0.02] p-4">
+          <Checkbox
+            checked={form.kids_allowed}
+            onChange={(v) => setForm((f) => ({ ...f, kids_allowed: v }))}
+            label="Children welcome at this session"
+            description="Members can then add children to their booking, priced separately from adults."
+          />
+          {form.kids_allowed && (
+            <Field
+              label="Entry per child (INR)"
+              htmlFor="ev-kid-price"
+              hint="Zero lets children in free. Charged per child on top of the adult entries."
+              className="mt-4 max-w-xs"
+            >
+              <Input
+                id="ev-kid-price"
+                type="number"
+                min="0"
+                step="1"
+                value={form.kid_price}
+                onChange={set("kid_price")}
+              />
+            </Field>
+          )}
         </div>
 
         <div className="grid gap-5 sm:grid-cols-2">

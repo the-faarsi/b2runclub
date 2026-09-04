@@ -65,10 +65,26 @@ export interface ClubEvent {
   capacity?: number | null;
   /** Cover image used as the event's backdrop. Null when none was set. */
   cover_url?: string | null;
-  /** Participant places used. Null on an uncapped event. Volunteers don't count. */
+  /**
+   * Participant places used. Null on an uncapped event.
+   *
+   * Counts *people*, not bookings — a party of three uses three. A volunteer's
+   * own place is exempt; the people they bring are not.
+   */
   taken?: number | null;
   spots_left?: number | null;
   full?: boolean;
+  /** Whether children may be brought to this session. */
+  kids_allowed?: boolean;
+  /** Entry per child. Null means the organiser has not set one. */
+  kid_price?: number | null;
+  /**
+   * Most people one booking may cover, the member included.
+   *
+   * Comes from the server rather than a constant here, so the form and the rule
+   * that enforces it cannot hold different numbers.
+   */
+  max_party_size?: number;
 }
 
 export interface Registration {
@@ -83,6 +99,29 @@ export interface Registration {
   /** Set when an organiser has barred this person from the event. */
   blocked_at?: string | null;
   event?: ClubEvent;
+  /** What this booking was charged, in paise. Never recomputed from the event. */
+  amount_due_paise?: number;
+  /** Everyone the booking covers, the member included. */
+  guests?: RegistrationGuest[];
+}
+
+/** One named person on a booking. */
+export interface RegistrationGuest {
+  id: string;
+  registration_id: string;
+  name: string;
+  kind: "ADULT" | "KID";
+  /** The member who made the booking. Cannot be removed from their own party. */
+  is_booker: boolean;
+  /** Set once they have been admitted at the start line. */
+  admitted_at?: string | null;
+  admitted_by?: string | null;
+}
+
+/** A guest as the client sends it — the booker is added by the server. */
+export interface GuestDraft {
+  name: string;
+  kind: "ADULT" | "KID";
 }
 
 /** A row of the admin JSON roster for one event. */

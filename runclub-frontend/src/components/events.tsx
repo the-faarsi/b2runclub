@@ -19,11 +19,23 @@ import { REFUND_ONE_LINER, REFUND_WINDOW_HOURS } from "../lib/policies";
 import { CheckoutDismissed, isMockPayment, openCheckout } from "../lib/razorpay";
 import { downloadQr, extractQrDataUrl } from "../lib/share";
 import { EventCoverBackdrop } from "./eventCover";
-import type { ClubEvent, Registration } from "../lib/types";
+import type { ClubEvent, GuestDraft, Registration } from "../lib/types";
 import { ClockIcon, DisciplineIcon, DownloadIcon, PinIcon } from "./icons";
 import { Confetti, Spotlight } from "./motion";
 import { FlipCard, Tilt } from "./tilt";
-import { Badge, Button, buttonClass, Card, Checkbox, Field, Input, Modal, Spinner, useToast } from "./ui";
+import {
+  Badge,
+  Button,
+  Card,
+  Checkbox,
+  Field,
+  Input,
+  Modal,
+  Select,
+  Spinner,
+  buttonClass,
+  useToast,
+} from "./ui";
 
 const EVENT_STATUS_TINT: Record<string, string> = {
   DRAFT: "var(--color-pending)",
@@ -231,6 +243,7 @@ export function RegisterDialog({
   useEffect(() => {
     if (open) {
       setContact(user?.emergency_contact ?? "");
+      setGuests([]);
       setWaiver(false);
       setError(null);
       setStage("idle");
@@ -238,7 +251,29 @@ export function RegisterDialog({
   }, [open, user?.emergency_contact]);
 
   // Volunteers are comped by the backend regardless of price.
-  const comped = role === "VOLUNTEER" || event.price === 0;
+  /*
+   * The extra people on this booking. The member's own place is not in here —
+   * the server adds it from their account, so it cannot be renamed.
+   */
+  const [guests, setGuests] = useState<GuestDraft[]>([]);
+  const maxParty = event.max_party_size ?? 6;
+  const canAddMore = guests.length + 1 < maxParty;
+
+  const adults = 1 + guests.filter((g) => g.kind === "ADULT").length;
+  const kids = guests.filter((g) => g.kind === "KID").length;
+  const partySize = adults + kids;
+
+  /*
+   * The total, mirrored from the server's priceParty so the member sees what
+   * they will be charged. Advisory only — the server prices it again from the
+   * event and never trusts a figure from here.
+   *
+   * Only the volunteer's own place is comped, so one adult comes off for them
+   * and everyone they bring pays.
+   */
+  const payingAdults = role === "VOLUNTEER" ? adults - 1 : adults;
+  const total = payingAdults * event.price + kids * (event.kid_price ?? 0);
+  const comped = total === 0;
 
   const submit = async () => {
     setError(null);
@@ -248,6 +283,13 @@ export function RegisterDialog({
     }
     if (!waiver) {
       setError("You must sign the liability waiver to register.");
+      return;
+    }
+    /* Checked here as well as on the server, so an empty row is caught before
+       a payment sheet opens rather than after. */
+    const unnamed = guests.findIndex((g) => g.name.trim().length < 2);
+    if (unnamed !== -1) {
+      setError(`Give everyone a name — guest ${unnamed + 1} is blank.`);
       return;
     }
 
@@ -261,6 +303,7 @@ export function RegisterDialog({
       const res = await api.registerForEvent(event.id, {
         waiver_signed: true,
         emergency_contact: contact.trim(),
+        guests: guests.map((g) => ({ name: g.name.trim(), kind: g.kind })),
       });
       patchUser({ emergency_contact: contact.trim() });
       held = res.registration;
@@ -374,11 +417,12 @@ export function RegisterDialog({
       } · ${eventTime(event.date_time)} · ${event.location}`}
     >
       <div className="space-y-5">
+        {/* The party total, not the entry fee. Both this and the pay button
+            read inr(event.price), so a booking of four adults and two children
+            itemised to ₹480 above a button offering to take ₹100. */}
         <div className="flex items-center justify-between rounded-xl border border-white/8 bg-surface-2/60 px-4 py-3">
           <span className="eyebrow">Your total</span>
-          <span className="display text-xl">
-            {comped ? "Free" : inr(event.price)}
-          </span>
+          <span className="display text-xl">{comped ? "Free" : inr(total)}</span>
         </div>
 
         {comped && (
@@ -386,11 +430,134 @@ export function RegisterDialog({
             <span aria-hidden className="mr-1.5 font-bold text-[color:var(--color-free)]">
               ★
             </span>
-            {role === "VOLUNTEER"
-              ? "Volunteers are comped — your ticket is issued immediately."
-              : "This event is free — your ticket is issued immediately."}
+            {role === "VOLUNTEER" && partySize > 1
+              ? "Your own place is comped, and nobody you have added is being charged — your ticket is issued immediately."
+              : role === "VOLUNTEER"
+                ? "Volunteers are comped — your ticket is issued immediately."
+                : "Nothing to pay — your ticket is issued immediately."}
           </p>
         )}
+
+        {/*
+          Who is coming. The member is shown first and cannot be removed — it is
+          their booking, and the server names that row from their account
+          regardless of what is sent.
+
+          One QR and one payment covers the whole party; the crew admit people
+          individually on the day, which is why each one needs a name rather
+          than a headcount.
+        */}
+        <div className="rounded-xl border border-white/8 bg-surface-2/40 p-4">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <p className="text-[13px] font-semibold text-ink">Who's coming?</p>
+            <p className="text-[12px] text-ink-3">
+              {partySize} of {maxParty}
+            </p>
+          </div>
+
+          <div className="mt-3 space-y-2">
+            <div className="flex items-center gap-2.5 rounded-lg bg-white/[0.03] px-3 py-2">
+              <span className="text-[13px] text-ink">{user?.name ?? "You"}</span>
+              <span className="eyebrow">you</span>
+            </div>
+
+            {guests.map((g, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <Input
+                  value={g.name}
+                  onChange={(e) =>
+                    setGuests((list) =>
+                      list.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)),
+                    )
+                  }
+                  placeholder={g.kind === "KID" ? "Child's full name" : "Full name"}
+                  aria-label={`Guest ${i + 1} name`}
+                  className="flex-1"
+                />
+                {event.kids_allowed && (
+                  <Select
+                    value={g.kind}
+                    onChange={(e) =>
+                      setGuests((list) =>
+                        list.map((x, j) =>
+                          j === i ? { ...x, kind: e.target.value as GuestDraft["kind"] } : x,
+                        ),
+                      )
+                    }
+                    aria-label={`Guest ${i + 1} is an adult or a child`}
+                    className="w-28 shrink-0"
+                  >
+                    <option value="ADULT">Adult</option>
+                    <option value="KID">Child</option>
+                  </Select>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setGuests((list) => list.filter((_, j) => j !== i))}
+                  aria-label={`Remove guest ${i + 1}`}
+                  className="grid size-9 shrink-0 place-items-center rounded-lg border border-white/10 text-ink-3 transition-colors hover:border-[color:var(--color-failed)]/40 hover:text-[color:var(--color-failed)]"
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+
+          {canAddMore ? (
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setGuests((l) => [...l, { name: "", kind: "ADULT" }])}
+              >
+                + Add adult
+              </Button>
+              {event.kids_allowed && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setGuests((l) => [...l, { name: "", kind: "KID" }])}
+                >
+                  + Add child
+                </Button>
+              )}
+            </div>
+          ) : (
+            <p className="mt-3 text-[12px] text-ink-3">
+              A booking covers up to {maxParty} people. Ask an organiser if you need more.
+            </p>
+          )}
+
+          {!event.kids_allowed && (
+            <p className="mt-3 text-[12px] text-ink-3">This session is for adults only.</p>
+          )}
+
+          {/* The running total, itemised — a single figure on a party of four
+              invites the question this answers. */}
+          {!comped && (
+            <div className="mt-4 border-t border-white/8 pt-3 text-[13px]">
+              <div className="flex items-center justify-between text-ink-2">
+                <span>
+                  {payingAdults} × adult {inr(event.price)}
+                  {role === "VOLUNTEER" && " (yours is comped)"}
+                </span>
+                <span className="tnum">{inr(payingAdults * event.price)}</span>
+              </div>
+              {kids > 0 && (
+                <div className="mt-1 flex items-center justify-between text-ink-2">
+                  <span>
+                    {kids} × child {inr(event.kid_price ?? 0)}
+                  </span>
+                  <span className="tnum">{inr(kids * (event.kid_price ?? 0))}</span>
+                </div>
+              )}
+              <div className="mt-2 flex items-center justify-between border-t border-white/8 pt-2 font-semibold text-ink">
+                <span>Total</span>
+                <span className="tnum text-gold">{inr(total)}</span>
+              </div>
+            </div>
+          )}
+        </div>
 
         <Field
           label="Emergency contact"
@@ -411,7 +578,16 @@ export function RegisterDialog({
             checked={waiver}
             onChange={setWaiver}
             label="I sign the liability waiver"
-            description={`I confirm I am medically fit to take part, and I accept that ${CLUB_NAME} is not liable for injury or loss during the event.`}
+            /* Plural once the booking covers more than the member, because
+               they are then signing for other people — including, when there
+               are children, for someone who cannot sign for themselves. The
+               singular wording said "I am medically fit", which is not a claim
+               anyone can make on a guest's behalf. */
+            description={
+              partySize === 1
+                ? `I confirm I am medically fit to take part, and I accept that ${CLUB_NAME} is not liable for injury or loss during the event.`
+                : `I confirm everyone named on this booking is medically fit to take part, that I am responsible for any child I have added, and I accept that ${CLUB_NAME} is not liable for injury or loss to any of us during the event.`
+            }
           />
         </div>
 
@@ -452,7 +628,7 @@ export function RegisterDialog({
                 ? "Waiting for payment…"
                 : stage === "verifying"
                   ? "Confirming…"
-                  : `Pay ${inr(event.price)}`}
+                  : `Pay ${inr(total)}`}
           </Button>
         </div>
 
