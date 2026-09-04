@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
-import { Footer, Navbar } from "./components/layout";
+import { Footer, Navbar, ScrollManager } from "./components/layout";
 import { VerificationBanner } from "./components/verificationBanner";
 import { ScrollProgress } from "./components/motion";
 import { Spinner } from "./components/ui";
@@ -87,153 +87,158 @@ export default function App() {
   if (!ready) return <Booting />;
 
   return (
-    <Routes>
-      {/* Bare pages */}
-      <Route path="/login" element={<Login />} />
-      <Route path="/signup" element={<Signup />} />
-      {/* Both are reachable while signed out — that is the whole point. */}
-      <Route path="/forgot-password" element={<ForgotPassword />} />
-      <Route path="/reset-password" element={<ResetPassword />} />
+    <>
+      {/* Above <Routes> rather than inside <Shell>, so the bare pages —
+          sign-in, sign-up, the password flows — open at the top too. */}
+      <ScrollManager />
+      <Routes>
+        {/* Bare pages */}
+        <Route path="/login" element={<Login />} />
+        <Route path="/signup" element={<Signup />} />
+        {/* Both are reachable while signed out — that is the whole point. */}
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
 
-      {/* Chrome pages */}
-      <Route element={<Shell />}>
-        <Route path="/" element={<Landing />} />
-        <Route path="/calendar" element={<Calendar />} />
-        <Route path="/events" element={<Events />} />
-        <Route path="/events/:id" element={<EventDetail />} />
-        <Route path="/polls" element={<Polls />} />
-        {/* Gallery is view-only for members and visitors; posting is gated in the page. */}
-        <Route path="/gallery" element={<Gallery />} />
-        <Route path="/about" element={<About />} />
+        {/* Chrome pages */}
+        <Route element={<Shell />}>
+          <Route path="/" element={<Landing />} />
+          <Route path="/calendar" element={<Calendar />} />
+          <Route path="/events" element={<Events />} />
+          <Route path="/events/:id" element={<EventDetail />} />
+          <Route path="/polls" element={<Polls />} />
+          {/* Gallery is view-only for members and visitors; posting is gated in the page. */}
+          <Route path="/gallery" element={<Gallery />} />
+          <Route path="/about" element={<About />} />
 
-        {/* Signed in only — there is no account to confirm otherwise. Not
-            role-gated: an admin who has not confirmed their own details needs
-            this page as much as anybody. */}
-        <Route
-          path="/verify"
-          element={
-            <Guard>
-              <Verify />
-            </Guard>
-          }
-        />
+          {/* Signed in only — there is no account to confirm otherwise. Not
+              role-gated: an admin who has not confirmed their own details needs
+              this page as much as anybody. */}
+          <Route
+            path="/verify"
+            element={
+              <Guard>
+                <Verify />
+              </Guard>
+            }
+          />
 
-        {/* Policies are public: someone deciding whether to join needs to read
-            the terms and the refund rules before they have an account. */}
-        <Route path="/terms" element={<TermsPage />} />
-        <Route path="/privacy" element={<PrivacyPage />} />
-        <Route path="/refunds" element={<RefundPage />} />
+          {/* Policies are public: someone deciding whether to join needs to read
+              the terms and the refund rules before they have an account. */}
+          <Route path="/terms" element={<TermsPage />} />
+          <Route path="/privacy" element={<PrivacyPage />} />
+          <Route path="/refunds" element={<RefundPage />} />
 
-        {/* Volunteer terms are for marshals. Admins can see it too — they are
-            the ones who brief volunteers on it. */}
-        <Route
-          path="/volunteer-terms"
-          element={
-            <Guard roles={["VOLUNTEER", "ADMIN"]}>
-              <VolunteerTermsPage />
-            </Guard>
-          }
-        />
+          {/* Volunteer terms are for marshals. Admins can see it too — they are
+              the ones who brief volunteers on it. */}
+          <Route
+            path="/volunteer-terms"
+            element={
+              <Guard roles={["VOLUNTEER", "ADMIN"]}>
+                <VolunteerTermsPage />
+              </Guard>
+            }
+          />
 
-        {/* Forum is club-only: VISITOR and signed-out users are turned away. */}
-        <Route
-          path="/forum"
-          element={
-            <Guard roles={["MEMBER", "VOLUNTEER", "ADMIN"]}>
-              <Forum />
-            </Guard>
-          }
-        />
+          {/* Forum is club-only: VISITOR and signed-out users are turned away. */}
+          <Route
+            path="/forum"
+            element={
+              <Guard roles={["MEMBER", "VOLUNTEER", "ADMIN"]}>
+                <Forum />
+              </Guard>
+            }
+          />
 
-        <Route
-          path="/tickets"
-          element={
-            <Guard roles={["MEMBER", "VOLUNTEER", "ADMIN"]}>
-              <MyTickets />
-            </Guard>
-          }
-        />
-        <Route
-          path="/profile"
-          element={
-            <Guard>
-              <Profile />
-            </Guard>
-          }
-        />
+          <Route
+            path="/tickets"
+            element={
+              <Guard roles={["MEMBER", "VOLUNTEER", "ADMIN"]}>
+                <MyTickets />
+              </Guard>
+            }
+          />
+          <Route
+            path="/profile"
+            element={
+              <Guard>
+                <Profile />
+              </Guard>
+            }
+          />
 
-        {/* Event-day console. Volunteers are the ones actually scanning at the
-            start line, so they get in alongside organisers. */}
-        <Route
-          path="/raceday/:id"
-          element={
-            <Guard roles={["ADMIN", "VOLUNTEER"]}>
-              <RaceDay />
-            </Guard>
-          }
-        />
+          {/* Event-day console. Volunteers are the ones actually scanning at the
+              start line, so they get in alongside organisers. */}
+          <Route
+            path="/raceday/:id"
+            element={
+              <Guard roles={["ADMIN", "VOLUNTEER"]}>
+                <RaceDay />
+              </Guard>
+            }
+          />
 
-        <Route
-          path="/admin"
-          element={
-            <Guard roles={["ADMIN"]}>
-              <AdminDashboard />
-            </Guard>
-          }
-        />
-        <Route
-          path="/admin/events"
-          element={
-            <Guard roles={["ADMIN"]}>
-              <ManageEvents />
-            </Guard>
-          }
-        />
-        <Route
-          path="/admin/polls"
-          element={
-            <Guard roles={["ADMIN"]}>
-              <ManagePolls />
-            </Guard>
-          }
-        />
-        <Route
-          path="/admin/collaborators"
-          element={
-            <Guard roles={["ADMIN"]}>
-              <ManageCollaborators />
-            </Guard>
-          }
-        />
-        <Route
-          path="/admin/founders"
-          element={
-            <Guard roles={["ADMIN"]}>
-              <ManageFounders />
-            </Guard>
-          }
-        />
-        <Route
-          path="/admin/members"
-          element={
-            <Guard roles={["ADMIN"]}>
-              <ManageMembers />
-            </Guard>
-          }
-        />
+          <Route
+            path="/admin"
+            element={
+              <Guard roles={["ADMIN"]}>
+                <AdminDashboard />
+              </Guard>
+            }
+          />
+          <Route
+            path="/admin/events"
+            element={
+              <Guard roles={["ADMIN"]}>
+                <ManageEvents />
+              </Guard>
+            }
+          />
+          <Route
+            path="/admin/polls"
+            element={
+              <Guard roles={["ADMIN"]}>
+                <ManagePolls />
+              </Guard>
+            }
+          />
+          <Route
+            path="/admin/collaborators"
+            element={
+              <Guard roles={["ADMIN"]}>
+                <ManageCollaborators />
+              </Guard>
+            }
+          />
+          <Route
+            path="/admin/founders"
+            element={
+              <Guard roles={["ADMIN"]}>
+                <ManageFounders />
+              </Guard>
+            }
+          />
+          <Route
+            path="/admin/members"
+            element={
+              <Guard roles={["ADMIN"]}>
+                <ManageMembers />
+              </Guard>
+            }
+          />
 
-        {/* Direct database access. Admin-only here and independently on the API. */}
-        <Route
-          path="/admin/database"
-          element={
-            <Guard roles={["ADMIN"]}>
-              <DatabaseAdmin />
-            </Guard>
-          }
-        />
+          {/* Direct database access. Admin-only here and independently on the API. */}
+          <Route
+            path="/admin/database"
+            element={
+              <Guard roles={["ADMIN"]}>
+                <DatabaseAdmin />
+              </Guard>
+            }
+          />
 
-        <Route path="*" element={<NotFound />} />
-      </Route>
-    </Routes>
+          <Route path="*" element={<NotFound />} />
+        </Route>
+      </Routes>
+    </>
   );
 }

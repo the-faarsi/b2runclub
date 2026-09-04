@@ -1,6 +1,13 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import { Link, NavLink, useLocation, useNavigate, useNavigationType } from "react-router-dom";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { CLUB_MONOGRAM, CLUB_NAME, CLUB_TAGLINE, CLUB_WORDMARK } from "../lib/brand";
@@ -571,6 +578,136 @@ export function Navbar() {
       </AnimatePresence>
     </header>
   );
+}
+
+/* ── Scroll management ────────────────────────────────────── */
+
+/**
+ * Where each visited location was scrolled to, keyed on the history entry.
+ *
+ * Module-level rather than state: it has to outlive the unmount of every page
+ * it describes, and it is per-tab session data that means nothing once the tab
+ * is gone.
+ */
+const scrollPositions = new Map<string, number>();
+
+/**
+ * Puts a newly opened page at the top, and puts a page you go *back* to where
+ * you left it.
+ *
+ * With client-side routing nothing resets the scroll offset on navigation, so
+ * following a link from halfway down a long page opened the next one already
+ * scrolled — usually past its heading and sometimes at its footer. The browser
+ * cannot fix this itself: its own restoration runs before React has mounted the
+ * new page, so it lands on whatever content happened to be there.
+ *
+ * Three cases, deliberately different:
+ *  - a link or a redirect (PUSH/REPLACE) goes to the top, which is what "open
+ *    this page" means;
+ *  - back and forward (POP) return to the remembered offset, because being
+ *    thrown to the top of a list you had scrolled through is its own bug;
+ *  - a `#hash` target wins over both — the caller named an element.
+ */
+export function ScrollManager() {
+  const { pathname, hash, key } = useLocation();
+  const navigationType = useNavigationType();
+
+  // Kept in a ref so the scroll listener below always writes against the
+  // location that is actually on screen, without re-subscribing per route.
+  const keyRef = useRef(key);
+  keyRef.current = key;
+
+  useEffect(() => {
+    // Take over from the browser, whose timing is wrong here (see above).
+    const previous = window.history.scrollRestoration;
+    if ("scrollRestoration" in window.history) {
+      window.history.scrollRestoration = "manual";
+    }
+    return () => {
+      if ("scrollRestoration" in window.history) {
+        window.history.scrollRestoration = previous;
+      }
+    };
+  }, []);
+
+  // Record the offset as it changes rather than on the way out: by the time a
+  // route's cleanup runs, the next page has already been committed and the
+  // document height — and so window.scrollY — may have been clamped.
+  useEffect(() => {
+    let frame = 0;
+    const onScroll = () => {
+      if (frame) return;
+      frame = window.requestAnimationFrame(() => {
+        frame = 0;
+        scrollPositions.set(keyRef.current, window.scrollY);
+      });
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      if (frame) window.cancelAnimationFrame(frame);
+    };
+  }, []);
+
+  useLayoutEffect(() => {
+    if (hash) {
+      // `#` targets can be arbitrary ids, and an id starting with a digit is a
+      // valid attribute but an invalid selector, which would throw.
+      const target = document.getElementById(decodeURIComponent(hash.slice(1)));
+      if (target) {
+        target.scrollIntoView();
+        return;
+      }
+    }
+
+    const target = navigationType === "POP" ? (scrollPositions.get(key) ?? 0) : 0;
+    window.scrollTo(0, target);
+    if (target === 0) return;
+
+    /*
+     * A remembered offset is usually out of reach at this instant, because the
+     * page mounts short and grows. Traced on the landing page: at 36ms the
+     * document could only scroll 3788px, so a 5123px offset clamped to 3788;
+     * by 65ms it had grown to 5322px. Restoring once therefore lands a screen
+     * or two above where they were, so it is re-applied until the document is
+     * tall enough to honour it.
+     *
+     * The abort is a real gesture, not a change in scrollY. Watching the
+     * position was the first attempt and it was wrong: the clamp moving as the
+     * page grew looked exactly like the reader scrolling, so it gave up on the
+     * very frame it was waiting for.
+     */
+    const GESTURES = ["wheel", "touchstart", "keydown", "pointerdown"] as const;
+    let cancelled = false;
+    const takeOver = () => {
+      cancelled = true;
+    };
+    for (const type of GESTURES) {
+      window.addEventListener(type, takeOver, { once: true, passive: true });
+    }
+
+    let frame = 0;
+    const deadline = performance.now() + 1500;
+    const retry = () => {
+      if (cancelled) return;
+      if (Math.abs(window.scrollY - target) < 2 || performance.now() > deadline) return;
+      window.scrollTo(0, target);
+      frame = window.requestAnimationFrame(retry);
+    };
+    frame = window.requestAnimationFrame(retry);
+
+    return () => {
+      cancelled = true;
+      window.cancelAnimationFrame(frame);
+      for (const type of GESTURES) window.removeEventListener(type, takeOver);
+    };
+
+    // `pathname` is a dependency and `search` is not on purpose: changing a
+    // filter or a tab in the query string is staying on the page, and jumping
+    // to the top for that would fight the person using it.
+  }, [pathname, hash, key, navigationType]);
+
+  return null;
 }
 
 /* ── Page furniture ───────────────────────────────────────── */
