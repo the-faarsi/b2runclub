@@ -154,7 +154,10 @@ export function Badge({
     <span
       className={cn(
         "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1",
-        "text-[11px] font-semibold uppercase tracking-[0.08em]",
+        // A pill's label must never wrap. In a narrow column "2 of 3 in" broke
+        // onto four lines inside its own border; it stays on one line now and
+        // the row it sits in wraps instead.
+        "whitespace-nowrap text-[11px] font-semibold uppercase tracking-[0.08em]",
         color ? "text-ink-2" : "border-white/12 text-ink-3",
         className,
       )}

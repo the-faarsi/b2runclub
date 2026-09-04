@@ -198,8 +198,18 @@ export function EventRoster({ event }: { event: ClubEvent }) {
                 initial={{ opacity: 0, y: 6 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.28, delay: Math.min(i * 0.03, 0.2) }}
+                /*
+                 * Two tiers on a phone: person on the first line, actions on
+                 * the second.
+                 *
+                 * The action group used to be `shrink-0` on the same line,
+                 * which took 189px of a 322px row and left the name column
+                 * 67px — the name broke one word per line and the badges
+                 * wrapped underneath and overlapped the buttons. It only has
+                 * room to sit alongside from `sm` up.
+                 */
                 className={cn(
-                  "flex flex-wrap items-center gap-3 border-b border-white/5 px-5 py-3.5 last:border-0",
+                  "flex flex-wrap items-center gap-x-3 gap-y-2.5 border-b border-white/5 px-4 py-3.5 last:border-0 sm:px-5",
                   isBlocked && "bg-[color:var(--color-failed)]/6",
                 )}
               >
@@ -263,16 +273,29 @@ export function EventRoster({ event }: { event: ClubEvent }) {
                       <Badge color="var(--color-ink-3)">Refunded {inr(r.refund_amount ?? 0)}</Badge>
                     )}
                   </div>
-                  <p className="mt-0.5 truncate text-[12px] text-ink-3">
-                    {r.email} · {(ROLE_META[r.club_role] ?? ROLE_META.MEMBER).label}
-                  </p>
+                  {/* Wraps rather than truncating the pair. On one line the
+                      role was the half that got cut ("…@gmail.com · Me…"),
+                      which is the half an organiser is reading for. */}
+                  <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[12px] text-ink-3">
+                    <span className="max-w-full truncate">{r.email}</span>
+                    <span aria-hidden className="hidden sm:inline">
+                      ·
+                    </span>
+                    <span>{(ROLE_META[r.club_role] ?? ROLE_META.MEMBER).label}</span>
+                  </div>
                 </div>
 
-                <div className="ml-auto flex shrink-0 gap-2">
+                {/* Full width on its own line below the name, then back
+                    alongside from sm up. The safe actions stretch into the
+                    spare room; Block and Readmit keep their natural size and
+                    stay right-aligned, so the destructive tap does not become
+                    a full-width target on a phone. */}
+                <div className="flex w-full justify-end gap-2 sm:ml-auto sm:w-auto sm:shrink-0">
                   {isParty && (
                     <Button
                       size="sm"
                       variant="ghost"
+                      className="flex-1 sm:flex-none"
                       onClick={() => setExpanded((e) => ({ ...e, [r.id]: !e[r.id] }))}
                       aria-expanded={open}
                     >
@@ -282,7 +305,12 @@ export function EventRoster({ event }: { event: ClubEvent }) {
 
                   {/* Refunds only apply to money actually captured. */}
                   {r.status === "PAID" && !r.refunded_at && (
-                    <Button size="sm" variant="outline" onClick={() => setRefunding(r)}>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="flex-1 sm:flex-none"
+                      onClick={() => setRefunding(r)}
+                    >
                       Refund
                     </Button>
                   )}
