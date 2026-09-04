@@ -344,20 +344,6 @@ async function runTests() {
         if (!csvContent.includes("Registration ID") || !csvContent.includes("member@runclub.com") || !csvContent.includes("volunteer@runclub.com")) {
             throw new Error("Roster CSV generation was invalid");
         }
-        // Strava Leaderboard Check
-        console.log("\n[Bonus] Verifying Strava integration framework & leaderboard...");
-        await fetch(`${BASE_URL}/api/strava/link`, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${memberToken}`,
-            },
-            body: JSON.stringify({ strava_id: "bob_run123" }),
-        });
-        const boardRes = await fetch(`${BASE_URL}/api/strava/leaderboard`);
-        const boardData = (await boardRes.json());
-        console.log("Strava Leaderboard ranking count:", boardData.leaderboard.length);
-        console.log("Top Run Club Athlete:", boardData.leaderboard[0].name, `${boardData.leaderboard[0].weekly_distance_km} km`);
         console.log("\n>>> ALL TEST CASES PASSED SUCCESSFULLY CLIENT-SIDE! <<<");
     }
     catch (err) {

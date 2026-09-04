@@ -8,7 +8,6 @@ const prisma_1 = __importDefault(require("../utils/prisma"));
 const auth_1 = require("../middleware/auth");
 const reminders_1 = require("../utils/reminders");
 const mailer_1 = require("../utils/mailer");
-const strava_1 = require("../utils/strava");
 const router = (0, express_1.Router)();
 // 1. Financial Overview (Admin only)
 router.get("/financial-overview", (0, auth_1.requireRole)(["ADMIN"]), async (req, res) => {
@@ -18,7 +17,10 @@ router.get("/financial-overview", (0, auth_1.requireRole)(["ADMIN"]), async (req
             where: { status: "PAID" },
             include: { event: true },
         });
-        const totalRevenue = paidRegistrations.reduce((sum, reg) => sum + reg.event.price, 0);
+        /* Summed from what each booking was charged, not from the event price.
+           A party of three paid three entries, and summing the event price
+           counted it once — so revenue read low by exactly the guests. */
+        const totalRevenue = paidRegistrations.reduce((sum, reg) => sum + reg.amount_due_paise, 0) / 100;
         const pendingCounts = await prisma_1.default.eventRegistration.count({
             where: { status: "PENDING" },
         });
@@ -297,7 +299,7 @@ router.post("/mailer/test", (0, auth_1.requireRole)(["ADMIN"]), async (req, res)
 });
 // 3. Member directory (Admin only)
 // The club roster of people, as opposed to a single event's roster. Carries the
-// contact and Strava detail an organiser actually needs on event day.
+// contact detail an organiser actually needs on event day.
 router.get("/members", (0, auth_1.requireRole)(["ADMIN"]), async (req, res) => {
     try {
         /**
@@ -312,7 +314,7 @@ router.get("/members", (0, auth_1.requireRole)(["ADMIN"]), async (req, res) => {
          * Imported health workouts are deliberately NOT included. Members are told
          * "organisers never see them" on the profile page, and that has to stay true.
          */
-        const [members, stats, registrations, results, shifts] = await Promise.all([
+        const [members, registrations, results, shifts] = await Promise.all([
             prisma_1.default.user.findMany({
                 orderBy: [{ role: "asc" }, { name: "asc" }],
                 select: {
@@ -322,11 +324,9 @@ router.get("/members", (0, auth_1.requireRole)(["ADMIN"]), async (req, res) => {
                     role: true,
                     created_at: true,
                     emergency_contact: true,
-                    strava_id: true,
                     _count: { select: { registrations: true } },
                 },
             }),
-            (0, strava_1.getAthleteStatsByUser)(),
             prisma_1.default.eventRegistration.findMany({
                 select: {
                     user_id: true,
@@ -376,7 +376,7 @@ router.get("/members", (0, auth_1.requireRole)(["ADMIN"]), async (req, res) => {
                 u.marshalled += 1;
             if (r.status === "PAID") {
                 u.paid += 1;
-                u.total_paid += r.event.price;
+                u.total_paid += r.amount_due_paise / 100;
             }
             else if (r.status === "PENDING")
                 u.pending += 1;
@@ -408,7 +408,6 @@ router.get("/members", (0, auth_1.requireRole)(["ADMIN"]), async (req, res) => {
         // organiser needs the emergency contact on the day, and this route is
         // ADMIN-only.
         res.json(members.map((m) => {
-            const s = stats.get(m.id);
             return {
                 id: m.id,
                 name: m.name,
@@ -417,18 +416,6 @@ router.get("/members", (0, auth_1.requireRole)(["ADMIN"]), async (req, res) => {
                 created_at: m.created_at,
                 emergency_contact: m.emergency_contact,
                 has_emergency_contact: Boolean(m.emergency_contact),
-                strava_id: m.strava_id,
-                strava_linked: Boolean(m.strava_id),
-                // Present only for linked athletes.
-                strava: s
-                    ? {
-                        rank: s.rank,
-                        weekly_distance_km: s.weekly_distance_km,
-                        runs_count: s.runs_count,
-                        moving_time_mins: s.moving_time_mins,
-                        avg_pace: s.avg_pace,
-                    }
-                    : null,
                 registration_count: m._count.registrations,
                 /** Complete history for the directory's detail view. */
                 activity: (() => {

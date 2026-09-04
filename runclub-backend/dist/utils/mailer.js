@@ -9,13 +9,15 @@ exports.mailerConfig = mailerConfig;
 exports.testEmail = testEmail;
 exports.verifyMailer = verifyMailer;
 exports.passwordResetEmail = passwordResetEmail;
+exports.verificationCodeEmail = verificationCodeEmail;
 exports.reminderEmail = reminderEmail;
 const nodemailer_1 = __importDefault(require("nodemailer"));
+const brand_1 = require("./brand");
 const SMTP_HOST = process.env.SMTP_HOST;
 const SMTP_PORT = Number.parseInt(process.env.SMTP_PORT || "587", 10);
 const SMTP_USER = process.env.SMTP_USER;
 const SMTP_PASS = process.env.SMTP_PASS;
-const MAIL_FROM = process.env.MAIL_FROM || "B Squared Run Club <no-reply@bsquared.run>";
+const MAIL_FROM = process.env.MAIL_FROM || `${brand_1.CLUB_NAME} <no-reply@b2club.in>`;
 /** True when real SMTP credentials are present. */
 exports.mailerConfigured = Boolean(SMTP_HOST && SMTP_USER && SMTP_PASS);
 let transport = null;
@@ -92,21 +94,21 @@ function testEmail(input) {
       <p style="margin:0 0 6px;color:${GOLD};font-size:11px;font-weight:700;letter-spacing:0.16em;text-transform:uppercase;">Test message</p>
       <h1 style="margin:0 0 14px;color:${INK};font-size:24px;line-height:1.2;font-weight:800;letter-spacing:-0.03em;">Email is working</h1>
       <p style="margin:0 0 18px;color:#a5aab5;font-size:14px;line-height:1.6;">
-        Hi ${input.name}, this was sent from the B Squared backend through
+        Hi ${input.name}, this was sent from the ${brand_1.CLUB_NAME_HTML} backend through
         <strong style="color:${INK};">${input.host}</strong>. If it reached your inbox, event
         reminders and password-reset links will too.
       </p>
       <p style="margin:0;color:#6d737f;font-size:12px;line-height:1.6;">
         Nobody else received this. Sent because an organiser pressed "Send a test email".
-      </p>`, "B Squared email is working");
+      </p>`, `${brand_1.CLUB_NAME_HTML} email is working`);
     const text = [
         "Email is working",
         "",
         `Hi ${input.name},`,
-        `This was sent from the B Squared backend through ${input.host}.`,
+        `This was sent from the ${brand_1.CLUB_NAME} backend through ${input.host}.`,
         "If it reached your inbox, event reminders and password-reset links will too.",
     ].join("\n");
-    return { to: "", subject: "B Squared — test email", html, text };
+    return { to: "", subject: `${brand_1.CLUB_NAME} — test email`, html, text };
 }
 /** Verifies the SMTP connection — used by the admin diagnostics endpoint. */
 async function verifyMailer() {
@@ -131,7 +133,7 @@ function shell(bodyHtml, preheader) {
     // Outlook and Apple Mail. No external CSS, no web fonts.
     return `<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
-<title>B Squared Run Club</title></head>
+<title>${brand_1.CLUB_NAME_HTML}</title></head>
 <body style="margin:0;padding:0;background:${VOID};">
 <div style="display:none;font-size:1px;color:${VOID};max-height:0;overflow:hidden;">${preheader}</div>
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${VOID};padding:28px 12px;">
@@ -139,13 +141,13 @@ function shell(bodyHtml, preheader) {
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:${SURFACE};border:1px solid rgba(255,255,255,0.08);border-radius:16px;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
     <tr><td style="padding:22px 26px 0;">
       <table role="presentation" cellpadding="0" cellspacing="0"><tr>
-        <td style="background:${GOLD};border-radius:9px;width:32px;height:32px;text-align:center;vertical-align:middle;font-weight:800;color:#161000;font-size:15px;">B²</td>
-        <td style="padding-left:10px;font-weight:800;letter-spacing:-0.02em;color:${INK};font-size:16px;">B SQUARED <span style="color:#6d737f;font-size:10px;letter-spacing:0.18em;">RC</span></td>
+        <td style="background:${GOLD};border-radius:9px;width:32px;height:32px;text-align:center;vertical-align:middle;font-weight:800;color:#161000;font-size:15px;">${brand_1.CLUB_MONOGRAM_HTML}</td>
+        <td style="padding-left:10px;font-weight:800;letter-spacing:-0.02em;color:${INK};font-size:16px;">${brand_1.CLUB_WORDMARK_HTML}</td>
       </tr></table>
     </td></tr>
     <tr><td style="padding:20px 26px 28px;">${bodyHtml}</td></tr>
     <tr><td style="padding:16px 26px 22px;border-top:1px solid rgba(255,255,255,0.08);color:#6d737f;font-size:11px;line-height:1.6;">
-      You're getting this because you registered for a B Squared Run Club session.<br>
+      You're getting this because you registered for a ${brand_1.CLUB_NAME_HTML} session.<br>
       Every run starts with one step. Bring water.
     </td></tr>
   </table>
@@ -167,7 +169,7 @@ function passwordResetEmail(input) {
       </table>
       <p style="margin:20px 0 0;color:#6d737f;font-size:12px;line-height:1.6;">
         If you didn't ask for this, you can ignore it — your password stays as it is.
-      </p>`, "Set a new B Squared password");
+      </p>`, `Set a new ${brand_1.CLUB_NAME_HTML} password`);
     const text = [
         "Set a new password",
         "",
@@ -178,7 +180,50 @@ function passwordResetEmail(input) {
         "",
         "If you didn't ask for this, ignore it — your password stays as it is.",
     ].join("\n");
-    return { to: "", subject: "Reset your B Squared password", html, text };
+    return { to: "", subject: `Reset your ${brand_1.CLUB_NAME} password`, html, text };
+}
+/**
+ * The one-time code for proving an email address.
+ *
+ * No link, deliberately. A click-to-verify link in an email is a redirect a
+ * phishing kit can imitate, and it breaks when the member opens their mail on a
+ * different device from the one they signed up on — which for a club whose
+ * members sign up on a phone and read Gmail on a laptop is most of them. A code
+ * they read and type works from anywhere and proves the same thing.
+ */
+function verificationCodeEmail(input) {
+    const html = shell(`
+      <p style="margin:0 0 6px;color:${GOLD};font-size:11px;font-weight:700;letter-spacing:0.16em;text-transform:uppercase;">Verify your email</p>
+      <h1 style="margin:0 0 14px;color:${INK};font-size:24px;line-height:1.2;font-weight:800;letter-spacing:-0.03em;">Your code is ${input.code}</h1>
+      <p style="margin:0 0 18px;color:#a5aab5;font-size:14px;line-height:1.6;">
+        Hi ${input.name}, enter this code in the app to confirm this is your address.
+        It expires in ${input.minutes} minutes.
+      </p>
+      <table role="presentation" cellpadding="0" cellspacing="0" style="margin:6px 0;">
+        <tr><td style="background:rgba(233,185,73,0.10);border:1px solid rgba(233,185,73,0.35);border-radius:10px;">
+          <span style="display:inline-block;padding:14px 26px;color:${GOLD};font-size:30px;font-weight:800;letter-spacing:0.22em;font-family:'SF Mono',Menlo,Consolas,monospace;">${input.code}</span>
+        </td></tr>
+      </table>
+      <p style="margin:20px 0 0;color:#6d737f;font-size:12px;line-height:1.6;">
+        If you didn't ask for this, you can ignore it. Nobody can use this code but you,
+        and we'll never ask you for it by phone or on WhatsApp.
+      </p>`, `${input.code} is your ${brand_1.CLUB_NAME_HTML} verification code`);
+    const text = [
+        "Verify your email",
+        "",
+        `Hi ${input.name},`,
+        `Your ${brand_1.CLUB_NAME} verification code is ${input.code}.`,
+        `It expires in ${input.minutes} minutes.`,
+        "",
+        "If you didn't ask for this, ignore it. We'll never ask you for this code",
+        "by phone or on WhatsApp.",
+    ].join("\n");
+    return {
+        to: "",
+        subject: `${input.code} is your ${brand_1.CLUB_NAME} verification code`,
+        html,
+        text,
+    };
 }
 function reminderEmail(input) {
     const lead = input.hoursBefore >= 24
@@ -203,7 +248,7 @@ function reminderEmail(input) {
         </td></tr>
       </table>
       <p style="margin:18px 0 0;color:#6d737f;font-size:12px;line-height:1.6;">
-        Arrive 15 minutes early for the briefing. Marshals wear gold bibs — follow their calls at junctions.
+        Arrive 15 minutes early for the briefing. Marshals carry a club ID card — follow their calls at junctions.
       </p>`, `${input.eventTitle} starts ${lead} — ${input.when}`);
     const text = [
         `${input.eventTitle} starts ${lead}.`,

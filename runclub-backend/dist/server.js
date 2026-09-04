@@ -44,12 +44,12 @@ const auth_1 = require("./middleware/auth");
 dotenv_1.default.config();
 // Initialize Express routers
 const auth_router_1 = __importDefault(require("./routes/auth.router"));
+const verify_router_1 = __importDefault(require("./routes/verify.router"));
 const events_router_1 = __importDefault(require("./routes/events.router"));
 const payments_router_1 = __importDefault(require("./routes/payments.router"));
 const forum_router_1 = __importDefault(require("./routes/forum.router"));
 const polls_router_1 = __importDefault(require("./routes/polls.router"));
 const admin_router_1 = __importDefault(require("./routes/admin.router"));
-const strava_router_1 = __importDefault(require("./routes/strava.router"));
 const content_router_1 = __importStar(require("./routes/content.router"));
 const raceday_router_1 = __importDefault(require("./routes/raceday.router"));
 const results_router_1 = __importDefault(require("./routes/results.router"));
@@ -103,13 +103,13 @@ app.all("/api/cron/reminders", async (req, res) => {
 // Apply JWT authentication parser globally
 app.use(auth_1.authenticateJWT);
 // Register REST endpoints
+app.use("/api/auth/verify", verify_router_1.default);
 app.use("/api/auth", auth_router_1.default);
 app.use("/api/events", events_router_1.default);
 app.use("/api/payments", payments_router_1.default);
 app.use("/api/forum", forum_router_1.default);
 app.use("/api/polls", polls_router_1.default);
 app.use("/api/admin", admin_router_1.default);
-app.use("/api/strava", strava_router_1.default);
 app.use("/api/content", content_router_1.default);
 app.use("/api/raceday", raceday_router_1.default);
 app.use("/api/results", results_router_1.default);

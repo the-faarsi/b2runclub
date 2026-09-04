@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.UPLOAD_DIR = void 0;
+exports.MAX_VIDEO_BYTES = exports.UPLOAD_DIR = void 0;
 const express_1 = require("express");
 const multer_1 = __importDefault(require("multer"));
 const prisma_1 = __importDefault(require("../utils/prisma"));
@@ -38,11 +38,157 @@ const upload = (0, multer_1.default)({
         cb(new Error("Only JPEG, PNG, WebP, GIF or AVIF images are allowed"));
     },
 });
+const ALLOWED_VIDEO_MIME = {
+    "video/mp4": ".mp4",
+    "video/webm": ".webm",
+    // iPhones record .mov; browsers play the H.264 inside it, so it is worth
+    // accepting rather than making an organiser convert it first.
+    "video/quicktime": ".mov",
+};
+/**
+ * Ceiling for a hero video, whichever route it takes.
+ *
+ * Declared here rather than beside the signing route below because the multer
+ * instance evaluates it at module load — referencing it later would throw
+ * "Cannot access before initialization" the moment this file is imported.
+ */
+exports.MAX_VIDEO_BYTES = 200 * 1024 * 1024;
+/**
+ * Separate multer instance for the hero video.
+ *
+ * This is the fallback route. A serverless host rejects request bodies over a
+ * few megabytes before any of this runs, so in production a video of real size
+ * goes browser → storage via a signed URL instead (see /uploads/video/sign).
+ * This path is what runs locally, where Express has no such limit.
+ */
+const videoUpload = (0, multer_1.default)({
+    storage: multer_1.default.memoryStorage(),
+    limits: { fileSize: exports.MAX_VIDEO_BYTES, files: 1 },
+    fileFilter: (_req, file, cb) => {
+        if (ALLOWED_VIDEO_MIME[file.mimetype])
+            return cb(null, true);
+        cb(new Error("Only MP4, WebM or MOV videos are allowed"));
+    },
+});
 /** Stores an uploaded image and returns the URL to persist. */
 async function storeImage(file) {
     const ext = ALLOWED_MIME[file.mimetype] ?? ".bin";
     return (0, storage_1.putObject)((0, storage_1.safeFilename)(ext), file.buffer, file.mimetype);
 }
+/**
+ * 0. Store an image and return its URL. Admins and volunteers only.
+ *
+ * Exists because an event cover has to be uploadable *before* the event does —
+ * there is no id to attach it to yet, so the pattern used for GPX
+ * (POST /events/:id/route) does not work. The client uploads here first, then
+ * sends the returned URL as `cover_url` on the create call, which keeps the
+ * event routes as plain JSON instead of converting them to multipart.
+ *
+ * Nothing here is tied to events, so any future "pick an image" field can reuse
+ * it rather than growing another endpoint.
+ */
+router.post("/uploads/image", (0, auth_1.requireRole)(["ADMIN", "VOLUNTEER"]), (req, res) => {
+    upload.single("image")(req, res, async (err) => {
+        try {
+            if (err) {
+                res.status(400).json({ error: err.message || "Upload rejected" });
+                return;
+            }
+            const file = req.file;
+            if (!file) {
+                res.status(400).json({ error: "Attach an image file" });
+                return;
+            }
+            const url = await storeImage(file);
+            res.status(201).json({ url });
+        }
+        catch (error) {
+            res.status(500).json({ error: error.message || "Failed to store the image" });
+        }
+    });
+});
+/**
+ * 0a. Ask for permission to upload a video straight to storage. Admins only.
+ *
+ * The client sends the filename, type and size; it gets back either a signed
+ * URL to PUT the bytes to, or `mode: "proxy"` meaning post through the API
+ * instead. Only the second route is subject to the platform's request-body
+ * limit, so this is what makes a 50MB upload possible at all in production.
+ */
+router.post("/uploads/video/sign", (0, auth_1.requireRole)(["ADMIN"]), async (req, res) => {
+    try {
+        const { content_type, size } = req.body ?? {};
+        const ext = ALLOWED_VIDEO_MIME[String(content_type)];
+        if (!ext) {
+            res.status(400).json({ error: "Only MP4, WebM or MOV videos are allowed" });
+            return;
+        }
+        const bytes = Number(size);
+        if (!Number.isFinite(bytes) || bytes <= 0) {
+            res.status(400).json({ error: "A file size is required" });
+            return;
+        }
+        if (bytes > exports.MAX_VIDEO_BYTES) {
+            res.status(400).json({
+                error: `That video is ${(bytes / 1024 / 1024).toFixed(0)}MB. The limit is ${exports.MAX_VIDEO_BYTES / 1024 / 1024}MB.`,
+            });
+            return;
+        }
+        const filename = (0, storage_1.safeFilename)(ext);
+        const direct = await (0, storage_1.createDirectUpload)(filename);
+        if (!direct) {
+            // disk or blob driver: no signing available, so the client posts
+            // through the API. Works locally; on a serverless host the
+            // platform will refuse anything sizeable.
+            res.json({ mode: "proxy" });
+            return;
+        }
+        res.json({
+            mode: "direct",
+            upload_url: direct.uploadUrl,
+            token: direct.token,
+            public_url: direct.publicUrl,
+        });
+    }
+    catch (error) {
+        res.status(500).json({ error: error.message || "Could not prepare the upload" });
+    }
+});
+/**
+ * 0b. Store a video and return its URL. Admins only.
+ *
+ * Sibling of the image route above, kept separate because the accepted types
+ * and the size limit are different by an order of magnitude, and a single
+ * endpoint would have to accept video-sized bodies for image uploads too.
+ */
+router.post("/uploads/video", (0, auth_1.requireRole)(["ADMIN"]), (req, res) => {
+    videoUpload.single("video")(req, res, async (err) => {
+        try {
+            if (err) {
+                // multer's own message for an oversized file is "File too large",
+                // which does not say what the limit is.
+                const tooBig = err.code === "LIMIT_FILE_SIZE";
+                res.status(400).json({
+                    error: tooBig
+                        ? `That video is over ${exports.MAX_VIDEO_BYTES / 1024 / 1024}MB.`
+                        : err.message || "Upload rejected",
+                });
+                return;
+            }
+            const file = req.file;
+            if (!file) {
+                res.status(400).json({ error: "Attach a video file" });
+                return;
+            }
+            const ext = ALLOWED_VIDEO_MIME[file.mimetype] ?? ".mp4";
+            const url = await (0, storage_1.putObject)((0, storage_1.safeFilename)(ext), file.buffer, file.mimetype);
+            res.status(201).json({ url });
+        }
+        catch (error) {
+            res.status(500).json({ error: error.message || "Failed to store the video" });
+        }
+    });
+});
 /* ── Gallery ──────────────────────────────────────────────── */
 // 1. List photos — open to everyone, including visitors (view-only page).
 // `?event_id=` filters to one session, which is what the event page uses.
@@ -157,14 +303,14 @@ router.delete("/gallery/:id", (0, auth_1.requireRole)(["ADMIN", "VOLUNTEER"]), a
 /* ── About the club ───────────────────────────────────────── */
 const CLUB_DEFAULTS = {
     id: "singleton",
-    headline: "A running club that actually runs on time.",
+    headline: "Fitness meets friendship.",
     about: "",
     mission: "",
     founded: null,
     home_base: null,
     contact_email: null,
     instagram: null,
-    strava_club: null,
+    strava_url: null,
     whatsapp: null,
 };
 // 4. Read the About content — public.
@@ -189,8 +335,9 @@ router.put("/club", (0, auth_1.requireRole)(["ADMIN"]), async (req, res) => {
             "home_base",
             "contact_email",
             "instagram",
-            "strava_club",
+            "strava_url",
             "whatsapp",
+            "hero_video_url",
         ];
         const data = {};
         for (const key of fields) {
@@ -290,7 +437,12 @@ router.put("/club", (0, auth_1.requireRole)(["ADMIN"]), async (req, res) => {
     }
 });
 /* ── Collaborators ────────────────────────────────────────── */
-const TIERS = ["PARTNER", "SPONSOR", "COMMUNITY"];
+/*
+ * FEATURED is not a rank above SPONSOR — it is a placement. A featured
+ * collaborator is pulled out of the home page scroller into its own block, so
+ * only one or two make sense at a time. The scroller shows the rest.
+ */
+const TIERS = ["PARTNER", "SPONSOR", "COMMUNITY", "FEATURED"];
 // 6. List collaborators — public, drives the home page scroller.
 router.get("/collaborators", async (_req, res) => {
     try {
@@ -421,6 +573,147 @@ router.delete("/collaborators/:id", (0, auth_1.requireRole)(["ADMIN"]), async (r
     }
     catch (error) {
         res.status(500).json({ error: error.message || "Failed to remove the collaborator" });
+    }
+});
+/* ── Founders ─────────────────────────────────────────────────
+ * Same shape as the collaborator routes above — multipart so one client form
+ * covers both create and edit, every field optional on PATCH so a photo-only
+ * edit does not blank the bio, and the replaced photo is deleted after the row
+ * is written.
+ */
+/** Trims a string field, mapping blank to null. Shared by create and edit. */
+function optional(v) {
+    return typeof v === "string" && v.trim() ? v.trim() : null;
+}
+/**
+ * Reduces an Instagram value to a bare handle before storing it.
+ *
+ * Organisers paste whatever is in their address bar, and a stored
+ * "https://www.instagram.com/name?utm_source=ig_web_button_share_sheet" gets
+ * rendered as "@https://www.instagram.com/..." with a link to
+ * instagram.com/https://... The client normalises on read too, for rows written
+ * before this existed.
+ */
+function instagramHandle(v) {
+    const raw = optional(v);
+    if (!raw)
+        return null;
+    const fromUrl = raw.match(/instagram\.com\/([^/?#\s]+)/i);
+    return (fromUrl ? fromUrl[1] : raw).replace(/^@+/, "") || null;
+}
+// 10. List founders — public, drives the home page section.
+router.get("/founders", async (_req, res) => {
+    try {
+        const rows = await prisma_1.default.founder.findMany({
+            orderBy: [{ sort_order: "asc" }, { created_at: "asc" }],
+        });
+        res.json(rows);
+    }
+    catch (error) {
+        res.status(500).json({ error: error.message || "Failed to fetch founders" });
+    }
+});
+// 11. Add a founder — admin only. Photo may be uploaded or linked.
+router.post("/founders", (0, auth_1.requireRole)(["ADMIN"]), (req, res) => {
+    upload.single("photo")(req, res, async (err) => {
+        try {
+            if (err) {
+                res.status(400).json({ error: err.message || "Upload rejected" });
+                return;
+            }
+            const file = req.file;
+            const { name, role, bio, instagram, strava, sort_order, photo_url } = req.body ?? {};
+            if (!name?.trim()) {
+                res.status(400).json({ error: "A founder name is required" });
+                return;
+            }
+            const founder = await prisma_1.default.founder.create({
+                data: {
+                    name: name.trim(),
+                    role: role?.trim() || "",
+                    bio: bio?.trim() || "",
+                    instagram: instagramHandle(instagram),
+                    strava: optional(strava),
+                    sort_order: Number.parseInt(sort_order, 10) || 0,
+                    photo_url: file ? await storeImage(file) : optional(photo_url),
+                },
+            });
+            res.status(201).json({ message: `${founder.name} added`, founder });
+        }
+        catch (error) {
+            res.status(500).json({ error: error.message || "Failed to add the founder" });
+        }
+    });
+});
+// 12. Edit a founder — admin only.
+router.patch("/founders/:id", (0, auth_1.requireRole)(["ADMIN"]), (req, res) => {
+    upload.single("photo")(req, res, async (err) => {
+        try {
+            if (err) {
+                res.status(400).json({ error: err.message || "Upload rejected" });
+                return;
+            }
+            const existing = await prisma_1.default.founder.findUnique({
+                where: { id: req.params.id },
+            });
+            if (!existing) {
+                res.status(404).json({ error: "Founder not found" });
+                return;
+            }
+            const file = req.file;
+            const { name, role, bio, instagram, strava, sort_order, photo_url } = req.body ?? {};
+            const data = {};
+            if (name !== undefined) {
+                if (!String(name).trim()) {
+                    res.status(400).json({ error: "A founder name is required" });
+                    return;
+                }
+                data.name = String(name).trim();
+            }
+            if (role !== undefined)
+                data.role = String(role).trim();
+            if (bio !== undefined)
+                data.bio = String(bio).trim();
+            if (instagram !== undefined)
+                data.instagram = instagramHandle(instagram);
+            if (strava !== undefined)
+                data.strava = optional(strava);
+            if (sort_order !== undefined) {
+                data.sort_order = Number.parseInt(String(sort_order), 10) || 0;
+            }
+            if (file)
+                data.photo_url = await storeImage(file);
+            else if (photo_url !== undefined)
+                data.photo_url = optional(photo_url);
+            const founder = await prisma_1.default.founder.update({ where: { id: existing.id }, data });
+            // After the write, so a failed update cannot leave the row pointing
+            // at a file that no longer exists.
+            if (existing.photo_url && founder.photo_url !== existing.photo_url) {
+                void (0, storage_1.deleteObject)(existing.photo_url);
+            }
+            res.json({ message: `${founder.name} updated`, founder });
+        }
+        catch (error) {
+            res.status(500).json({ error: error.message || "Failed to update the founder" });
+        }
+    });
+});
+// 13. Remove a founder — admin only.
+router.delete("/founders/:id", (0, auth_1.requireRole)(["ADMIN"]), async (req, res) => {
+    try {
+        const row = await prisma_1.default.founder.findUnique({
+            where: { id: req.params.id },
+        });
+        if (!row) {
+            res.status(404).json({ error: "Founder not found" });
+            return;
+        }
+        await prisma_1.default.founder.delete({ where: { id: row.id } });
+        void (0, storage_1.deleteObject)(row.photo_url);
+        res.json({ message: `${row.name} removed` });
+    }
+    catch (error) {
+        res.status(500).json({ error: error.message || "Failed to remove the founder" });
     }
 });
 /* ── Route GPX ────────────────────────────────────────────────

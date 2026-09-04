@@ -417,13 +417,18 @@ export function RegisterDialog({
       } · ${eventTime(event.date_time)} · ${event.location}`}
     >
       <div className="space-y-5">
-        {/* The party total, not the entry fee. Both this and the pay button
-            read inr(event.price), so a booking of four adults and two children
-            itemised to ₹480 above a button offering to take ₹100. */}
-        <div className="flex items-center justify-between rounded-xl border border-white/8 bg-surface-2/60 px-4 py-3">
-          <span className="eyebrow">Your total</span>
-          <span className="display text-xl">{comped ? "Free" : inr(total)}</span>
-        </div>
+        {/*
+          Only when there is nothing to pay. Otherwise the itemised breakdown in
+          the party box carries the total, and having both meant two "total"
+          figures in one dialog — the same number stated twice, which reads as a
+          contradiction even when the two agree.
+        */}
+        {comped && (
+          <div className="flex items-center justify-between rounded-xl border border-white/8 bg-surface-2/60 px-4 py-3">
+            <span className="eyebrow">Your total</span>
+            <span className="display text-xl">Free</span>
+          </div>
+        )}
 
         {comped && (
           <p className="rounded-xl border border-[color:var(--color-free)]/25 bg-[color:var(--color-free)]/8 px-3.5 py-2.5 text-[13px] leading-relaxed text-ink-2">
@@ -463,33 +468,44 @@ export function RegisterDialog({
 
             {guests.map((g, i) => (
               <div key={i} className="flex items-center gap-2">
-                <Input
-                  value={g.name}
-                  onChange={(e) =>
-                    setGuests((list) =>
-                      list.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)),
-                    )
-                  }
-                  placeholder={g.kind === "KID" ? "Child's full name" : "Full name"}
-                  aria-label={`Guest ${i + 1} name`}
-                  className="flex-1"
-                />
-                {event.kids_allowed && (
-                  <Select
-                    value={g.kind}
+                {/*
+                  Widths on the wrappers, not on the controls.
+
+                  `cn` is a plain join with no tailwind-merge, and FIELD_BASE
+                  begins with `w-full` — so `w-28` on the Select never won, and
+                  with `shrink-0` it claimed the whole row and crushed the name
+                  field to a 30px square nobody could type in. A wrapper cannot
+                  lose that fight.
+                */}
+                <div className="min-w-0 flex-1">
+                  <Input
+                    value={g.name}
                     onChange={(e) =>
                       setGuests((list) =>
-                        list.map((x, j) =>
-                          j === i ? { ...x, kind: e.target.value as GuestDraft["kind"] } : x,
-                        ),
+                        list.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)),
                       )
                     }
-                    aria-label={`Guest ${i + 1} is an adult or a child`}
-                    className="w-28 shrink-0"
-                  >
-                    <option value="ADULT">Adult</option>
-                    <option value="KID">Child</option>
-                  </Select>
+                    placeholder={g.kind === "KID" ? "Child's full name" : "Full name"}
+                    aria-label={`Guest ${i + 1} name`}
+                  />
+                </div>
+                {event.kids_allowed && (
+                  <div className="w-[7.5rem] shrink-0">
+                    <Select
+                      value={g.kind}
+                      onChange={(e) =>
+                        setGuests((list) =>
+                          list.map((x, j) =>
+                            j === i ? { ...x, kind: e.target.value as GuestDraft["kind"] } : x,
+                          ),
+                        )
+                      }
+                      aria-label={`Guest ${i + 1} is an adult or a child`}
+                    >
+                      <option value="ADULT">Adult</option>
+                      <option value="KID">Child</option>
+                    </Select>
+                  </div>
                 )}
                 <button
                   type="button"

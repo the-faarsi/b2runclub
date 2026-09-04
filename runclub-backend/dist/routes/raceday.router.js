@@ -5,6 +5,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const prisma_1 = __importDefault(require("../utils/prisma"));
+const brand_1 = require("../utils/brand");
 const auth_1 = require("../middleware/auth");
 const router = (0, express_1.Router)();
 /**
@@ -42,11 +43,11 @@ router.post("/check-in", (0, auth_1.requireRole)(CREW), async (req, res) => {
                 regId = parsed.reg_id || parsed.registrationId || parsed.registration_id;
             }
             catch {
-                res.status(400).json({ error: "That QR code isn't a B Squared ticket" });
+                res.status(400).json({ error: `That QR code isn't a ${brand_1.CLUB_NAME} ticket` });
                 return;
             }
             if (!regId) {
-                res.status(400).json({ error: "That QR code isn't a B Squared ticket" });
+                res.status(400).json({ error: `That QR code isn't a ${brand_1.CLUB_NAME} ticket` });
                 return;
             }
         }

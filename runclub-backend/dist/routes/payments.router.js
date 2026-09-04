@@ -284,14 +284,19 @@ router.post("/order/:registrationId/refresh", (0, auth_1.requireRole)(["MEMBER",
             });
             return;
         }
-        if (registration.event.price <= 0) {
-            res.status(400).json({ error: "This event is free — no payment is required." });
+        /* The booking's own total, not the event price. A party on a
+           session that is free for adults can still owe for a child, and a
+           party of three on a paid session owes three times the entry — so
+           reading the event here would have let somebody re-pay a fraction
+           of what they booked. */
+        if (registration.amount_due_paise <= 0) {
+            res.status(400).json({ error: "Nothing is owed on this booking." });
             return;
         }
         let order;
         try {
             order = (await razorpay.orders.create({
-                amount: Math.round(registration.event.price * 100), // paise
+                amount: registration.amount_due_paise, // paise, as booked
                 currency: "INR",
                 receipt: `reg_${registration.id.slice(0, 30)}`,
                 notes: {
@@ -323,7 +328,7 @@ router.post("/order/:registrationId/refresh", (0, auth_1.requireRole)(["MEMBER",
             razorpay_order_id: order.id,
             previous_order_id: previous,
             razorpay_key_id: secrets_1.RAZORPAY_KEY_ID,
-            amount: Math.round(registration.event.price * 100),
+            amount: registration.amount_due_paise,
         });
     }
     catch (error) {
@@ -376,12 +381,27 @@ router.post("/refund/:registrationId", (0, auth_1.requireRole)(["ADMIN"]), async
             res.status(400).json({ error: "No captured payment id to refund against" });
             return;
         }
-        // Partial refunds are supported; default to the full entry fee.
+        /*
+         * Bounded by what this booking actually paid, not by the event's
+         * current entry fee. Two reasons, and both bite:
+         *
+         *  - A party paid a multiple of the entry. Capping at the entry
+         *    would have refunded a family of three one third of their money
+         *    and called it complete.
+         *  - An organiser can edit the price after people book, so the
+         *    event is not a record of what was taken. amount_due_paise is.
+         *
+         * The club chose all-or-nothing for party refunds — you cannot
+         * refund one guest out of three — which is what defaulting to the
+         * full booked total gives. An explicit smaller figure is still
+         * accepted, as it was before, for a goodwill adjustment.
+         */
+        const bookedRupees = registration.amount_due_paise / 100;
         const requested = req.body?.amount;
-        const amount = requested === undefined ? registration.event.price : Number.parseFloat(requested);
-        if (!Number.isFinite(amount) || amount <= 0 || amount > registration.event.price) {
+        const amount = requested === undefined ? bookedRupees : Number.parseFloat(requested);
+        if (!Number.isFinite(amount) || amount <= 0 || amount > bookedRupees) {
             res.status(400).json({
-                error: `Refund must be between 0 and the entry fee (₹${registration.event.price}).`,
+                error: `Refund must be between 0 and what this booking paid (₹${bookedRupees.toFixed(2)}).`,
             });
             return;
         }
