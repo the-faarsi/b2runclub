@@ -132,6 +132,21 @@ app.get("/health", (req, res) => {
 // Ticket rendering endpoint (returns the generated base64 QR code ticket)
 const prisma_1 = __importDefault(require("./utils/prisma"));
 const qr_1 = require("./utils/qr");
+/**
+ * Escapes text bound for the ticket markup.
+ *
+ * Guest names are free text the member types when booking, and this route
+ * answers with Content-Type: text/html at a URL members are linked to
+ * directly, so an unescaped name would run as markup in their own browser.
+ * The in-app view renders it in a sandbox="" iframe, which stops scripts
+ * there but not here.
+ */
+const esc = (v) => String(v ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 app.get("/api/events/registration/:id/ticket", async (req, res) => {
     try {
         const registrationId = req.params.id;
@@ -140,10 +155,17 @@ app.get("/api/events/registration/:id/ticket", async (req, res) => {
             res.status(401).json({ error: "Unauthorized" });
             return;
         }
-        const reg = await prisma_1.default.eventRegistration.findUnique({
+        const reg = (await prisma_1.default.eventRegistration.findUnique({
             where: { id: registrationId },
-            include: { event: true, user: true },
-        });
+            include: {
+                event: true,
+                user: true,
+                // One QR covers the whole booking, so the ticket has to name
+                // everyone it admits — otherwise the member holding it cannot
+                // tell what they are presenting at the line.
+                guests: { orderBy: [{ is_booker: "desc" }, { created_at: "asc" }] },
+            },
+        }));
         if (!reg) {
             res.status(404).json({ error: "Ticket not found" });
             return;
@@ -175,31 +197,61 @@ app.get("/api/events/registration/:id/ticket", async (req, res) => {
             userName: reg.user.name,
             eventTitle: reg.event.title,
         });
+        /*
+         * The party this QR admits. A booking made for three people is one
+         * scannable code, so the face of the ticket lists all three by name —
+         * the member has to be able to see what they are holding, and the
+         * marshal reads the same names back off the scan.
+         *
+         * Falls back to the booker for a booking made before guest rows
+         * existed, so an old ticket still renders.
+         */
+        const party = reg.guests?.length > 0
+            ? reg.guests
+            : [{ name: reg.user.name, kind: "ADULT", is_booker: true }];
+        const partyRows = party
+            .map((g) => `
+              <li>
+                <span>${esc(g.name)}</span>
+                <span class="tag">${g.is_booker ? "booked this" : g.kind === "KID" ? "child" : "guest"}</span>
+              </li>`)
+            .join("");
         // Send visual HTML representation
         res.setHeader("Content-Type", "text/html");
         res.send(`
       <html>
         <head>
-          <title>Event Ticket - ${reg.event.title}</title>
+          <title>Event Ticket - ${esc(reg.event.title)}</title>
           <style>
-            body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; background-color: #f7fafc; margin: 0; }
-            .card { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); text-align: center; max-width: 350px; }
-            h2 { color: #2d3748; margin-top: 0; }
-            .meta { color: #718096; margin-bottom: 20px; font-size: 14px; }
-            img { border: 2px solid #edf2f7; border-radius: 8px; padding: 10px; margin-bottom: 20px; }
+            body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; min-height: 100vh; background-color: #f7fafc; margin: 0; padding: 14px 0; box-sizing: border-box; }
+            .card { background: white; padding: 22px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); text-align: center; max-width: 350px; margin: auto; }
+            h2 { color: #2d3748; margin: 0 0 14px; font-size: 21px; }
+            .meta { color: #718096; margin: 0 0 12px; font-size: 13px; line-height: 1.5; }
+            img { display: block; margin: 0 auto 14px; border: 2px solid #edf2f7; border-radius: 8px; padding: 8px; width: 214px; height: 214px; }
             .badge { background: #48bb78; color: white; padding: 6px 12px; border-radius: 20px; font-weight: bold; font-size: 12px; display: inline-block; }
+            .admits { color: #4a5568; font-size: 12px; font-weight: bold; letter-spacing: .06em; text-transform: uppercase; margin: 0 0 7px; }
+            ul.party { list-style: none; margin: 0 0 14px; padding: 0; text-align: left; border: 1px solid #edf2f7; border-radius: 8px; }
+            ul.party li { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 7px 12px; font-size: 14px; color: #2d3748; border-bottom: 1px solid #edf2f7; }
+            ul.party li:last-child { border-bottom: 0; }
+            .tag { color: #718096; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; white-space: nowrap; }
           </style>
         </head>
         <body>
+          <!--
+            The QR comes before the name list on purpose. The list grows with
+            the party, and putting it above the code pushed the code off the
+            bottom of the ticket — the one thing on here that has to be
+            visible. Names below it, where a longer party scrolls instead.
+          -->
           <div class="card">
-            <h2>${reg.event.title}</h2>
-            <div class="meta">
-              Admit One: <strong>${reg.user.name}</strong><br/>
-              Role: ${reg.role_at_event}<br/>
-              Date: ${reg.event.date_time.toLocaleDateString()}<br/>
-              Location: ${reg.event.location}
-            </div>
+            <h2>${esc(reg.event.title)}</h2>
             <img src="${qrDataUrl}" alt="QR Ticket" />
+            <p class="admits">${party.length === 1 ? "Admits one" : `Admits ${party.length}`}</p>
+            <ul class="party">${partyRows}</ul>
+            <div class="meta">
+              ${esc(reg.role_at_event)} · ${reg.event.date_time.toLocaleDateString()}<br/>
+              ${esc(reg.event.location)}
+            </div>
             <div>
               <span class="badge">TICKET CONFIRMED</span>
             </div>

@@ -25,6 +25,7 @@ import type {
   MyResults,
   Notification,
   Photo,
+  PartyUpdateResult,
   Poll,
   PollAnalytics,
   Post,
@@ -835,6 +836,18 @@ export const api = {
     request<{ message: string }>(`/api/raceday/check-in/${registrationId}/undo`, {
       method: "POST",
     }),
+
+  /**
+   * Admit one named person off a booking. This is how a party is checked in:
+   * the marshal taps each name as they appear, so the ones who have not turned
+   * up stay outstanding instead of being waved through with the booker.
+   */
+  admitGuest: (guestId: string) =>
+    request<PartyUpdateResult>(`/api/raceday/guests/${guestId}/admit`, { method: "POST" }),
+
+  /** Put one person back to not-arrived, for a tap on the wrong name. */
+  unadmitGuest: (guestId: string) =>
+    request<PartyUpdateResult>(`/api/raceday/guests/${guestId}/unadmit`, { method: "POST" }),
 
   /** Everything the event-day screen needs, in one pollable request. */
   raceDayDashboard: (eventId: string) =>

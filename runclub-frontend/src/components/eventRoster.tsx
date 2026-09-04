@@ -2,7 +2,7 @@ import { motion } from "framer-motion";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../lib/api";
 import { cn, inr, PAYMENT_META, ROLE_META } from "../lib/format";
-import type { ClubEvent, EventRegistrationRow } from "../lib/types";
+import type { ClubEvent, EventRegistrationRow, PartyMember } from "../lib/types";
 import { useFetch } from "../lib/useFetch";
 import { LockIcon, SearchIcon, UsersIcon } from "./icons";
 import {
@@ -36,23 +36,73 @@ export function EventRoster({ event }: { event: ClubEvent }) {
   );
   const [busy, setBusy] = useState(false);
   const [refunding, setRefunding] = useState<EventRegistrationRow | null>(null);
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [guestBusy, setGuestBusy] = useState<string | null>(null);
 
   const rows = data ?? [];
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return rows;
+    // Guest names are searchable too: someone looking for "Priya" is looking
+    // for the booking she is on, which is filed under whoever paid for it.
     return rows.filter(
-      (r) => r.name.toLowerCase().includes(q) || r.email.toLowerCase().includes(q),
+      (r) =>
+        r.name.toLowerCase().includes(q) ||
+        r.email.toLowerCase().includes(q) ||
+        (r.guests ?? []).some((g) => g.name.toLowerCase().includes(q)),
     );
   }, [rows, query]);
 
-  const attending = rows.filter((r) => !r.blocked_at).length;
-  const blocked = rows.length - attending;
-  const ticketed = rows.filter(
-    (r) => !r.blocked_at && (r.status === "PAID" || r.status === "FREE"),
-  ).length;
-  const checkedIn = rows.filter((r) => r.attended_at && !r.blocked_at).length;
+  /*
+   * Counted in people, not bookings. One member booking for their family is a
+   * single row, so counting rows would under-report the turnout the organiser
+   * has to plan water and marshals for.
+   */
+  const seats = (r: EventRegistrationRow) => r.guests?.length || r.party_size || 1;
+  const live = rows.filter((r) => !r.blocked_at);
+  const attending = live.reduce((n, r) => n + seats(r), 0);
+  const blocked = rows.filter((r) => r.blocked_at).reduce((n, r) => n + seats(r), 0);
+  const ticketed = live
+    .filter((r) => r.status === "PAID" || r.status === "FREE")
+    .reduce((n, r) => n + seats(r), 0);
+  const checkedIn = live.reduce(
+    (n, r) =>
+      n +
+      (r.guests?.length
+        ? r.guests.filter((g) => g.admitted_at).length
+        : r.attended_at
+          ? 1
+          : 0),
+    0,
+  );
+
+  /** Admit or un-admit one named person, in place. */
+  const toggleGuest = async (row: EventRegistrationRow, guest: PartyMember) => {
+    const admitting = !guest.admitted_at;
+    setGuestBusy(guest.id);
+    try {
+      const res = admitting ? await api.admitGuest(guest.id) : await api.unadmitGuest(guest.id);
+      setData((prev) =>
+        (prev ?? []).map((r) =>
+          r.id === row.id
+            ? {
+                ...r,
+                guests: res.party,
+                // Mirrors the backend's rule: the booking reads as attended
+                // while anyone on it is inside, and clears when nobody is.
+                attended_at: res.admitted_count > 0 ? (r.attended_at ?? new Date().toISOString()) : null,
+              }
+            : r,
+        ),
+      );
+      toast(res.message, "ok");
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Could not update that person", "err");
+    } finally {
+      setGuestBusy(null);
+    }
+  };
 
   const apply = async () => {
     if (!pending) return;
@@ -137,6 +187,10 @@ export function EventRoster({ event }: { event: ClubEvent }) {
           {visible.map((r, i) => {
             const meta = PAYMENT_META[r.status];
             const isBlocked = Boolean(r.blocked_at);
+            const party = r.guests ?? [];
+            const isParty = party.length > 1;
+            const inside = party.filter((g) => g.admitted_at).length;
+            const open = Boolean(expanded[r.id]);
 
             return (
               <motion.li
@@ -178,11 +232,33 @@ export function EventRoster({ event }: { event: ClubEvent }) {
                     {!r.waiver_signed && (
                       <Badge color="var(--color-pending)">No waiver</Badge>
                     )}
-                    {r.attended_at && !isBlocked && (
-                      <Badge color="var(--color-paid)" icon="✓">
-                        Checked in
+                    {isParty && (
+                      <Badge color="var(--color-free)" icon="+">
+                        Party of {party.length}
                       </Badge>
                     )}
+                    {/* For a party, "checked in" would be a half-truth — the
+                        booking counts as attended the moment one of them
+                        arrives — so the figure is stated instead. */}
+                    {!isBlocked &&
+                      (isParty ? (
+                        inside > 0 && (
+                          <Badge
+                            color={
+                              inside === party.length
+                                ? "var(--color-paid)"
+                                : "var(--color-pending)"
+                            }
+                            icon={inside === party.length ? "✓" : undefined}
+                          >
+                            {inside} of {party.length} in
+                          </Badge>
+                        )
+                      ) : r.attended_at ? (
+                        <Badge color="var(--color-paid)" icon="✓">
+                          Checked in
+                        </Badge>
+                      ) : null)}
                     {r.refunded_at && (
                       <Badge color="var(--color-ink-3)">Refunded {inr(r.refund_amount ?? 0)}</Badge>
                     )}
@@ -193,6 +269,17 @@ export function EventRoster({ event }: { event: ClubEvent }) {
                 </div>
 
                 <div className="ml-auto flex shrink-0 gap-2">
+                  {isParty && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setExpanded((e) => ({ ...e, [r.id]: !e[r.id] }))}
+                      aria-expanded={open}
+                    >
+                      {open ? "Hide the party" : "Who's on it"}
+                    </Button>
+                  )}
+
                   {/* Refunds only apply to money actually captured. */}
                   {r.status === "PAID" && !r.refunded_at && (
                     <Button size="sm" variant="outline" onClick={() => setRefunding(r)}>
@@ -219,6 +306,53 @@ export function EventRoster({ event }: { event: ClubEvent }) {
                     </Button>
                   )}
                 </div>
+
+                {/* basis-full so the flex row wraps this onto its own line
+                    rather than squeezing it in beside the buttons. */}
+                {isParty && open && (
+                  <div className="basis-full">
+                    <ul className="mt-1 space-y-1.5 rounded-xl border border-white/10 bg-surface-2/50 p-2.5 sm:ml-12">
+                      {party.map((g) => {
+                        const arrived = Boolean(g.admitted_at);
+                        return (
+                          <li key={g.id} className="flex items-center gap-2.5 px-1">
+                            <span
+                              className="size-1.5 shrink-0 rounded-full"
+                              style={{
+                                background: arrived
+                                  ? "var(--color-paid)"
+                                  : "var(--color-ink-3)",
+                              }}
+                              aria-hidden
+                            />
+                            <span className="min-w-0 flex-1 truncate text-[13px] text-ink">
+                              {g.name}
+                              <span className="ml-1.5 text-[11.5px] text-ink-3">
+                                {g.is_booker
+                                  ? "booked this"
+                                  : g.kind === "KID"
+                                    ? "child"
+                                    : "guest"}
+                              </span>
+                            </span>
+                            {isBlocked ? (
+                              <span className="text-[11.5px] text-ink-3">—</span>
+                            ) : (
+                              <Button
+                                size="sm"
+                                variant={arrived ? "ghost" : "outline"}
+                                loading={guestBusy === g.id}
+                                onClick={() => void toggleGuest(r, g)}
+                              >
+                                {arrived ? "Not here" : "Admit"}
+                              </Button>
+                            )}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                )}
               </motion.li>
             );
           })}

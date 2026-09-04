@@ -106,7 +106,13 @@ router.get("/events/:id/registrations", requireRole(["ADMIN"]), async (req: Auth
 
         const registrations = await prisma.eventRegistration.findMany({
             where: { event_id: eventId },
-            include: { user: { select: { id: true, name: true, email: true, role: true } } },
+            include: {
+                user: { select: { id: true, name: true, email: true, role: true } },
+                // One booking can be several people, so the roster has to be
+                // able to show who a row actually covers and which of them
+                // have arrived.
+                guests: { orderBy: [{ is_booker: "desc" }, { created_at: "asc" }] },
+            },
             orderBy: { user: { name: "asc" } },
         }) as any;
 
@@ -128,6 +134,17 @@ router.get("/events/:id/registrations", requireRole(["ADMIN"]), async (req: Auth
                 refund_id: r.refund_id,
                 refunded_at: r.refunded_at,
                 refund_amount: r.refund_amount,
+                // Only what the roster renders — no admitted_by, which would
+                // name one crew member to every admin looking at the list.
+                guests: (r.guests ?? []).map((g: any) => ({
+                    id: g.id,
+                    name: g.name,
+                    kind: g.kind,
+                    is_booker: g.is_booker,
+                    admitted_at: g.admitted_at,
+                })),
+                party_size: (r.guests ?? []).length || 1,
+                amount_due_paise: r.amount_due_paise,
             }))
         );
     } catch (error: any) {

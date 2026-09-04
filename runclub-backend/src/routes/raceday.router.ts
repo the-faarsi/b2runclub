@@ -60,7 +60,14 @@ router.post("/check-in", requireRole(CREW), async (req: AuthRequest, res: Respon
 
         const reg = (await prisma.eventRegistration.findUnique({
             where: { id: regId },
-            include: { event: true, user: { select: { id: true, name: true, email: true } } },
+            include: {
+                event: true,
+                user: { select: { id: true, name: true, email: true } },
+                /* The whole party. A ticket covers everyone on the booking, and
+                   the crew admit them one at a time — so the scan has to answer
+                   "who does this QR cover", not just "whose QR is this". */
+                guests: { orderBy: [{ is_booker: "desc" }, { created_at: "asc" }] },
+            },
         })) as any;
 
         if (!reg) {
@@ -98,32 +105,229 @@ router.post("/check-in", requireRole(CREW), async (req: AuthRequest, res: Respon
             return;
         }
 
-        if (reg.attended_at) {
+        /*
+         * A party of one is admitted on the scan, as it always was — there is
+         * nothing to choose, and asking a marshal to tap twice for the common
+         * case would be worse than the problem it solves.
+         *
+         * A party of more than one is not. The scan reports who the booking
+         * covers and admits nobody; the crew tick people off as they arrive,
+         * which is the whole point — "booked for two, one turned up" is a fact
+         * about a person, not about the booking.
+         */
+        const party = reg.guests as any[];
+
+        if (party.length === 1) {
+            const only = party[0];
+            if (only.admitted_at) {
+                res.json({
+                    message: `${only.name} was already checked in`,
+                    already_checked_in: true,
+                    registration_id: reg.id,
+                    name: only.name,
+                    attended_at: only.admitted_at,
+                    event_title: reg.event.title,
+                    party: shapeParty(party),
+                    admitted_count: 1,
+                    party_size: 1,
+                });
+                return;
+            }
+
+            const now = new Date();
+            await prisma.registrationGuest.update({
+                where: { id: only.id },
+                data: { admitted_at: now, admitted_by: req.user!.id },
+            });
+            // Kept in step so the roster badges and results, which read the
+            // booking rather than the guests, still see a check-in.
+            await prisma.eventRegistration.update({
+                where: { id: reg.id },
+                data: { attended_at: now, checked_in_by: req.user!.id },
+            });
+
             res.json({
-                message: `${reg.user.name} was already checked in`,
-                already_checked_in: true,
-                name: reg.user.name,
-                attended_at: reg.attended_at,
+                message: `${only.name} checked in`,
+                already_checked_in: false,
+                auto_admitted: true,
+                registration_id: reg.id,
+                name: only.name,
+                role_at_event: reg.role_at_event,
+                attended_at: now,
                 event_title: reg.event.title,
+                party: shapeParty(party.map((g) => ({ ...g, admitted_at: now }))),
+                admitted_count: 1,
+                party_size: 1,
             });
             return;
         }
 
-        const updated = (await prisma.eventRegistration.update({
-            where: { id: reg.id },
-            data: { attended_at: new Date(), checked_in_by: req.user!.id },
-        })) as any;
-
+        const admitted = party.filter((g) => g.admitted_at).length;
         res.json({
-            message: `${reg.user.name} checked in`,
-            already_checked_in: false,
+            message:
+                admitted === 0
+                    ? `${reg.user.name}'s booking covers ${party.length} people`
+                    : admitted === party.length
+                      ? `All ${party.length} already checked in`
+                      : `${admitted} of ${party.length} already checked in`,
+            already_checked_in: admitted === party.length,
+            auto_admitted: false,
+            registration_id: reg.id,
             name: reg.user.name,
             role_at_event: reg.role_at_event,
-            attended_at: updated.attended_at,
             event_title: reg.event.title,
+            party: shapeParty(party),
+            admitted_count: admitted,
+            party_size: party.length,
         });
     } catch (error: any) {
         res.status(500).json({ error: error.message || "Check-in failed" });
+    }
+});
+
+/** Only what a crew screen needs — no ids of other people, no timestamps of ours. */
+function shapeParty(guests: any[]) {
+    return guests.map((g) => ({
+        id: g.id,
+        name: g.name,
+        kind: g.kind,
+        is_booker: g.is_booker,
+        admitted_at: g.admitted_at ?? null,
+    }));
+}
+
+/**
+ * Keeps EventRegistration.attended_at in step with the guest rows.
+ *
+ * The booking-level timestamp is still read by the roster, the results screen
+ * and the member's own ticket, so it cannot be allowed to drift: it means "at
+ * least one of this party has arrived", and it clears when the last one is
+ * un-admitted.
+ */
+async function syncBookingAttendance(registrationId: string, crewId: string) {
+    const rows = await prisma.registrationGuest.findMany({
+        where: { registration_id: registrationId },
+        select: { admitted_at: true },
+    });
+    const first = rows
+        .map((r) => r.admitted_at)
+        .filter((d): d is Date => Boolean(d))
+        .sort((a, b) => a.getTime() - b.getTime())[0];
+
+    await prisma.eventRegistration.update({
+        where: { id: registrationId },
+        data: first
+            ? { attended_at: first, checked_in_by: crewId }
+            : { attended_at: null, checked_in_by: null },
+    });
+    return rows.filter((r) => r.admitted_at).length;
+}
+
+/** Loads a guest with everything the guards below need. */
+async function loadGuest(id: string) {
+    return prisma.registrationGuest.findUnique({
+        where: { id },
+        include: {
+            registration: {
+                include: {
+                    event: { select: { id: true, title: true } },
+                    user: { select: { name: true } },
+                },
+            },
+        },
+    }) as any;
+}
+
+/**
+ * Admit one named person.
+ *
+ * Per guest rather than per booking, which is the thing the club asked for: a
+ * QR covering two people where only one turns up leaves the other outstanding
+ * until they appear, rather than marking both present or neither.
+ */
+router.post("/guests/:guestId/admit", requireRole(CREW), async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const guest = await loadGuest(req.params.guestId as string);
+        if (!guest) {
+            res.status(404).json({ error: "Unrecognised person on this booking" });
+            return;
+        }
+        if (guest.registration.blocked_at) {
+            res.status(403).json({
+                error: `${guest.registration.user.name} has been removed from this event.`,
+                blocked: true,
+            });
+            return;
+        }
+        if (guest.admitted_at) {
+            res.json({
+                message: `${guest.name} was already checked in`,
+                already_admitted: true,
+                guest: shapeParty([guest])[0],
+            });
+            return;
+        }
+
+        const now = new Date();
+        await prisma.registrationGuest.update({
+            where: { id: guest.id },
+            data: { admitted_at: now, admitted_by: req.user!.id },
+        });
+        const admitted = await syncBookingAttendance(guest.registration_id, req.user!.id);
+
+        const party = await prisma.registrationGuest.findMany({
+            where: { registration_id: guest.registration_id },
+            orderBy: [{ is_booker: "desc" }, { created_at: "asc" }],
+        });
+        res.json({
+            message: `${guest.name} checked in`,
+            already_admitted: false,
+            registration_id: guest.registration_id,
+            party: shapeParty(party),
+            admitted_count: admitted,
+            party_size: party.length,
+        });
+    } catch (error: any) {
+        res.status(500).json({ error: error.message || "Could not admit that person" });
+    }
+});
+
+/** Undo one person's admission — a marshal tapping the wrong name happens. */
+router.post("/guests/:guestId/unadmit", requireRole(CREW), async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const guest = await loadGuest(req.params.guestId as string);
+        if (!guest) {
+            res.status(404).json({ error: "Unrecognised person on this booking" });
+            return;
+        }
+        if (!guest.admitted_at) {
+            res.json({
+                message: `${guest.name} was not checked in`,
+                already_admitted: false,
+                guest: shapeParty([guest])[0],
+            });
+            return;
+        }
+
+        await prisma.registrationGuest.update({
+            where: { id: guest.id },
+            data: { admitted_at: null, admitted_by: null },
+        });
+        const admitted = await syncBookingAttendance(guest.registration_id, req.user!.id);
+
+        const party = await prisma.registrationGuest.findMany({
+            where: { registration_id: guest.registration_id },
+            orderBy: [{ is_booker: "desc" }, { created_at: "asc" }],
+        });
+        res.json({
+            message: `${guest.name} put back to not arrived`,
+            registration_id: guest.registration_id,
+            party: shapeParty(party),
+            admitted_count: admitted,
+            party_size: party.length,
+        });
+    } catch (error: any) {
+        res.status(500).json({ error: error.message || "Could not undo that" });
     }
 });
 
@@ -137,11 +341,25 @@ router.post("/check-in/:registrationId/undo", requireRole(CREW), async (req: Aut
             res.status(404).json({ error: "Registration not found" });
             return;
         }
+        /*
+         * Clears the guest rows as well as the booking.
+         *
+         * Undoing only the booking would have left every guest still marked
+         * admitted while the booking said nobody had arrived — the two are read
+         * by different screens, so that disagreement would show up as a party
+         * present on the roster and absent on the dashboard. This is the
+         * "nobody arrived" undo; to correct one person, use
+         * /guests/:guestId/unadmit.
+         */
+        await prisma.registrationGuest.updateMany({
+            where: { registration_id: reg.id },
+            data: { admitted_at: null, admitted_by: null },
+        });
         await prisma.eventRegistration.update({
             where: { id: reg.id },
             data: { attended_at: null, checked_in_by: null },
         });
-        res.json({ message: "Check-in undone" });
+        res.json({ message: "Check-in undone for the whole booking" });
     } catch (error: any) {
         res.status(500).json({ error: error.message || "Could not undo" });
     }

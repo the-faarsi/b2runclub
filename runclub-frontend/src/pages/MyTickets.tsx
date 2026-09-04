@@ -293,6 +293,11 @@ export function MyTickets() {
             const meta = PAYMENT_META[reg.status];
             const blocked = Boolean(reg.blocked_at);
             const ready = ticketReady(reg.status) && !blocked;
+            const party = reg.guests ?? [];
+            /* The snapshot taken at booking, falling back to the event fee for
+               a booking made before parties existed. */
+            const paid =
+              reg.amount_due_paise != null ? reg.amount_due_paise / 100 : (ev?.price ?? 0);
             const parts = ev ? dateParts(ev.date_time) : null;
             const past = ev ? isPast(ev.date_time) : false;
 
@@ -354,18 +359,34 @@ export function MyTickets() {
                         {reg.role_at_event === "VOLUNTEER" && (
                           <Badge color="var(--color-free)">Marshal</Badge>
                         )}
+                        {party.length > 1 && (
+                          <Badge color="var(--color-free)" icon="+">
+                            Party of {party.length}
+                          </Badge>
+                        )}
                       </div>
 
                       <p className="mt-1.5 text-[13px] text-ink-3">
                         {ev ? (
                           <>
                             {fullDate(ev.date_time)} · {eventTime(ev.date_time)} · {ev.location}
-                            {ev.price > 0 && <> · {inr(ev.price)}</>}
+                            {/* What this booking was charged, not the event's
+                                per-head fee — a party of three paid three
+                                fares and should be shown all of it. */}
+                            {paid > 0 && <> · {inr(paid)}</>}
                           </>
                         ) : (
                           "Event details unavailable"
                         )}
                       </p>
+
+                      {/* Who the one QR admits. The member has to be able to
+                          check the names before they hand over the phone. */}
+                      {party.length > 1 && (
+                        <p className="mt-1 text-[12px] leading-relaxed text-ink-3">
+                          Admits {party.map((g) => g.name).join(", ")}
+                        </p>
+                      )}
 
                       {blocked ? (
                         <p className="mt-2 text-[12px] leading-relaxed text-ink-3">

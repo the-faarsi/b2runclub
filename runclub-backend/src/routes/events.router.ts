@@ -330,7 +330,13 @@ router.get(
 
             const registrations = await prisma.eventRegistration.findMany({
                 where: { user_id: userId },
-                include: { event: true },
+                /* The party travels with the booking, so a ticket can name everyone it
+                   covers. Without this the QR showed only the member who booked,
+                   which is the one thing a marshal cannot work from. */
+                include: {
+                    event: true,
+                    guests: { orderBy: [{ is_booker: "desc" }, { created_at: "asc" }] },
+                },
                 orderBy: { event: { date_time: "desc" } },
             });
 

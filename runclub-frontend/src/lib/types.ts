@@ -141,6 +141,15 @@ export interface EventRegistrationRow {
   refund_id: string | null;
   refunded_at: string | null;
   refund_amount: number | null;
+  /**
+   * Everyone this one booking covers, booker first. A member booking for their
+   * family is a single row here, so the party is what says how many places it
+   * holds and who has been admitted.
+   */
+  guests?: PartyMember[];
+  party_size?: number;
+  /** What was actually charged for the whole party, in paise. */
+  amount_due_paise?: number;
 }
 
 export interface Author {
@@ -490,6 +499,15 @@ export interface StreakSummary {
  * A scan outcome. The backend answers 200 for an already-scanned ticket rather
  * than an error, so `already_checked_in` is the flag the scanner UI branches on.
  */
+/** One person on a scanned booking, as the crew screens see them. */
+export interface PartyMember {
+  id: string;
+  name: string;
+  kind: "ADULT" | "KID";
+  is_booker: boolean;
+  admitted_at?: string | null;
+}
+
 export interface CheckInResult {
   message: string;
   already_checked_in: boolean;
@@ -497,6 +515,29 @@ export interface CheckInResult {
   role_at_event?: string;
   attended_at: string;
   event_title: string;
+  /**
+   * Everyone the scanned QR admits, booker first.
+   *
+   * A party of one is admitted by the scan itself (`auto_admitted`), because
+   * there is nothing to choose. A larger party admits nobody: the crew tick
+   * people off as they arrive, so "booked for three, two turned up" stays a
+   * fact about each person rather than about the booking.
+   */
+  party?: PartyMember[];
+  admitted_count?: number;
+  party_size?: number;
+  auto_admitted?: boolean;
+  registration_id?: string;
+}
+
+/** What the per-person admit/unadmit calls answer with. */
+export interface PartyUpdateResult {
+  message: string;
+  registration_id: string;
+  party: PartyMember[];
+  admitted_count: number;
+  party_size: number;
+  already_admitted?: boolean;
 }
 
 export interface Shift {
