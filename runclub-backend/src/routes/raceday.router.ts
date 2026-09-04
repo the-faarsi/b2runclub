@@ -368,6 +368,41 @@ router.post("/check-in/:registrationId/undo", requireRole(CREW), async (req: Aut
 /* ── Live dashboard ───────────────────────────────────────── */
 
 /**
+ * Flattens bookings into one row per person.
+ *
+ * A booking can cover up to six people behind a single QR, so anything the
+ * event-day screen counts or lists has to be built from this rather than from
+ * the registration rows — otherwise a family of four counts once.
+ *
+ * A booking with no guest rows (made before parties existed) yields its booker
+ * with `guest_id: null`, which tells the client to fall back to the
+ * booking-level check-in routes for that person.
+ */
+function toPeople(regs: any[]) {
+    return regs.flatMap((r) => {
+        const rows =
+            r.guests?.length > 0
+                ? r.guests
+                : [{ id: null, name: r.user.name, kind: "ADULT", is_booker: true, admitted_at: r.attended_at }];
+
+        return rows.map((g: any) => ({
+            guest_id: g.id as string | null,
+            registration_id: r.id as string,
+            /* Only the booker holds a club account. A guest is a name on a
+               booking, so anything keyed on a user id must skip them. */
+            user_id: g.is_booker ? (r.user.id as string) : null,
+            name: g.name as string,
+            kind: g.kind as string,
+            is_booker: Boolean(g.is_booker),
+            booked_by: r.user.name as string,
+            role_at_event: r.role_at_event as string,
+            status: r.status as string,
+            admitted_at: (g.admitted_at ?? null) as Date | null,
+        }));
+    });
+}
+
+/**
  * One payload for the event-day screen: turnout, check-in progress, shift
  * coverage and checkpoint counts. A single request keeps the big-screen view
  * cheap to poll.
@@ -385,7 +420,10 @@ router.get("/events/:id/dashboard", requireRole(CREW), async (req: AuthRequest, 
         const [registrations, shifts, checkpoints] = await Promise.all([
             prisma.eventRegistration.findMany({
                 where: { event_id: eventId },
-                include: { user: { select: { id: true, name: true } } },
+                include: {
+                    user: { select: { id: true, name: true } },
+                    guests: { orderBy: [{ is_booker: "desc" }, { created_at: "asc" }] },
+                },
                 orderBy: { user: { name: "asc" } },
             }) as any,
             prisma.eventShift.findMany({
@@ -401,8 +439,9 @@ router.get("/events/:id/dashboard", requireRole(CREW), async (req: AuthRequest, 
         ]);
 
         const attending = (registrations as any[]).filter((r) => !r.blocked_at);
-        const expected = attending.filter((r) => r.status === "PAID" || r.status === "FREE");
-        const checkedIn = expected.filter((r) => r.attended_at);
+        const attendingPeople = toPeople(attending);
+        const expected = attendingPeople.filter((p) => p.status === "PAID" || p.status === "FREE");
+        const checkedIn = expected.filter((p) => p.admitted_at);
 
         res.json({
             event: {
@@ -412,32 +451,57 @@ router.get("/events/:id/dashboard", requireRole(CREW), async (req: AuthRequest, 
                 location: event.location,
                 status: event.status,
             },
+            /*
+             * Every figure counts people, not bookings.
+             *
+             * It used to count rows of EventRegistration, so two bookings
+             * covering six people read as "2 registered, 2 checked in, 100%" —
+             * and checked_in tested `attended_at`, which is set the moment the
+             * first of a party arrives, so a family of four counted as fully
+             * present when one of them had walked up. `bookings` is kept
+             * alongside so the screen can still say how many QRs that is.
+             */
             turnout: {
-                registered: attending.length,
+                registered: attendingPeople.length,
                 expected: expected.length,
                 checked_in: checkedIn.length,
-                awaiting_payment: attending.filter((r) => r.status === "PENDING").length,
-                blocked: (registrations as any[]).length - attending.length,
+                awaiting_payment: attendingPeople.filter((p) => p.status === "PENDING").length,
+                blocked: toPeople((registrations as any[]).filter((r) => r.blocked_at)).length,
                 // Everyone ticket-ready who has not scanned in yet.
                 no_show: expected.length - checkedIn.length,
+                bookings: attending.length,
+                parties: attending.filter((r) => (r.guests?.length ?? 1) > 1).length,
             },
-            // Most recent scans first, for the live ticker.
+            // Most recent admissions first, for the live ticker.
             recent_check_ins: checkedIn
-                .sort((a, b) => +new Date(b.attended_at) - +new Date(a.attended_at))
+                .slice()
+                .sort((a, b) => +new Date(b.admitted_at!) - +new Date(a.admitted_at!))
                 .slice(0, 12)
-                .map((r) => ({
-                    registration_id: r.id,
-                    // Checkpoint splits key on the user, not the registration, so
-                    // the id has to travel with the row or the client would have to
-                    // match people by name — which breaks on two identical names.
-                    user_id: r.user.id,
-                    name: r.user.name,
-                    role_at_event: r.role_at_event,
-                    attended_at: r.attended_at,
+                .map((p) => ({
+                    guest_id: p.guest_id,
+                    registration_id: p.registration_id,
+                    /* Null for a guest. Checkpoint splits key on a user id and
+                       a guest has no account, so handing the booker's id over
+                       for them would file their split against the booker. */
+                    user_id: p.user_id,
+                    name: p.name,
+                    kind: p.kind,
+                    is_booker: p.is_booker,
+                    booked_by: p.booked_by,
+                    role_at_event: p.role_at_event,
+                    attended_at: p.admitted_at,
                 })),
             not_yet_in: expected
-                .filter((r) => !r.attended_at)
-                .map((r) => ({ registration_id: r.id, user_id: r.user.id, name: r.user.name })),
+                .filter((p) => !p.admitted_at)
+                .map((p) => ({
+                    guest_id: p.guest_id,
+                    registration_id: p.registration_id,
+                    user_id: p.user_id,
+                    name: p.name,
+                    kind: p.kind,
+                    is_booker: p.is_booker,
+                    booked_by: p.booked_by,
+                })),
             shifts: (shifts as any[]).map((s) => ({
                 id: s.id,
                 title: s.title,

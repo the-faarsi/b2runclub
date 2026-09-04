@@ -569,6 +569,7 @@ export interface RaceDayDashboard {
     location: string;
     status: EventStatus;
   };
+  /** Counted in people, not bookings — one QR can cover up to six of them. */
   turnout: {
     registered: number;
     expected: number;
@@ -576,16 +577,37 @@ export interface RaceDayDashboard {
     awaiting_payment: number;
     blocked: number;
     no_show: number;
+    /** How many bookings those people arrived on, i.e. how many QRs. */
+    bookings: number;
+    /** How many of those bookings cover more than one person. */
+    parties: number;
   };
   recent_check_ins: {
+    /** Null only for a booking made before parties existed. */
+    guest_id: string | null;
     registration_id: string;
-    /** Checkpoint splits key on the user, so this is what a tap-through sends. */
-    user_id: string;
+    /**
+     * Checkpoint splits key on the user, so this is what a tap-through sends.
+     * Null for a guest, who has no club account and so cannot hold a split.
+     */
+    user_id: string | null;
     name: string;
+    kind: "ADULT" | "KID";
+    is_booker: boolean;
+    /** The member whose booking this person is on. */
+    booked_by: string;
     role_at_event: string;
     attended_at: string;
   }[];
-  not_yet_in: { registration_id: string; user_id: string; name: string }[];
+  not_yet_in: {
+    guest_id: string | null;
+    registration_id: string;
+    user_id: string | null;
+    name: string;
+    kind: "ADULT" | "KID";
+    is_booker: boolean;
+    booked_by: string;
+  }[];
   shifts: {
     id: string;
     title: string;

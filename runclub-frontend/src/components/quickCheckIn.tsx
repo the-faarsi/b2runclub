@@ -1,14 +1,12 @@
 import { useCallback, useState } from "react";
 import { api, ApiError } from "../lib/api";
 import { cn, relativeTime } from "../lib/format";
-import type { CheckInResult, ClubEvent, PartyMember } from "../lib/types";
+import type { CheckInResult, ClubEvent } from "../lib/types";
+import { PartyPanel, partyFromScan, type ScannedParty } from "./partyPanel";
 import { QrScanner, insecureContext, scannerSupported } from "./qrScanner";
 import { Badge, Button, Card, Input, Modal, useToast } from "./ui";
 
 type Feedback = { kind: "ok" | "repeat" | "err"; title: string; body?: string };
-
-/** A scanned booking that covers more than one person, held open for the crew. */
-type Party = { registrationId: string; bookedBy: string; members: PartyMember[] };
 
 const FEEDBACK_TINT: Record<Feedback["kind"], string> = {
     ok: "var(--color-paid)",
@@ -34,8 +32,7 @@ export function QuickCheckIn({ event }: { event: ClubEvent }) {
     const [busy, setBusy] = useState(false);
     const [manual, setManual] = useState("");
     const [feedback, setFeedback] = useState<Feedback | null>(null);
-    const [party, setParty] = useState<Party | null>(null);
-    const [pending, setPending] = useState<string | null>(null);
+    const [party, setParty] = useState<ScannedParty | null>(null);
     const [count, setCount] = useState(0);
 
     const supported = scannerSupported();
@@ -55,17 +52,12 @@ export function QuickCheckIn({ event }: { event: ClubEvent }) {
 
                 /*
                  * A booking for several people opens the list instead of
-                 * flashing a name. The scan cannot decide who arrived, so it
-                 * reports who the QR covers and the crew admit them by name —
-                 * held open, because a banner that fades after three seconds
-                 * would take the list away mid-job.
+                 * flashing a name — the scan cannot decide who arrived, so the
+                 * crew admit them by name.
                  */
-                if ((res.party_size ?? 1) > 1 && res.party?.length) {
-                    setParty({
-                        registrationId: res.registration_id ?? input.registration_id ?? "",
-                        bookedBy: res.name,
-                        members: res.party,
-                    });
+                const scanned = partyFromScan(res, input.registration_id);
+                if (scanned) {
+                    setParty(scanned);
                     setFeedback(null);
                     return;
                 }
@@ -89,31 +81,6 @@ export function QuickCheckIn({ event }: { event: ClubEvent }) {
             }
         },
         [event.id, flash],
-    );
-
-    /** Admit or un-admit one person, then re-seat the list from the answer. */
-    const toggleMember = useCallback(
-        async (member: PartyMember) => {
-            const admitting = !member.admitted_at;
-            setPending(member.id);
-            try {
-                const res = admitting
-                    ? await api.admitGuest(member.id)
-                    : await api.unadmitGuest(member.id);
-                setParty((cur) => (cur ? { ...cur, members: res.party } : cur));
-                // The tally counts people through the line, so an undo takes
-                // one back off it rather than leaving the figure overstated.
-                setCount((c) => Math.max(0, c + (admitting ? 1 : -1)));
-            } catch (err) {
-                flash({
-                    kind: "err",
-                    title: err instanceof ApiError ? err.message : "Could not update that person",
-                });
-            } finally {
-                setPending(null);
-            }
-        },
-        [flash],
     );
 
     const submitManual = async () => {
@@ -195,78 +162,21 @@ export function QuickCheckIn({ event }: { event: ClubEvent }) {
                         </div>
                     )}
 
-                    {/* The scanned party. Everyone the QR admits, with a tap
-                        each — the marshal works down the list as people show
-                        up, and whoever has not appeared stays outstanding. */}
+                    {/* The scanned party — everyone the QR admits, with a
+                        tap each. Shared with the event-day console so a party
+                        half-admitted on one screen reads the same on both. */}
                     {party && (
-                        <div className="rounded-xl border border-gold/35 bg-gold/[0.05] p-3.5">
-                            <div className="flex flex-wrap items-center justify-between gap-2">
-                                <div className="min-w-0">
-                                    <p className="text-[14px] font-semibold text-ink">
-                                        {party.bookedBy}'s booking
-                                    </p>
-                                    <p className="mt-0.5 text-[12.5px] text-ink-2">
-                                        Covers {party.members.length} people. Tap each one as they
-                                        arrive.
-                                    </p>
-                                </div>
-                                <Badge
-                                    color={
-                                        party.members.every((m) => m.admitted_at)
-                                            ? "var(--color-paid)"
-                                            : "var(--color-pending)"
-                                    }
-                                >
-                                    {party.members.filter((m) => m.admitted_at).length} of{" "}
-                                    {party.members.length} in
-                                </Badge>
-                            </div>
-
-                            <ul className="mt-3 space-y-1.5">
-                                {party.members.map((m) => {
-                                    const inside = Boolean(m.admitted_at);
-                                    return (
-                                        <li
-                                            key={m.id}
-                                            className="flex items-center gap-2.5 rounded-lg border border-white/10 bg-surface-2/60 px-3 py-2"
-                                        >
-                                            <div className="min-w-0 flex-1">
-                                                <p className="truncate text-[13.5px] text-ink">
-                                                    {m.name}
-                                                </p>
-                                                <p className="mt-0.5 text-[11.5px] text-ink-3">
-                                                    {m.is_booker
-                                                        ? "Booked this"
-                                                        : m.kind === "KID"
-                                                          ? "Child"
-                                                          : "Guest"}
-                                                    {inside && ` · in ${relativeTime(m.admitted_at!)}`}
-                                                </p>
-                                            </div>
-                                            <Button
-                                                size="sm"
-                                                variant={inside ? "outline" : "gold"}
-                                                loading={pending === m.id}
-                                                onClick={() => void toggleMember(m)}
-                                            >
-                                                {inside ? "Not here" : "Admit"}
-                                            </Button>
-                                        </li>
-                                    );
-                                })}
-                            </ul>
-
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                className="mt-3 w-full"
-                                onClick={() => setParty(null)}
-                            >
-                                {party.members.some((m) => !m.admitted_at)
-                                    ? "Leave the rest outstanding"
-                                    : "Next ticket"}
-                            </Button>
-                        </div>
+                        <PartyPanel
+                            party={party}
+                            onChange={(members) =>
+                                setParty((cur) => (cur ? { ...cur, members } : cur))
+                            }
+                            onClose={() => setParty(null)}
+                            // The tally counts people through the line, so an
+                            // undo takes one back off rather than leaving the
+                            // figure overstated.
+                            onAdmittedCountChange={(d) => setCount((c) => Math.max(0, c + d))}
+                        />
                     )}
 
                     {insecure ? (

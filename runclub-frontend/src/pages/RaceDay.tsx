@@ -4,6 +4,7 @@ import { Link, useParams } from "react-router-dom";
 import { ClockIcon, PinIcon, PlusIcon, UsersIcon } from "../components/icons";
 import { Page } from "../components/layout";
 import { PageScene } from "../components/scene3d";
+import { PartyPanel, partyFromScan, type ScannedParty } from "../components/partyPanel";
 import { QrScanner, scannerSupported } from "../components/qrScanner";
 import {
   Avatar,
@@ -66,7 +67,7 @@ export function RaceDay() {
 
   if (loading && !data) {
     return (
-      <Page>
+      <Page back={false}>
         <Skeleton className="h-4 w-24" />
         <Skeleton className="mt-5 h-11 w-1/2" />
         <div className="mt-8 grid gap-4 sm:grid-cols-4">
@@ -80,7 +81,7 @@ export function RaceDay() {
 
   if (error || !data) {
     return (
-      <Page>
+      <Page back={false}>
         <Card>
           <ErrorState message={error ?? "Could not load the event"} onRetry={reload} />
         </Card>
@@ -97,15 +98,20 @@ export function RaceDay() {
   const pct = turnout.expected > 0 ? Math.round((turnout.checked_in / turnout.expected) * 100) : 0;
 
   return (
-    <Page>
+    <Page back={false}>
       {/* Low opacity: this screen is read at a start line, not admired. Skipped
           entirely below lg, which is where it is actually used. */}
       <PageScene variant="pulse" opacity={0.16} />
+      {/* The only back control on this page — <Page back={false}> above turns
+          off the generic one, which sat beside this and read "← Back ← Testing".
+          This one is the better of the two: it names where it goes and still
+          works on a hard refresh, where a history pop has nowhere to land. */}
       <Link
         to={`/events/${event.id}`}
-        className="mb-6 inline-flex items-center gap-1.5 text-[13px] text-ink-3 transition-colors hover:text-gold"
+        className="mb-6 inline-flex max-w-full items-center gap-1.5 text-[13px] text-ink-3 transition-colors hover:text-gold"
       >
-        ← {event.title}
+        <span aria-hidden>←</span>
+        <span className="truncate">Back to {event.title}</span>
       </Link>
 
       <div className="flex flex-wrap items-end justify-between gap-4">
@@ -143,20 +149,34 @@ export function RaceDay() {
               className="h-full rounded-full bg-gold"
             />
           </div>
-          <p className="mt-2 text-[11px] text-ink-3">{pct}% of ticket-ready runners</p>
+          <p className="mt-2 text-[11px] text-ink-3">{pct}% of ticket-ready people</p>
         </Card>
 
-        <Stat label="Still to arrive" value={turnout.no_show} note="ticket-ready, not scanned" />
+        <Stat label="Still to arrive" value={turnout.no_show} note="ticket-ready, not admitted" />
         <Stat
           label="Awaiting payment"
           value={turnout.awaiting_payment}
           note="can't be checked in yet"
           tone={turnout.awaiting_payment > 0 ? "var(--color-pending)" : undefined}
         />
+        {/*
+          Every figure above counts people, so this one says how many bookings
+          they arrived on. A member can book for up to six, so "2 registered"
+          used to be the answer for a field of six — the count an organiser
+          plans water and marshals for is the head count, and the QR count is
+          what the crew will physically scan.
+        */}
         <Stat
-          label="Registered"
+          label="People registered"
           value={turnout.registered}
-          note={turnout.blocked > 0 ? `${turnout.blocked} blocked` : "on the roster"}
+          note={[
+            `${turnout.bookings} ${turnout.bookings === 1 ? "booking" : "bookings"}`,
+            turnout.parties > 0 &&
+              `${turnout.parties} ${turnout.parties === 1 ? "party" : "parties"}`,
+            turnout.blocked > 0 && `${turnout.blocked} blocked`,
+          ]
+            .filter(Boolean)
+            .join(" · ")}
         />
       </div>
 
@@ -229,6 +249,7 @@ function CheckInPanel({
   const [manual, setManual] = useState("");
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
+  const [party, setParty] = useState<ScannedParty | null>(null);
   const supported = scannerSupported();
 
   /** Clears the banner after a moment so the scanner can keep working. */
@@ -242,6 +263,17 @@ function CheckInPanel({
       setBusy(true);
       try {
         const res: CheckInResult = await api.checkIn({ ...input, event_id: eventId });
+
+        /* A booking for several people opens the list rather than flashing a
+           name — the scan cannot know which of them walked up. */
+        const scanned = partyFromScan(res, input.registration_id);
+        if (scanned) {
+          setParty(scanned);
+          setFeedback(null);
+          onChanged();
+          return;
+        }
+
         flash(
           res.already_checked_in
             ? {
@@ -266,13 +298,40 @@ function CheckInPanel({
     [eventId, flash, onChanged],
   );
 
-  const undo = async (registrationId: string, name: string) => {
+  /**
+   * Puts one person back to not-arrived.
+   *
+   * Per person, not per booking: undoing the booking would take a whole party
+   * back out when the marshal only meant to correct one name. `guest_id` is
+   * null only for a booking made before parties existed, which has nothing but
+   * the booking-level undo to fall back on.
+   */
+  const undo = async (guestId: string | null, registrationId: string, name: string) => {
     try {
-      await api.undoCheckIn(registrationId);
-      toast(`${name.split(" ")[0]}'s check-in undone`, "ok");
+      if (guestId) await api.unadmitGuest(guestId);
+      else await api.undoCheckIn(registrationId);
+      toast(`${name.split(" ")[0]} put back to not arrived`, "ok");
       onChanged();
     } catch (err) {
       toast(err instanceof Error ? err.message : "Could not undo", "err");
+    }
+  };
+
+  /** Admit one named person straight off the "still to arrive" list. */
+  const admit = async (guestId: string | null, registrationId: string) => {
+    setBusy(true);
+    try {
+      if (guestId) {
+        const res = await api.admitGuest(guestId);
+        flash({ kind: "ok", title: res.message, body: "Send them through." });
+        onChanged();
+      } else {
+        await submit({ registration_id: registrationId });
+      }
+    } catch (err) {
+      flash({ kind: "err", title: err instanceof ApiError ? err.message : "Could not admit" });
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -290,9 +349,25 @@ function CheckInPanel({
           {supported && (
             <QrScanner
               className="mt-4"
-              paused={busy || feedback !== null}
+              // Also paused while a party is open, or the camera would re-read
+              // the same code and reset the list being worked through.
+              paused={busy || feedback !== null || party !== null}
               onScan={(text) => void submit({ qr_payload: text })}
             />
+          )}
+
+          {/* Everyone the scanned QR admits, with a tap each. */}
+          {party && (
+            <div className="mt-4">
+              <PartyPanel
+                party={party}
+                onChange={(members) => {
+                  setParty((cur) => (cur ? { ...cur, members } : cur));
+                  onChanged();
+                }}
+                onClose={() => setParty(null)}
+              />
+            </div>
           )}
 
           {/* Result banner — the only thing a marshal looks at */}
@@ -385,7 +460,9 @@ function CheckInPanel({
               <AnimatePresence initial={false}>
                 {data.recent_check_ins.map((c) => (
                   <motion.li
-                    key={c.registration_id}
+                    // Keyed per person: a party arriving one at a time produces
+                    // several rows off the same booking.
+                    key={c.guest_id ?? c.registration_id}
                     layout
                     initial={{ opacity: 0, height: 0 }}
                     animate={{ opacity: 1, height: "auto" }}
@@ -397,14 +474,20 @@ function CheckInPanel({
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="text-[13.5px] font-medium text-ink">{c.name}</span>
-                        {c.role_at_event === "VOLUNTEER" && (
+                        {c.role_at_event === "VOLUNTEER" && c.is_booker && (
                           <Badge color="var(--color-free)">Marshal</Badge>
                         )}
+                        {c.kind === "KID" && <Badge>Child</Badge>}
                       </div>
-                      <p className="text-[11.5px] text-ink-3">{relativeTime(c.attended_at)}</p>
+                      <p className="text-[11.5px] text-ink-3">
+                        {relativeTime(c.attended_at)}
+                        {/* Which QR they came in on, so the crew can tell two
+                            people of the same name apart. */}
+                        {!c.is_booker && ` · on ${c.booked_by}'s booking`}
+                      </p>
                     </div>
                     <button
-                      onClick={() => void undo(c.registration_id, c.name)}
+                      onClick={() => void undo(c.guest_id, c.registration_id, c.name)}
                       className="shrink-0 text-[11.5px] text-ink-3 transition-colors hover:text-[color:var(--color-failed)]"
                     >
                       Undo
@@ -421,7 +504,8 @@ function CheckInPanel({
           <div className="border-b border-white/8 p-5">
             <h2 className="text-[15px] font-semibold text-ink">Still to arrive</h2>
             <p className="mt-1 text-[12px] text-ink-3">
-              {data.not_yet_in.length} ticket-ready {data.not_yet_in.length === 1 ? "runner" : "runners"}
+              {data.not_yet_in.length} ticket-ready{" "}
+              {data.not_yet_in.length === 1 ? "person" : "people"}
             </p>
           </div>
 
@@ -435,17 +519,25 @@ function CheckInPanel({
             <ul className="max-h-80 overflow-y-auto">
               {data.not_yet_in.map((r) => (
                 <li
-                  key={r.registration_id}
+                  key={r.guest_id ?? r.registration_id}
                   className="flex items-center gap-3 border-b border-white/5 px-5 py-2.5 last:border-0"
                 >
                   <Avatar name={r.name} size={28} />
-                  <span className="min-w-0 flex-1 truncate text-[13px] text-ink-2">{r.name}</span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[13px] text-ink-2">{r.name}</p>
+                    {!r.is_booker && (
+                      <p className="truncate text-[11px] text-ink-3">
+                        {r.kind === "KID" ? "Child" : "Guest"} on {r.booked_by}'s booking
+                      </p>
+                    )}
+                  </div>
+                  {/* Admits this one person, not the booking they are on. */}
                   <Button
                     size="sm"
                     variant="ghost"
-                    onClick={() => void submit({ registration_id: r.registration_id })}
+                    onClick={() => void admit(r.guest_id, r.registration_id)}
                   >
-                    Check in
+                    Admit
                   </Button>
                 </li>
               ))}
@@ -773,8 +865,17 @@ function CheckpointsPanel({
     }
   };
 
-  /** Only people who actually started can be tapped through a checkpoint. */
-  const onCourse = data.recent_check_ins;
+  /**
+   * Only people who actually started can be tapped through a checkpoint.
+   *
+   * Guests are excluded: a split is stored against a user id and a guest is a
+   * name on someone else's booking with no account of their own, so tapping one
+   * through would file their split under the member who booked them.
+   */
+  const onCourse = data.recent_check_ins.filter(
+    (c): c is (typeof data.recent_check_ins)[number] & { user_id: string } => c.user_id !== null,
+  );
+  const guestsOnCourse = data.recent_check_ins.length - onCourse.length;
 
   if (loading) {
     return (
@@ -894,7 +995,13 @@ function CheckpointsPanel({
                       </p>
                     ) : (
                       <>
-                        <p className="eyebrow mb-3">Checked-in runners</p>
+                        <p className="eyebrow mb-3">Checked-in members</p>
+                        {guestsOnCourse > 0 && (
+                          <p className="-mt-2 mb-3 text-[11.5px] text-ink-3">
+                            {guestsOnCourse} guest{guestsOnCourse === 1 ? "" : "s"} checked in
+                            can't be tracked — splits are recorded against a member's account.
+                          </p>
+                        )}
                         <div className="flex flex-wrap gap-2">
                           {onCourse.map((r) => {
                             const through = c.splits.some((s) => s.user_id === r.user_id);
