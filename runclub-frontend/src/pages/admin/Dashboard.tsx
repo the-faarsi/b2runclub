@@ -13,7 +13,7 @@ import {
 import { ChartIcon, DownloadIcon, UsersIcon } from "../../components/icons";
 import { Page, PageHeader } from "../../components/layout";
 import { PageScene } from "../../components/scene3d";
-import { ProgressRing, Reveal } from "../../components/motion";
+import { AnimatedNumber, ProgressRing, Reveal } from "../../components/motion";
 import {
   Button,
   buttonClass,
@@ -36,8 +36,12 @@ interface TurnoutRow {
   title: string;
   date_time: string;
   price: number;
+  /** People expected, counted across every party on the roster. */
   total: number;
+  /** People who can be scanned. */
   ticketed: number;
+  /** Bookings, i.e. how many QR codes those people will present. */
+  bookings: number;
   revenue: number;
 }
 
@@ -77,15 +81,32 @@ export function AdminDashboard() {
 
     Promise.all(
       eventsForTurnout.map(async (e) => {
-        const rows = await api.roster(e.id);
+        /* The interactive roster, not the CSV export this used to parse: the
+           export carries one line per booking with only the booker on it, so
+           it cannot say how many people an event expects. */
+        const rows = await api.eventRegistrations(e.id);
+        /* Turnout is people, not rows. A row is one booking and can carry a
+           party of six, so counting rows under-reported the field by exactly
+           the guests. `party_size` falls back to 1 for a booking made before
+           parties existed. */
+        const heads = (r: (typeof rows)[number]) => r.guests?.length || r.party_size || 1;
+        const live = rows.filter((r) => !r.blocked_at);
         return {
           id: e.id,
           title: e.title,
           date_time: e.date_time,
           price: e.price,
-          total: rows.length,
-          ticketed: rows.filter((r) => r.status === "PAID" || r.status === "FREE").length,
-          revenue: rows.filter((r) => r.status === "PAID").length * e.price,
+          total: live.reduce((n, r) => n + heads(r), 0),
+          ticketed: live
+            .filter((r) => r.status === "PAID" || r.status === "FREE")
+            .reduce((n, r) => n + heads(r), 0),
+          bookings: live.length,
+          /* What was actually charged, not the entry fee times the number of
+             rows: a party of three paid three fares on one booking. */
+          revenue:
+            live
+              .filter((r) => r.status === "PAID")
+              .reduce((sum, r) => sum + (r.amount_due_paise ?? Math.round(e.price * 100)), 0) / 100,
         };
       }),
     )
@@ -295,6 +316,63 @@ export function AdminDashboard() {
             />
           </div>
 
+          {/*
+            Head count, on its own and marked out.
+
+            It is not another tile in the row above because it is not the same
+            kind of number: those count bookings, this counts people, and one
+            booking admits up to six. With 3 registrations covering 8 people
+            there was nowhere on this page that said 8 — the club would have
+            planned water, marshals and permits for 3.
+          */}
+          <Reveal className="mt-5">
+            <div className="card border-gold/40 bg-gold/[0.05] p-5 sm:p-6">
+              <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-4">
+                <div className="min-w-0">
+                  <p className="eyebrow flex items-center gap-2 text-gold">
+                    <UsersIcon className="size-3.5" />
+                    People attending
+                  </p>
+                  <p className="display mt-2 text-[clamp(38px,6vw,52px)] text-ink">
+                    <AnimatedNumber
+                      value={f.people_count}
+                      format={(v) => compact(Math.round(v))}
+                    />
+                  </p>
+                  {/* The guest figure names its noun. "5 of them are guests"
+                      pointed grammatically at the bookings, not the people,
+                      so the sentence could be read as 5 of 11 rather than
+                      5 of 16. */}
+                  <p className="mt-1.5 text-[13px] leading-relaxed text-ink-2">
+                    Across {totalRegs} booking{totalRegs === 1 ? "" : "s"}
+                    {f.people_count > totalRegs && (
+                      <>
+                        , including {f.people_count - totalRegs} guest
+                        {f.people_count - totalRegs === 1 ? "" : "s"} on other members' tickets
+                      </>
+                    )}
+                    .
+                  </p>
+                </div>
+
+                {/* The half of that head count who can actually be scanned. */}
+                <div className="flex items-center gap-4">
+                  <ProgressRing
+                    value={f.people_count > 0 ? f.people_ticket_ready / f.people_count : 0}
+                  />
+                  <div>
+                    <p className="text-[13px] font-semibold text-ink">Ticket-ready</p>
+                    <p className="mt-0.5 text-[12px] leading-relaxed text-ink-3">
+                      {f.people_ticket_ready} of {f.people_count} can be scanned
+                      <br />
+                      at the start line.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </Reveal>
+
           {/* Payment attention row */}
           <div className="mt-5 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
             <StatTile
@@ -395,7 +473,7 @@ export function AdminDashboard() {
                   ? "Reading rosters…"
                   : turnout.length === 0
                     ? "No published events yet"
-                    : "Registrations counted from each event's roster"
+                    : "People counted from each event's roster, parties included"
               }
               action={
                 turnout && turnout.length > 0 && (
@@ -425,10 +503,11 @@ export function AdminDashboard() {
                 />
               ) : showTurnoutTable ? (
                 <DataTable
-                  columns={["Event", "Registered", "Ticketed", "Revenue"]}
+                  columns={["Event", "People", "Bookings", "Ticketed", "Revenue"]}
                   rows={turnout.map((t) => [
                     `${t.title} · ${eventDate(t.date_time)}`,
                     t.total,
+                    t.bookings,
                     t.ticketed,
                     inr(t.revenue),
                   ])}
@@ -440,10 +519,20 @@ export function AdminDashboard() {
                       id: t.id,
                       label: t.title,
                       value: t.total,
-                      meta: `${t.ticketed} ticketed`,
+                      // Only reachable on hover, so nothing load-bearing goes
+                      // here — a phone never sees it. The booking count lives
+                      // in the table view, which is a tap away.
+                      meta:
+                        t.total === t.bookings
+                          ? `${t.ticketed} ticketed`
+                          : `${t.ticketed} ticketed · ${t.bookings} booking${t.bookings === 1 ? "" : "s"}`,
                     }))}
                     format={(v) => String(Math.round(v))}
-                    emptyLabel="No registrations yet"
+                    // Spelled out on the figure itself: a bare "2" was read as
+                    // two bookings when it meant two people, and this is the
+                    // one place on the row that is always visible.
+                    unit="people"
+                    emptyLabel="Nobody registered yet"
                   />
 
                   {/* Ticketed share across all counted events */}
@@ -460,8 +549,8 @@ export function AdminDashboard() {
                       <p className="text-[13px] font-semibold text-ink">Ticket-ready rate</p>
                       <p className="mt-0.5 text-[12px] leading-relaxed text-ink-3">
                         {turnout.reduce((s, t) => s + t.ticketed, 0)} of{" "}
-                        {turnout.reduce((s, t) => s + t.total, 0)} registrations can be scanned at
-                        the start line.
+                        {turnout.reduce((s, t) => s + t.total, 0)} people can be scanned at the
+                        start line.
                       </p>
                     </div>
                   </div>

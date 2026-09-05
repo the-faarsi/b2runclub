@@ -31,12 +31,29 @@ router.get("/financial-overview", (0, auth_1.requireRole)(["ADMIN"]), async (req
         const freeCounts = await prisma_1.default.eventRegistration.count({
             where: { status: "FREE" },
         });
+        /*
+         * Head count, which is a different number from the registration count.
+         *
+         * One booking admits up to six people, so "3 registrations" was the
+         * answer for a field of eight and there was nowhere on the dashboard
+         * that said eight. A blocked booking is excluded: nobody on it is
+         * getting in.
+         */
+        const peopleCount = await prisma_1.default.registrationGuest.count({
+            where: { registration: { blocked_at: null } },
+        });
+        // Of those, the ones who can actually be scanned at the start line.
+        const peopleTicketReady = await prisma_1.default.registrationGuest.count({
+            where: { registration: { blocked_at: null, status: { in: ["PAID", "FREE"] } } },
+        });
         res.json({
             total_revenue: totalRevenue,
             paid_count: paidCounts,
             pending_count: pendingCounts,
             failed_count: failedCounts,
             volunteer_free_count: freeCounts,
+            people_count: peopleCount,
+            people_ticket_ready: peopleTicketReady,
         });
     }
     catch (error) {

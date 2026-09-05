@@ -268,6 +268,14 @@ export interface FinancialOverview {
   pending_count: number;
   failed_count: number;
   volunteer_free_count: number;
+  /**
+   * People, not bookings. One registration admits up to six of them, so this
+   * is the figure the club plans around and it can be far higher than
+   * `paid_count + volunteer_free_count`. Excludes blocked bookings.
+   */
+  people_count: number;
+  /** Of those, how many can be scanned at the start line today. */
+  people_ticket_ready: number;
 }
 
 /** One row of the admin CSV roster export, parsed client-side. */

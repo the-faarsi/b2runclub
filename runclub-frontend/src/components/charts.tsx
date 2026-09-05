@@ -186,7 +186,9 @@ export function BarList({
               </span>
               <span className="tnum shrink-0 text-[13px] font-semibold text-ink">
                 {format(d.value)}
-                {unit && <span className="ml-0.5 text-ink-3">{unit}</span>}
+                {/* ml-1, not ml-0.5: the tighter gap suits a symbol like "%"
+                    but runs a whole word straight into the figure. */}
+                {unit && <span className="ml-1 font-normal text-ink-3">{unit}</span>}
               </span>
             </div>
 
