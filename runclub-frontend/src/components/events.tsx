@@ -272,7 +272,18 @@ export function RegisterDialog({
    * and everyone they bring pays.
    */
   const payingAdults = role === "VOLUNTEER" ? adults - 1 : adults;
-  const total = payingAdults * event.price + kids * (event.kid_price ?? 0);
+  const gross = payingAdults * event.price + kids * (event.kid_price ?? 0);
+
+  /*
+   * Group discount: a flat amount off the whole booking once the party reaches
+   * the organiser's threshold. Clamped to the total, so a discount larger than
+   * the fee makes the booking free rather than owing the member money — the
+   * same clamp the server applies.
+   */
+  const minParty = event.discount_min_party ?? 2;
+  const discount =
+    partySize >= minParty ? Math.min(Math.max(0, event.party_discount ?? 0), gross) : 0;
+  const total = gross - discount;
   const comped = total === 0;
 
   const submit = async () => {
@@ -567,11 +578,39 @@ export function RegisterDialog({
                   <span className="tnum">{inr(kids * (event.kid_price ?? 0))}</span>
                 </div>
               )}
+              {/* Named as its own line, not folded into the total. A discount
+                  the member cannot see is one they cannot check. */}
+              {discount > 0 && (
+                <div
+                  className="mt-1 flex items-center justify-between"
+                  style={{ color: "var(--color-paid)" }}
+                >
+                  <span>Group discount</span>
+                  <span className="tnum">−{inr(discount)}</span>
+                </div>
+              )}
               <div className="mt-2 flex items-center justify-between border-t border-white/8 pt-2 font-semibold text-ink">
                 <span>Total</span>
                 <span className="tnum text-gold">{inr(total)}</span>
               </div>
             </div>
+          )}
+
+          {/* Offered before they have added anybody, because it is a reason to.
+              Withheld once it already applies — the itemised line says so
+              then, and repeating it would read as two discounts. */}
+          {(event.party_discount ?? 0) > 0 && discount === 0 && gross > 0 && (
+            <p
+              className="mt-3 rounded-lg border px-3 py-2 text-[12.5px] leading-relaxed"
+              style={{
+                borderColor: "color-mix(in oklab, var(--color-paid) 30%, transparent)",
+                background: "color-mix(in oklab, var(--color-paid) 8%, transparent)",
+                color: "var(--color-ink-2)",
+              }}
+            >
+              Add {minParty === 2 ? "someone" : `${minParty - 1} more`} and{" "}
+              {inr(event.party_discount ?? 0)} comes off this booking.
+            </p>
           )}
         </div>
 

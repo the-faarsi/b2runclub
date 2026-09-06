@@ -254,6 +254,12 @@ model Event {
   /// guessing at zero, since "free" and "not decided" are different answers.
   kid_price    Float?
 
+  /// Rupees off a booking that covers more than one person, taken off the whole
+  /// total once — not per head, and not only off the guests. Null or 0 means no
+  /// group discount on this session. Never lets a total go below zero; a
+  /// discount that swallows the fee makes the booking free.
+  party_discount Float?
+
   /// Free-text brief shown on the event page. Optional.
   description String?
   /// Maximum attendees. Null means no limit, which is the default so existing
@@ -437,6 +443,11 @@ model EventRegistration {
   /// a receipt can be reconstructed.
   adult_price_at_booking Float @default(0)
   kid_price_at_booking   Float?
+  /// The group discount actually applied, in paise. `amount_due_paise` is already
+  /// net of it — this is kept so a receipt can show the saving rather than only
+  /// the total, and so editing the event's discount later cannot rewrite what a
+  /// member was told they saved.
+  discount_paise_at_booking Int @default(0)
 
   /// Everyone this booking covers, the member included.
   guests              RegistrationGuest[]

@@ -85,6 +85,14 @@ export interface ClubEvent {
    * that enforces it cannot hold different numbers.
    */
   max_party_size?: number;
+  /**
+   * Rupees off a booking that covers more than one person, set per event by an
+   * organiser. Taken off the whole total once — not per head. Null or 0 means
+   * no group discount on this session.
+   */
+  party_discount?: number | null;
+  /** Smallest party that earns the discount. From the server, for the reason above. */
+  discount_min_party?: number;
 }
 
 export interface Registration {

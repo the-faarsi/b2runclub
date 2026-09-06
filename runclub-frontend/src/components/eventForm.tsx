@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "../lib/api";
 import { REMINDER_OFFSETS } from "../lib/types";
 import type { ClubEvent, EventStatus } from "../lib/types";
-import { cn } from "../lib/format";
+import { cn, inr } from "../lib/format";
 import { SparkIcon } from "./icons";
 import { Button, Checkbox, Field, Input, Modal, Select, Textarea } from "./ui";
 
@@ -50,6 +50,8 @@ const BLANK = {
   price: "0",
   kids_allowed: false,
   kid_price: "0",
+  /** Rupees off a booking of two or more. Empty means no group discount. */
+  party_discount: "",
   status: "DRAFT" as EventStatus,
   description: "",
   /** Empty string means unlimited — the backend reads a blank as null. */
@@ -89,6 +91,32 @@ export function EventFormModal({
 
   // Prefer the local object URL while uploading, then the stored URL.
   const coverPreview = localPreview ?? (form.cover_url || null);
+
+  const minParty = event?.discount_min_party ?? 2;
+
+  /**
+   * The discount worked through against this event's own entry fee.
+   *
+   * A flat amount against a per-head price is easy to mis-set — ₹150 off looks
+   * generous beside a ₹100 entry until you notice it makes a pair free — so the
+   * form states the arithmetic rather than leaving the organiser to do it.
+   */
+  const discountPreview = (() => {
+    const discount = Number(form.party_discount);
+    const entry = Number(form.price);
+    if (!Number.isFinite(discount) || discount <= 0) return null;
+    if (!Number.isFinite(entry) || entry < 0) return null;
+
+    const pair = entry * minParty;
+    const solo = `One person on their own still pays ${inr(entry)}.`;
+    if (pair === 0) {
+      return `This session is already free, so a discount changes nothing.`;
+    }
+    if (discount >= pair) {
+      return `Careful: ${inr(discount)} is more than ${minParty} entries come to (${inr(pair)}), so a booking for ${minParty} would be free. ${solo}`;
+    }
+    return `A booking for ${minParty} would pay ${inr(pair - discount)} instead of ${inr(pair)}. Bigger parties get the same ${inr(discount)} off. ${solo}`;
+  })();
 
   useEffect(() => {
     if (!open) setLocalPreview(null);
@@ -154,6 +182,9 @@ export function EventFormModal({
         price: String(event.price),
         kids_allowed: Boolean(event.kids_allowed),
         kid_price: event.kid_price != null ? String(event.kid_price) : "0",
+        /* Blank, not "0": the field means "no discount" when empty, and
+           prefilling a zero would read as a discount that had been set. */
+        party_discount: event.party_discount ? String(event.party_discount) : "",
         status: event.status,
         description: event.description ?? "",
         capacity: event.capacity != null ? String(event.capacity) : "",
@@ -197,6 +228,20 @@ export function EventFormModal({
       }
     }
 
+    /* Blank is a valid answer meaning no discount. A negative is rejected
+       rather than clamped, matching the server: somebody typing "-50" meant
+       something, and saving a silent zero would hide it. */
+    const discountText = form.party_discount.trim();
+    let partyDiscount: number | null = null;
+    if (discountText !== "") {
+      const n = Number(discountText);
+      if (!Number.isFinite(n) || n < 0) {
+        setError("A group discount must be zero or more, or blank for none.");
+        return;
+      }
+      partyDiscount = n === 0 ? null : n;
+    }
+
     const capacityText = form.capacity.trim();
     let capacity: number | null = null;
     if (capacityText !== "") {
@@ -224,6 +269,9 @@ export function EventFormModal({
            price — the backend keys the whole pair on kids_allowed. */
         kids_allowed: form.kids_allowed,
         kid_price: kidPrice,
+        /* Always sent, including as null, so clearing the discount on an edit
+           actually clears it — the backend keys on `undefined`. */
+        party_discount: partyDiscount,
         // Always sent, including as an empty string, so clearing the cover on an
         // edit actually clears it — the backend keys on `undefined`, not falsy.
         cover_url: form.cover_url.trim() || null,
@@ -424,6 +472,35 @@ export function EventFormModal({
                 onChange={set("kid_price")}
               />
             </Field>
+          )}
+        </div>
+
+        {/* Group discount. Its own box beside the children one: both are
+            pricing rules that only apply to some bookings, and neither belongs
+            in the plain price row above. */}
+        <div className="rounded-xl border border-white/8 bg-white/[0.02] p-4">
+          <Field
+            label="Group discount (INR)"
+            htmlFor="ev-party-discount"
+            hint={`Taken off the whole booking once when ${minParty} or more people are on it — not per person. Leave blank or zero for none.`}
+            className="max-w-xs"
+          >
+            <Input
+              id="ev-party-discount"
+              type="number"
+              min="0"
+              step="1"
+              value={form.party_discount}
+              onChange={set("party_discount")}
+              placeholder="None"
+            />
+          </Field>
+
+          {/* Worked through with this event's own numbers, because a flat
+              discount against a per-head fee is easy to mis-set: the figure
+              that reads reasonable for a couple can wipe out the entry. */}
+          {discountPreview && (
+            <p className="mt-3 text-[12px] leading-relaxed text-ink-3">{discountPreview}</p>
           )}
         </div>
 

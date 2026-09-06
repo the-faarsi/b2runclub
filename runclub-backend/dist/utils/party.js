@@ -9,7 +9,7 @@
  * kind of mismatch that shows up as an oversold event on a Saturday morning.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.MAX_PARTY_SIZE = void 0;
+exports.DISCOUNT_MIN_PARTY = exports.MAX_PARTY_SIZE = void 0;
 exports.parseGuests = parseGuests;
 exports.priceParty = priceParty;
 exports.seatCost = seatCost;
@@ -77,6 +77,8 @@ function parseGuests(raw, event) {
     }
     return { ok: true, guests };
 }
+/** The smallest party that earns the group discount. */
+exports.DISCOUNT_MIN_PARTY = 2;
 /**
  * What a party owes, in paise.
  *
@@ -88,20 +90,40 @@ function parseGuests(raw, event) {
  * The volunteer rule is one place only — their own entry. Anyone they bring is
  * a participant and pays. That is the club's decision, and it is why this takes
  * `isVolunteer` rather than reading a role and deciding for itself.
+ *
+ * The group discount is a flat rupee amount off the whole total, applied once to
+ * a booking covering two or more people. Not per head — a party of six gets the
+ * same amount off as a party of two — and it comes off the booker's entry as
+ * readily as off a guest's, because it is a discount on the booking rather than
+ * on the extra people.
  */
 function priceParty(input) {
     const { event, guests, isVolunteer } = input;
     const adults = 1 + guests.filter((g) => g.kind === "ADULT").length;
     const kids = guests.filter((g) => g.kind === "KID").length;
     const payingAdults = isVolunteer ? adults - 1 : adults;
+    const partySize = adults + kids;
     const adultPaise = Math.round(event.price * 100);
     const kidPaise = event.kid_price === null ? 0 : Math.round(event.kid_price * 100);
+    const grossPaise = payingAdults * adultPaise + kids * kidPaise;
+    /*
+     * Clamped at both ends.
+     *
+     * Never negative, so a discount stored as a negative number cannot be turned
+     * into a surcharge; and never more than the total, so a discount larger than
+     * the fee makes the booking free rather than owing the member money. A total
+     * of zero is already handled everywhere as a free booking.
+     */
+    const configured = Math.round(Math.max(0, event.party_discount ?? 0) * 100);
+    const discountPaise = partySize >= exports.DISCOUNT_MIN_PARTY ? Math.min(configured, grossPaise) : 0;
     return {
-        partySize: adults + kids,
+        partySize,
         adults,
         kids,
         payingAdults,
-        amountPaise: payingAdults * adultPaise + kids * kidPaise,
+        grossPaise,
+        discountPaise,
+        amountPaise: grossPaise - discountPaise,
         adultPrice: event.price,
         kidPrice: event.kid_price,
     };

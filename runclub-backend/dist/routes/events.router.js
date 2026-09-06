@@ -6,6 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.SEAT_FILTER = exports.INVALID = void 0;
 exports.parseCapacity = parseCapacity;
 exports.parseKids = parseKids;
+exports.parseDiscount = parseDiscount;
 exports.seatsTaken = seatsTaken;
 exports.capacityOf = capacityOf;
 const express_1 = require("express");
@@ -68,6 +69,23 @@ function parseKids(raw) {
     if (!Number.isFinite(price) || price < 0)
         return exports.INVALID;
     return { kids_allowed: true, kid_price: price };
+}
+/**
+ * Normalises the group discount an organiser typed.
+ *
+ * Blank and zero both mean "no discount on this session" and are stored as null,
+ * so the field reads as unset rather than as a discount of nothing. A negative
+ * figure is refused instead of clamped: somebody typing "-50" meant something,
+ * and silently storing 0 would hide that the event is not priced the way they
+ * think it is.
+ */
+function parseDiscount(raw) {
+    if (raw === undefined || raw === null || raw === "")
+        return null;
+    const value = Number(raw);
+    if (!Number.isFinite(value) || value < 0)
+        return exports.INVALID;
+    return value === 0 ? null : value;
 }
 /**
  * Filter defining which *bookings* hold places. Shared by the single-event count
@@ -165,6 +183,11 @@ router.post("/", (0, auth_1.requireRole)(["ADMIN"]), async (req, res) => {
             });
             return;
         }
+        const partyDiscount = parseDiscount(req.body?.party_discount);
+        if (partyDiscount === exports.INVALID) {
+            res.status(400).json({ error: "A group discount must be 0 or more, or blank for none." });
+            return;
+        }
         const adminId = req.user.id;
         if (!title || !type || !date_time || !location || price === undefined) {
             res.status(400).json({ error: "Missing required fields for event creation" });
@@ -201,6 +224,7 @@ router.post("/", (0, auth_1.requireRole)(["ADMIN"]), async (req, res) => {
                 cover_url: typeof cover_url === "string" ? cover_url.trim() || null : null,
                 kids_allowed: kids.kids_allowed,
                 kid_price: kids.kid_price,
+                party_discount: partyDiscount,
             },
         });
         const offsets = parseOffsets(req.body.reminder_offsets);
@@ -281,6 +305,7 @@ router.get("/", async (req, res) => {
                     spots_left: null,
                     full: false,
                     max_party_size: party_1.MAX_PARTY_SIZE,
+                    discount_min_party: party_1.DISCOUNT_MIN_PARTY,
                 };
             }
             const taken = counts.get(e.id) ?? 0;
@@ -290,6 +315,7 @@ router.get("/", async (req, res) => {
                 spots_left: Math.max(0, e.capacity - taken),
                 full: taken >= e.capacity,
                 max_party_size: party_1.MAX_PARTY_SIZE,
+                discount_min_party: party_1.DISCOUNT_MIN_PARTY,
             };
         }));
     }
@@ -401,7 +427,12 @@ router.get("/:id", async (req, res) => {
             res.status(403).json({ error: "Access denied to unpublished event" });
             return;
         }
-        res.json({ ...event, ...(await capacityOf(event)), max_party_size: party_1.MAX_PARTY_SIZE });
+        res.json({
+            ...event,
+            ...(await capacityOf(event)),
+            max_party_size: party_1.MAX_PARTY_SIZE,
+            discount_min_party: party_1.DISCOUNT_MIN_PARTY,
+        });
     }
     catch (error) {
         res.status(500).json({ error: error.message || "Failed to fetch event" });
@@ -459,6 +490,17 @@ router.put("/:id", (0, auth_1.requireRole)(["ADMIN"]), async (req, res) => {
         /* Keyed on the toggle rather than either field, because the two move
            together: turning children off has to clear the price, which an
            `undefined` check on kid_price alone would skip. */
+        /* Keyed on the field being present rather than truthy: clearing the
+           discount sends "" or 0, both of which a truthiness check would skip,
+           leaving the old figure in place. */
+        if (req.body?.party_discount !== undefined) {
+            const discount = parseDiscount(req.body.party_discount);
+            if (discount === exports.INVALID) {
+                res.status(400).json({ error: "A group discount must be 0 or more, or blank for none." });
+                return;
+            }
+            dataToUpdate.party_discount = discount;
+        }
         if (req.body?.kids_allowed !== undefined) {
             const kids = parseKids(req.body);
             if (kids === exports.INVALID) {
@@ -738,6 +780,7 @@ router.post("/:id/register", (0, auth_1.requireRole)(["MEMBER", "VOLUNTEER"]), v
                 amount_due_paise: amountPaise,
                 adult_price_at_booking: party.adultPrice,
                 kid_price_at_booking: party.kidPrice,
+                discount_paise_at_booking: party.discountPaise,
                 guests: {
                     create: [
                         { name: user.name, kind: "ADULT", is_booker: true },
